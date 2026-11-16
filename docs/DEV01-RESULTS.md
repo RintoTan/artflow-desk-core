@@ -30,7 +30,7 @@
 | 项 | 值 |
 |---|---|
 | 正式工程 | `/Users/rinto/Documents/ChatGPT/ArtFlow-miniDesk` |
-| Git | 已初始化，本地提交 11 个，**未推送远程** |
+| Git | 已初始化，本地提交 12 个，**未推送远程** |
 | 分支 | `main`（默认） |
 | 工作区 | 干净（`status --porcelain` 为空） |
 | 跟踪文件 | 65 个 |
@@ -276,6 +276,7 @@ ae088d6  feat(infra): cross-process data directory lock
 2621f93  feat(ui): Arctic Blue shell with real environment status
 1293b46  test: DEV-01 coverage for schema, migrations, numbering, tz, lock, media, zip, commands
 6ad3ea2  docs: DEV-01 results report
+<后续>  docs: correct commit count in DEV-01 report
 ```
 
 未推送远端。
