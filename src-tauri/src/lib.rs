@@ -45,7 +45,23 @@ pub fn run() {
             commands::status::environment_status,
             commands::preferences::working_timezone_get,
             commands::preferences::working_timezone_set,
-            commands::orders::create_order
+            commands::orders::create_order,
+            commands::orders::list_orders,
+            commands::orders::get_order,
+            commands::orders::list_order_events,
+            commands::orders::list_clients,
+            commands::orders::update_order_details,
+            commands::orders::start_work,
+            commands::orders::undo_start_work,
+            commands::orders::advance_stage,
+            commands::orders::rework_stage,
+            commands::orders::complete_order,
+            commands::orders::cancel_order,
+            commands::orders::reopen_order,
+            commands::orders::workflow_add_stage,
+            commands::orders::workflow_rename_stage,
+            commands::orders::workflow_remove_stage,
+            commands::orders::workflow_reorder_stages
         ])
         .run(tauri::generate_context!())
         .expect("ArtFlow miniDesk 启动失败");

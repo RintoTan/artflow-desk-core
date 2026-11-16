@@ -6,6 +6,22 @@ const APPROVED: &[&str] = &[
     "working_timezone_get",
     "working_timezone_set",
     "create_order",
+    "list_orders",
+    "get_order",
+    "list_order_events",
+    "list_clients",
+    "update_order_details",
+    "start_work",
+    "undo_start_work",
+    "advance_stage",
+    "rework_stage",
+    "complete_order",
+    "cancel_order",
+    "reopen_order",
+    "workflow_add_stage",
+    "workflow_rename_stage",
+    "workflow_remove_stage",
+    "workflow_reorder_stages",
 ];
 
 /// 解析 `generate_handler![...]` 并取每项最后一段标识符。
