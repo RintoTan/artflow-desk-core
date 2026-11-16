@@ -11,9 +11,10 @@ use rusqlite::{Connection, TransactionBehavior};
 use crate::error::{AppError, AppResult};
 
 pub mod v1;
+pub mod v2;
 
 /// 当前程序支持的最高 schema 版本。
-pub const APP_SCHEMA_VERSION: i64 = 1;
+pub const APP_SCHEMA_VERSION: i64 = 2;
 
 pub struct Migration {
     pub version: i64,
@@ -23,11 +24,18 @@ pub struct Migration {
 
 /// 已批准的正式迁移。顺序必须从 1 开始连续。
 pub fn production() -> Vec<Migration> {
-    vec![Migration {
-        version: 1,
-        name: "v1_initial",
-        apply: v1::apply,
-    }]
+    vec![
+        Migration {
+            version: 1,
+            name: "v1_initial",
+            apply: v1::apply,
+        },
+        Migration {
+            version: 2,
+            name: "v2_queue_and_events",
+            apply: v2::apply,
+        },
+    ]
 }
 
 pub fn schema_version(conn: &Connection) -> AppResult<i64> {
