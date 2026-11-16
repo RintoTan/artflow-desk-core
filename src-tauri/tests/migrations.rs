@@ -1,6 +1,6 @@
 //! 迁移链：空库初始化、隔离代际升级、失败回滚、高版本拒绝。
 //!
-//! v2 只存在于本测试文件，是**测试夹具**，不是已发布的正式 schema。
+//! v3 只存在于本测试文件，是**测试夹具**，不是已发布的正式 schema。
 
 mod common;
 
@@ -11,7 +11,9 @@ use minidesk::store::environment::Environment;
 use minidesk::store::generation;
 use minidesk::store::migrations::{self, Migration};
 
-fn apply_v2(tx: &rusqlite::Transaction<'_>) -> AppResult<()> {
+const NEXT_VERSION: i64 = migrations::APP_SCHEMA_VERSION + 1;
+
+fn apply_next(tx: &rusqlite::Transaction<'_>) -> AppResult<()> {
     tx.execute_batch(
         "ALTER TABLE clients ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
          CREATE INDEX clients_archived_idx ON clients(archived);",
@@ -19,38 +21,38 @@ fn apply_v2(tx: &rusqlite::Transaction<'_>) -> AppResult<()> {
     Ok(())
 }
 
-fn apply_v2_broken(tx: &rusqlite::Transaction<'_>) -> AppResult<()> {
+fn apply_next_broken(tx: &rusqlite::Transaction<'_>) -> AppResult<()> {
     // 故意写坏：引用不存在的列，让整步迁移失败。
     tx.execute_batch("ALTER TABLE clients ADD COLUMN broken INTEGER NOT NULL DEFAULT 0;")?;
     tx.execute_batch("UPDATE clients SET no_such_column = 1;")?;
     Ok(())
 }
 
-fn fixture(apply_v2: fn(&rusqlite::Transaction<'_>) -> AppResult<()>) -> Vec<Migration> {
+fn fixture(apply: fn(&rusqlite::Transaction<'_>) -> AppResult<()>) -> Vec<Migration> {
     let mut list = migrations::production();
     list.push(Migration {
-        version: 2,
-        name: "v2_test_only",
-        apply: apply_v2,
+        version: NEXT_VERSION,
+        name: "next_version_test_only",
+        apply,
     });
     list
 }
 
 #[test]
-fn empty_database_initializes_to_v1() {
+fn empty_database_initializes_to_current_schema() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("data");
     let env = common::open(&root);
 
     assert!(env.outcome().first_run, "首次启动应被识别为初始化");
-    assert_eq!(env.outcome().schema_version, 1);
+    assert_eq!(env.outcome().schema_version, migrations::APP_SCHEMA_VERSION);
     assert!(env.db_path().exists());
 
     let conn = env.open_db().unwrap();
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 1);
+    assert_eq!(version, migrations::APP_SCHEMA_VERSION);
 
     let tables: Vec<String> = {
         let mut stmt = conn
@@ -73,6 +75,7 @@ fn empty_database_initializes_to_v1() {
         "themes",
         "app_settings",
         "schema_meta",
+        "queue_state",
     ] {
         assert!(tables.iter().any(|t| t == expected), "缺少表 {expected}");
     }
@@ -104,12 +107,15 @@ fn upgrade_runs_in_an_isolated_generation_and_keeps_the_old_one() {
     }
     drop(env);
 
-    let list = fixture(apply_v2);
-    let upgraded =
-        Environment::open_with(&root, &list, 2, Some(common::tz())).expect("升级应成功");
+    let list = fixture(apply_next);
+    let upgraded = Environment::open_with(&root, &list, NEXT_VERSION, Some(common::tz()))
+        .expect("升级应成功");
 
-    assert_eq!(upgraded.outcome().upgraded_from, Some(1));
-    assert_eq!(upgraded.outcome().schema_version, 2);
+    assert_eq!(
+        upgraded.outcome().upgraded_from,
+        Some(migrations::APP_SCHEMA_VERSION)
+    );
+    assert_eq!(upgraded.outcome().schema_version, NEXT_VERSION);
     assert_ne!(
         upgraded.active_generation(),
         original_generation,
@@ -156,8 +162,8 @@ fn failed_upgrade_keeps_old_generation_and_pointer() {
     let before = generation::list_generations(env.layout()).unwrap();
     drop(env);
 
-    let list = fixture(apply_v2_broken);
-    let result = Environment::open_with(&root, &list, 2, Some(common::tz()));
+    let list = fixture(apply_next_broken);
+    let result = Environment::open_with(&root, &list, NEXT_VERSION, Some(common::tz()));
     assert!(result.is_err(), "坏迁移必须返回错误");
 
     // 重新以 v1 打开：旧代际仍可用，数据仍在。
@@ -165,7 +171,7 @@ fn failed_upgrade_keeps_old_generation_and_pointer() {
     assert_eq!(env.active_generation(), original_generation);
     let conn = env.open_db().unwrap();
     let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
-    assert_eq!(version, 1, "失败后结构版本不得前进");
+    assert_eq!(version, migrations::APP_SCHEMA_VERSION, "失败后结构版本不得前进");
     let orders: i64 = conn.query_row("SELECT COUNT(*) FROM orders", [], |r| r.get(0)).unwrap();
     assert_eq!(orders, 1);
 
@@ -220,7 +226,7 @@ fn migration_steps_are_idempotent_across_restarts() {
         let env = common::open(&root);
         let conn = env.open_db().unwrap();
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
-        assert_eq!(version, 1);
+        assert_eq!(version, migrations::APP_SCHEMA_VERSION);
         let templates: i64 = conn
             .query_row("SELECT COUNT(*) FROM stage_templates", [], |r| r.get(0))
             .unwrap();

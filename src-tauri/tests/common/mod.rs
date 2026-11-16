@@ -60,3 +60,65 @@ pub fn insert_order(conn: &mut rusqlite::Connection, code: &str, title: &str) ->
     tx.commit().expect("提交失败");
     id
 }
+
+/// 一个完整可用的测试环境：临时目录 + 数据环境 + 编号记录。
+pub struct Ctx {
+    pub _dir: tempfile::TempDir,
+    pub env: Environment,
+    pub hw: HighWater,
+}
+
+impl Ctx {
+    pub fn new() -> Self {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let env = open(&dir.path().join("data"));
+        let hw = highwater(&env);
+        Self {
+            _dir: dir,
+            env,
+            hw,
+        }
+    }
+
+    pub fn conn(&self) -> rusqlite::Connection {
+        self.env.open_db().expect("打开数据库失败")
+    }
+
+    /// 建一张默认模板的订单，返回订单 ID。
+    pub fn create_order(&self, title: &str) -> String {
+        let mut conn = self.conn();
+        let view = minidesk::domain::orders::create_order(
+            &mut conn,
+            &self.hw,
+            tz(),
+            minidesk::domain::orders::CreateOrderInput {
+                title: title.into(),
+                ..Default::default()
+            },
+        )
+        .expect("建单失败");
+        view.id
+    }
+
+    pub fn load(&self, id: &str) -> minidesk::domain::orders::OrderView {
+        let conn = self.conn();
+        minidesk::domain::orders::load(&conn, id).expect("读取订单失败")
+    }
+
+    pub fn events(&self, id: &str) -> Vec<minidesk::domain::events::Event> {
+        let conn = self.conn();
+        minidesk::domain::events::list(&conn, id).expect("读取事件失败")
+    }
+
+    pub fn kinds(&self, id: &str) -> Vec<String> {
+        self.events(id).into_iter().map(|e| e.kind).collect()
+    }
+}
+
+pub fn lifecycle_input(view: &minidesk::domain::orders::OrderView) -> minidesk::domain::lifecycle::LifecycleInput {
+    minidesk::domain::lifecycle::LifecycleInput {
+        order_id: view.id.clone(),
+        expected_revision: view.revision,
+        request_id: None,
+    }
+}

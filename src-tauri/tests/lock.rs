@@ -4,7 +4,6 @@ mod common;
 
 use std::fs;
 use std::process::{Command, Stdio};
-use std::time::Duration;
 
 use minidesk::store::environment::Environment;
 
@@ -98,7 +97,7 @@ fn exactly_one_of_two_contending_processes_wins() {
 
     let b = probe(&["try", root.to_str().unwrap()]);
     let out_a = a.wait_with_output().unwrap();
-    let sa = String::from_utf8_lossy(&out_a.stdout);
+    let _sa = String::from_utf8_lossy(&out_a.stdout);
     let sb = String::from_utf8_lossy(&b.stdout);
 
     assert_eq!(b.status.code(), Some(3), "第二个进程应被拒绝：{sb}");
