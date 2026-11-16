@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { createHashRouter, RouterProvider } from "react-router-dom";
 
 import App from "./App";
+import OrdersPage from "./pages/OrdersPage";
 import Placeholder from "./pages/Placeholder";
 import SettingsPage from "./pages/SettingsPage";
 import StatusPage from "./pages/StatusPage";
@@ -13,22 +14,7 @@ const router = createHashRouter([
     element: <App />,
     children: [
       { index: true, element: <StatusPage /> },
-      {
-        path: "orders",
-        element: (
-          <Placeholder
-            title="订单"
-            plan="DEV-02 与 DEV-03"
-            items={[
-              "订单列表与快速预览（宽屏双栏）",
-              "订单详情：资料、图片、历史三区",
-              "制作流程推进、返工、开工与撤销开工",
-              "终态操作与重新打开",
-              "活动队列拖拽排序与上移下移",
-            ]}
-          />
-        ),
-      },
+      { path: "orders", element: <OrdersPage /> },
       {
         path: "clients",
         element: (
