@@ -1,12 +1,11 @@
-//! 订单领域服务（DEV-01 范围：建立订单这一个最小写操作）。
-//!
-//! 完整 CRUD、推进、返工、开工、重开等属于 DEV-02，这里不实现。
-//! 本模块存在的目的是证明三件事：单库承载、编号与队列分离、事件与订单同事务。
+//! 订单：创建、资料整体保存、读取。
 
 use chrono_tz::Tz;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 
+use crate::domain::events::{self, NewEvent};
+use crate::domain::lifecycle::{self, Capabilities, WorkState};
 use crate::domain::numbering;
 use crate::error::{AppError, AppResult};
 use crate::store::highwater::HighWater;
@@ -15,16 +14,31 @@ use crate::store::timezone;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Order {
+pub struct StageView {
+    pub id: String,
+    pub title: String,
+    pub position: i64,
+    pub is_current: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderView {
     pub id: String,
     pub code: String,
     pub title: String,
     pub client_id: Option<String>,
+    pub client_name: Option<String>,
     pub commission_type: Option<String>,
     pub amount_cents: Option<i64>,
+    pub note: Option<String>,
     pub status: String,
+    pub work_state: WorkState,
     pub current_stage_id: Option<String>,
     pub current_stage_title: Option<String>,
+    pub current_stage_index: Option<i64>,
+    pub stage_count: i64,
+    pub stages: Vec<StageView>,
     pub queue_position: i64,
     pub planned_start_date: Option<String>,
     pub planned_delivery_date: Option<String>,
@@ -34,29 +48,27 @@ pub struct Order {
     pub revision: i64,
     pub created_at: String,
     pub updated_at: String,
+    pub capabilities: Capabilities,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CreateOrderInput {
-    pub title: String,
-    pub client_id: Option<String>,
-    pub commission_type: Option<String>,
-    pub amount_cents: Option<i64>,
-    pub planned_start_date: Option<String>,
-    pub planned_delivery_date: Option<String>,
-    pub template_id: Option<String>,
-    /// 重试幂等键：相同 request_id 只会产生一张订单。
-    pub request_id: Option<String>,
+pub struct ClientSummary {
+    pub id: String,
+    pub display_name: String,
+    pub contact: Option<String>,
+    pub order_count: i64,
 }
 
-fn clean_title(raw: &str) -> AppResult<String> {
+// ---------------------------------------------------------------- 校验
+
+pub fn clean_title(raw: &str) -> AppResult<String> {
     let title = raw.trim();
-    let len = title.chars().count();
-    if len == 0 {
+    let count = title.chars().count();
+    if count == 0 {
         return Err(AppError::invalid("委托标题不能为空"));
     }
-    if len > 120 {
+    if count > 120 {
         return Err(AppError::invalid("委托标题不能超过 120 字"));
     }
     Ok(title.to_string())
@@ -91,109 +103,343 @@ fn clean_date(raw: &Option<String>, field: &str) -> AppResult<Option<String>> {
     }
 }
 
+fn validate_amount(amount: Option<i64>) -> AppResult<()> {
+    if let Some(value) = amount {
+        if value < 0 {
+            return Err(AppError::invalid("委托金额不能为负数"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_date_order(start: &Option<String>, delivery: &Option<String>) -> AppResult<()> {
+    if let (Some(start), Some(delivery)) = (start, delivery) {
+        if delivery < start {
+            return Err(AppError::invalid("预计交付日期不能早于计划开始日期"));
+        }
+    }
+    Ok(())
+}
+
+fn clean_request_id(raw: &Option<String>) -> AppResult<Option<String>> {
+    match raw {
+        None => Ok(None),
+        Some(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            if trimmed.chars().count() > 120 {
+                return Err(AppError::invalid("请求标识过长"));
+            }
+            Ok(Some(trimmed.to_string()))
+        }
+    }
+}
+
+// ---------------------------------------------------------------- 读取
+
+/// 当前流程的阶段（按位置排序）。名称取订单自己的副本，不受模板影响。
+pub fn stages(conn: &Connection, order_id: &str) -> AppResult<Vec<(String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT stage_id, title FROM order_stages WHERE order_id = ?1 ORDER BY position, stage_id",
+    )?;
+    let rows = stmt
+        .query_map([order_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
+    let facts = lifecycle::load_facts(conn, order_id)?;
+    let caps = lifecycle::capabilities(&facts);
+
+    let row = conn.query_row(
+        "SELECT o.id, o.code, o.title, o.client_id, c.display_name, o.commission_type,
+                o.amount_cents, o.note, o.status, o.current_stage_id, o.queue_position,
+                o.planned_start_date, o.planned_delivery_date,
+                o.started_at, o.completed_at, o.cancelled_at,
+                o.revision, o.created_at, o.updated_at
+         FROM orders o
+         LEFT JOIN clients c ON c.id = o.client_id
+         WHERE o.id = ?1",
+        [order_id],
+        |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, Option<String>>(3)?,
+                r.get::<_, Option<String>>(4)?,
+                r.get::<_, Option<String>>(5)?,
+                r.get::<_, Option<i64>>(6)?,
+                r.get::<_, Option<String>>(7)?,
+                r.get::<_, String>(8)?,
+                r.get::<_, Option<String>>(9)?,
+                r.get::<_, i64>(10)?,
+                r.get::<_, Option<String>>(11)?,
+                r.get::<_, Option<String>>(12)?,
+                r.get::<_, Option<String>>(13)?,
+                r.get::<_, Option<String>>(14)?,
+                r.get::<_, Option<String>>(15)?,
+                r.get::<_, i64>(16)?,
+                r.get::<_, String>(17)?,
+                r.get::<_, String>(18)?,
+            ))
+        },
+    )?;
+
+    let current_stage_id = row.9.clone();
+    let stage_views: Vec<StageView> = facts
+        .stages
+        .iter()
+        .enumerate()
+        .map(|(index, (id, title))| StageView {
+            id: id.clone(),
+            title: title.clone(),
+            position: index as i64,
+            is_current: Some(id) == current_stage_id.as_ref(),
+        })
+        .collect();
+
+    let current_title = facts
+        .current_index
+        .and_then(|i| facts.stages.get(i))
+        .map(|(_, title)| title.clone());
+
+    Ok(OrderView {
+        id: row.0,
+        code: row.1,
+        title: row.2,
+        client_id: row.3,
+        client_name: row.4,
+        commission_type: row.5,
+        amount_cents: row.6,
+        note: row.7,
+        status: row.8,
+        work_state: lifecycle::work_state(&facts),
+        current_stage_id,
+        current_stage_title: current_title,
+        current_stage_index: facts.current_index.map(|i| i as i64),
+        stage_count: facts.stages.len() as i64,
+        stages: stage_views,
+        queue_position: row.10,
+        planned_start_date: row.11,
+        planned_delivery_date: row.12,
+        started_at: row.13,
+        completed_at: row.14,
+        cancelled_at: row.15,
+        revision: row.16,
+        created_at: row.17,
+        updated_at: row.18,
+        capabilities: caps,
+    })
+}
+
+/// 活动订单按队列顺序在前，终态订单按更新时间在后。
+pub fn list(conn: &Connection) -> AppResult<Vec<OrderView>> {
+    let mut stmt = conn.prepare(
+        "SELECT id FROM orders
+         ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END,
+                  CASE WHEN status = 'active' THEN queue_position ELSE 0 END,
+                  updated_at DESC,
+                  code",
+    )?;
+    let ids: Vec<String> = stmt
+        .query_map([], |r| r.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(stmt);
+    ids.iter().map(|id| load(conn, id)).collect()
+}
+
+pub fn count_orders(conn: &Connection) -> AppResult<i64> {
+    Ok(conn.query_row("SELECT COUNT(*) FROM orders", [], |r| r.get(0))?)
+}
+
+pub fn list_clients(conn: &Connection) -> AppResult<Vec<ClientSummary>> {
+    let mut stmt = conn.prepare(
+        "SELECT c.id, c.display_name, c.contact,
+                (SELECT COUNT(*) FROM orders o WHERE o.client_id = c.id)
+         FROM clients c ORDER BY c.display_name, c.id",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(ClientSummary {
+                id: r.get(0)?,
+                display_name: r.get(1)?,
+                contact: r.get(2)?,
+                order_count: r.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+// ---------------------------------------------------------------- 创建
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "mode", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum ClientChoice {
+    #[serde(rename = "none")]
+    None,
+    #[serde(rename = "existing")]
+    Existing { client_id: String },
+    #[serde(rename = "new")]
+    New {
+        display_name: String,
+        contact: Option<String>,
+        note: Option<String>,
+    },
+}
+
+impl Default for ClientChoice {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateOrderInput {
+    pub title: String,
+    #[serde(default)]
+    pub client: ClientChoice,
+    pub commission_type: Option<String>,
+    pub amount_cents: Option<i64>,
+    pub planned_start_date: Option<String>,
+    pub planned_delivery_date: Option<String>,
+    pub note: Option<String>,
+    pub template_id: Option<String>,
+    pub request_id: Option<String>,
+}
+
 pub fn create_order(
     conn: &mut Connection,
     hw: &HighWater,
     tz: Tz,
     input: CreateOrderInput,
-) -> AppResult<Order> {
+) -> AppResult<OrderView> {
     let title = clean_title(&input.title)?;
     let commission_type = clean_optional(&input.commission_type, 80, "委托类型")?;
-    if let Some(amount) = input.amount_cents {
-        if amount < 0 {
-            return Err(AppError::invalid("委托金额不能为负数"));
-        }
-    }
+    let note = clean_optional(&input.note, 4000, "委托说明")?;
+    validate_amount(input.amount_cents)?;
     let start_date = clean_date(&input.planned_start_date, "计划开始日期")?;
     let delivery_date = clean_date(&input.planned_delivery_date, "预计交付日期")?;
-    if let (Some(start), Some(delivery)) = (&start_date, &delivery_date) {
-        if delivery < start {
-            return Err(AppError::invalid("预计交付日期不能早于计划开始日期"));
-        }
-    }
-    let request_id = clean_optional(&input.request_id, 120, "请求标识")?;
+    validate_date_order(&start_date, &delivery_date)?;
+    let request_id = clean_request_id(&input.request_id)?;
 
-    // 幂等：同一个 request_id 直接返回已存在的订单，不重复建单。
     if let Some(rid) = &request_id {
         if let Some(existing) = find_by_request_id(conn, rid)? {
-            return read_order(conn, &existing);
+            return load(conn, &existing);
         }
     }
 
-    if let Some(client_id) = &input.client_id {
-        let exists: Option<String> = conn
-            .query_row("SELECT id FROM clients WHERE id = ?1", [client_id], |r| {
-                r.get(0)
-            })
-            .optional()?;
-        if exists.is_none() {
-            return Err(AppError::not_found("关联的客户不存在"));
+    // 解析客户：已有客户 / 新建客户（与订单同事务）/ 无客户。
+    let new_client = match &input.client {
+        ClientChoice::None => None,
+        ClientChoice::Existing { client_id } => {
+            let exists: Option<String> = conn
+                .query_row("SELECT id FROM clients WHERE id = ?1", [client_id], |r| {
+                    r.get(0)
+                })
+                .optional()?;
+            if exists.is_none() {
+                return Err(AppError::not_found("选择的客户不存在"));
+            }
+            None
         }
-    }
+        ClientChoice::New {
+            display_name,
+            contact,
+            note,
+        } => {
+            let name = display_name.trim();
+            if name.is_empty() {
+                return Err(AppError::invalid("新客户名称不能为空"));
+            }
+            if name.chars().count() > 120 {
+                return Err(AppError::invalid("客户名称不能超过 120 字"));
+            }
+            Some((
+                name.to_string(),
+                clean_optional(contact, 200, "客户联系方式")?,
+                clean_optional(note, 2000, "客户备注")?,
+            ))
+        }
+    };
 
     let template_id = match &input.template_id {
-        Some(id) => id.clone(),
-        None => settings::get(conn, "default_template_id")?
+        Some(id) if !id.trim().is_empty() => id.trim().to_string(),
+        _ => settings::get(conn, "default_template_id")?
             .unwrap_or_else(|| settings::DEFAULT_TEMPLATE_ID.to_string()),
     };
-    let template_name: String = conn
-        .query_row(
-            "SELECT name FROM stage_templates WHERE id = ?1",
-            [&template_id],
-            |r| r.get(0),
-        )
-        .optional()?
-        .ok_or_else(|| AppError::not_found("所选制作流程模板不存在"))?;
-    let _ = template_name;
 
-    let mut stage_stmt = conn.prepare(
+    let mut step_stmt = conn.prepare(
         "SELECT step_id, title, position FROM stage_template_steps
          WHERE template_id = ?1 ORDER BY position, step_id",
     )?;
-    let steps: Vec<(String, String, i64)> = stage_stmt
+    let steps: Vec<(String, String, i64)> = step_stmt
         .query_map([&template_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
         .collect::<Result<Vec<_>, _>>()?;
-    drop(stage_stmt);
+    drop(step_stmt);
     if steps.is_empty() {
-        return Err(AppError::invalid("所选制作流程模板没有任何阶段"));
+        return Err(AppError::not_found("所选制作流程模板不存在或没有阶段"));
     }
 
     let now = timezone::now_timestamp();
-    // 编号：先持久保留，再创建订单。此处之后即使失败也只跳号，绝不复用。
+    // 编号：先持久保留，再建单。之后失败只会跳号。
     let code = numbering::reserve(hw, &now, tz)?;
 
-    let id = uuid::Uuid::new_v4().to_string();
+    let order_id = uuid::Uuid::new_v4().to_string();
     let first_stage_id = steps[0].0.clone();
+    let first_stage_title = steps[0].1.clone();
 
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
+    let client_id: Option<String> = match (&input.client, new_client) {
+        (ClientChoice::Existing { client_id }, _) => Some(client_id.clone()),
+        (_, Some((name, contact, cnote))) => {
+            let id = uuid::Uuid::new_v4().to_string();
+            tx.execute(
+                "INSERT INTO clients (id, display_name, contact, note, revision, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, 0, ?5, ?5)",
+                params![id, name, contact, cnote, now],
+            )?;
+            Some(id)
+        }
+        _ => None,
+    };
+
     let queue_position: i64 = tx.query_row(
-        "SELECT COALESCE(MAX(queue_position), -1) + 1 FROM orders",
+        "SELECT COALESCE(MAX(queue_position), -1) + 1 FROM orders WHERE status = 'active'",
         [],
         |r| r.get(0),
     )?;
 
     tx.execute(
         "INSERT INTO orders (
-            id, code, title, client_id, commission_type, amount_cents, status,
+            id, code, title, client_id, commission_type, amount_cents, note, status,
             stage_template_id, current_stage_id, queue_position,
             planned_start_date, planned_delivery_date,
             started_at, completed_at, cancelled_at, request_id,
             revision, created_at, updated_at
          ) VALUES (
-            ?1, ?2, ?3, ?4, ?5, ?6, 'active',
-            ?7, ?8, ?9,
-            ?10, ?11,
-            NULL, NULL, NULL, ?12,
-            0, ?13, ?13
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7, 'active',
+            ?8, ?9, ?10,
+            ?11, ?12,
+            NULL, NULL, NULL, ?13,
+            0, ?14, ?14
          )",
         params![
-            id,
+            order_id,
             code,
             title,
-            input.client_id,
+            client_id,
             commission_type,
             input.amount_cents,
+            note,
             template_id,
             first_stage_id,
             queue_position,
@@ -208,22 +454,25 @@ pub fn create_order(
         tx.execute(
             "INSERT INTO order_stages (order_id, stage_id, title, position)
              VALUES (?1, ?2, ?3, ?4)",
-            params![id, step_id, step_title, position],
+            params![order_id, step_id, step_title, position],
         )?;
     }
 
-    tx.execute(
-        "INSERT INTO order_events (
-            order_id, kind, from_stage_id, from_stage_title,
-            to_stage_id, to_stage_title, from_status, to_status,
-            movement, note, occurred_at
-         ) VALUES (?1, 'created', NULL, NULL, ?2, ?3, NULL, 'active', NULL, NULL, ?4)",
-        params![id, first_stage_id, steps[0].1, now],
+    events::append(
+        &tx,
+        &order_id,
+        &NewEvent {
+            kind: events::CREATED,
+            to_stage_id: Some(&first_stage_id),
+            to_stage_title: Some(&first_stage_title),
+            to_status: Some(lifecycle::STATUS_ACTIVE),
+            occurred_at: &now,
+            ..Default::default()
+        },
     )?;
 
     tx.commit()?;
-
-    read_order(conn, &id)
+    load(conn, &order_id)
 }
 
 fn find_by_request_id(conn: &Connection, request_id: &str) -> AppResult<Option<String>> {
@@ -236,46 +485,118 @@ fn find_by_request_id(conn: &Connection, request_id: &str) -> AppResult<Option<S
         .optional()?)
 }
 
-pub fn read_order(conn: &Connection, id: &str) -> AppResult<Order> {
-    let row = conn
+// ---------------------------------------------------------------- 资料整体保存
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateDetailsInput {
+    pub order_id: String,
+    pub expected_revision: i64,
+    pub title: String,
+    pub client_id: Option<String>,
+    pub commission_type: Option<String>,
+    pub amount_cents: Option<i64>,
+    pub planned_start_date: Option<String>,
+    pub planned_delivery_date: Option<String>,
+    pub note: Option<String>,
+}
+
+/// 一次整体保存"资料"字段。不写制作历史；不改阶段、不改开工记录。
+pub fn update_details(conn: &mut Connection, input: UpdateDetailsInput) -> AppResult<OrderView> {
+    let title = clean_title(&input.title)?;
+    let commission_type = clean_optional(&input.commission_type, 80, "委托类型")?;
+    let note = clean_optional(&input.note, 4000, "委托说明")?;
+    validate_amount(input.amount_cents)?;
+    let start_date = clean_date(&input.planned_start_date, "计划开始日期")?;
+    let delivery_date = clean_date(&input.planned_delivery_date, "预计交付日期")?;
+    validate_date_order(&start_date, &delivery_date)?;
+    let client_id = match &input.client_id {
+        None => None,
+        Some(id) if id.trim().is_empty() => None,
+        Some(id) => Some(id.trim().to_string()),
+    };
+
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+    let current = tx
         .query_row(
-            "SELECT o.id, o.code, o.title, o.client_id, o.commission_type, o.amount_cents,
-                    o.status, o.current_stage_id, s.title, o.queue_position,
-                    o.planned_start_date, o.planned_delivery_date,
-                    o.started_at, o.completed_at, o.cancelled_at,
-                    o.revision, o.created_at, o.updated_at
-             FROM orders o
-             LEFT JOIN order_stages s ON s.order_id = o.id AND s.stage_id = o.current_stage_id
-             WHERE o.id = ?1",
-            [id],
+            "SELECT title, client_id, commission_type, amount_cents, note,
+                    planned_start_date, planned_delivery_date, revision
+             FROM orders WHERE id = ?1",
+            [&input.order_id],
             |r| {
-                Ok(Order {
-                    id: r.get(0)?,
-                    code: r.get(1)?,
-                    title: r.get(2)?,
-                    client_id: r.get(3)?,
-                    commission_type: r.get(4)?,
-                    amount_cents: r.get(5)?,
-                    status: r.get(6)?,
-                    current_stage_id: r.get(7)?,
-                    current_stage_title: r.get(8)?,
-                    queue_position: r.get(9)?,
-                    planned_start_date: r.get(10)?,
-                    planned_delivery_date: r.get(11)?,
-                    started_at: r.get(12)?,
-                    completed_at: r.get(13)?,
-                    cancelled_at: r.get(14)?,
-                    revision: r.get(15)?,
-                    created_at: r.get(16)?,
-                    updated_at: r.get(17)?,
-                })
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<i64>>(3)?,
+                    r.get::<_, Option<String>>(4)?,
+                    r.get::<_, Option<String>>(5)?,
+                    r.get::<_, Option<String>>(6)?,
+                    r.get::<_, i64>(7)?,
+                ))
             },
         )
         .optional()?
         .ok_or_else(|| AppError::not_found("订单不存在"))?;
-    Ok(row)
-}
 
-pub fn count_orders(conn: &Connection) -> AppResult<i64> {
-    Ok(conn.query_row("SELECT COUNT(*) FROM orders", [], |r| r.get(0))?)
+    if let Some(id) = &client_id {
+        let exists: Option<String> = tx
+            .query_row("SELECT id FROM clients WHERE id = ?1", [id], |r| r.get(0))
+            .optional()?;
+        if exists.is_none() {
+            return Err(AppError::not_found("选择的客户不存在"));
+        }
+    }
+
+    // 内容完全一致时视为保存成功，不再 bump revision。
+    // 这样"保存成功但响应丢失后重试"不会误报冲突。
+    let unchanged = current.0 == title
+        && current.1 == client_id
+        && current.2 == commission_type
+        && current.3 == input.amount_cents
+        && current.4 == note
+        && current.5 == start_date
+        && current.6 == delivery_date;
+
+    if unchanged {
+        let view = load(&tx, &input.order_id)?;
+        tx.commit()?;
+        return Ok(view);
+    }
+
+    if current.7 != input.expected_revision {
+        return Err(AppError::conflict(format!(
+            "订单已被修改（当前版本 {}，你基于 {}）。请刷新后重试。",
+            current.7, input.expected_revision
+        )));
+    }
+
+    let now = timezone::now_timestamp();
+    let changed = tx.execute(
+        "UPDATE orders
+         SET title = ?1, client_id = ?2, commission_type = ?3, amount_cents = ?4, note = ?5,
+             planned_start_date = ?6, planned_delivery_date = ?7,
+             revision = revision + 1, updated_at = ?8
+         WHERE id = ?9 AND revision = ?10",
+        params![
+            title,
+            client_id,
+            commission_type,
+            input.amount_cents,
+            note,
+            start_date,
+            delivery_date,
+            now,
+            input.order_id,
+            input.expected_revision
+        ],
+    )?;
+    if changed != 1 {
+        return Err(AppError::conflict("保存被并发修改阻断，请刷新后重试"));
+    }
+
+    let view = load(&tx, &input.order_id)?;
+    tx.commit()?;
+    Ok(view)
 }
