@@ -1,0 +1,125 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>UX-05 Phase A 原型</title>
+<style>
+:root{--bg:#f5f7fa;--surface:#fff;--line:#dbe3ec;--line2:#c7d3e0;--text:#16212c;--muted:#5b6b7c;--accent:#3f6f9e;--soft:rgba(63,111,158,.1);--warn:#b4543f}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.5 -apple-system,"PingFang SC",sans-serif}
+.wrap{padding:18px;display:flex;flex-direction:column;gap:24px}
+.tag{font:600 11px/1 ui-monospace,monospace;color:#fff;background:#16212c;padding:4px 8px;border-radius:5px;display:inline-block;margin-bottom:6px}
+.cap{font-size:11px;color:var(--muted);margin:0 0 8px}
+.page{background:var(--surface);border:1px solid var(--line);border-radius:14px}
+.head{padding:12px 16px}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.grow{flex:1 1 auto;min-width:0}
+h1{font-size:16px;margin:0}.sub{font-size:11px;color:var(--muted);margin:2px 0 0}
+.btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 11px;font:inherit;color:var(--text);font-size:12px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.ghost{border-color:transparent;color:var(--muted)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.seg span{padding:4px 10px;font-size:12px;color:var(--muted)}
+.seg span.on{background:var(--soft);color:var(--text);font-weight:600}
+.sb{flex:0 1 340px;min-width:180px;max-width:340px;display:flex;border:1px solid var(--line);border-radius:8px;background:#fff}
+.sb input{border:0;background:transparent;padding:5px 8px;font:inherit;font-size:12px;flex:1;min-width:0;color:var(--text);outline:none}
+.sb .x{width:24px;display:grid;place-items:center;color:var(--muted);font-size:14px}
+.cond{display:flex;align-items:center;gap:6px;padding:6px 16px;border-top:1px dashed var(--line);flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--soft);background:var(--soft);color:var(--accent);border-radius:999px;padding:2px 8px;font-size:11px;white-space:nowrap}
+.chip b{font-weight:600}
+.chip .rm{color:var(--muted);font-size:12px}
+.link{border:0;background:none;color:var(--accent);font:inherit;font-size:11px;cursor:pointer;padding:0 2px}
+.body{padding:14px 16px;border-top:1px solid var(--line)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(212px,1fr));gap:10px}
+.card{border:1px solid var(--line);border-radius:10px;background:#fff;padding:9px 10px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.card .t{font-size:12.5px;font-weight:600;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .m{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--muted);min-width:0}
+.card .m span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card .f{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+.card .tags{display:flex;gap:4px;flex:0 0 auto}
+.card .tags .chip{background:#fdeeea;border-color:#f6d6ce;color:var(--warn)}
+.stage{font-size:10px;border:1px solid var(--line2);border-radius:5px;padding:1px 5px;color:var(--muted);white-space:nowrap;flex:0 0 auto}
+.card .acts{display:flex;gap:6px;align-items:center}
+.card .acts .btn{padding:3px 8px;font-size:11px}
+.card .acts .dots{width:24px;padding:0;text-align:center;flex:0 0 auto}
+.mini{font-size:10px;color:var(--muted)}
+.stages{display:flex;gap:6px;flex-wrap:wrap;padding:8px 16px;border-top:1px solid var(--line);align-items:center}
+</style></head><body><div class="wrap">
+
+<div><div class="tag">HEAD-NEW · 默认态（无筛选）</div>
+<p class="cap">主栏：标题+数量 / 视图切换 / 新建。工具栏：搜索（限宽 340）+ 筛选 + 导出。无筛选时不显示条件行。</p>
+<div class="page">
+  <div class="head">
+    <div class="row"><div><h1>订单</h1><p class="sub">4 张 · 活动 4</p></div>
+      <div class="grow"></div>
+      <div class="seg"><span>卡片</span><span class="on">看板</span><span>表格</span></div>
+      <button class="btn primary">新建</button></div>
+    <div class="row" style="margin-top:10px">
+      <div class="sb"><input value="" placeholder="搜索标题 / 编号 / 客户 / 来源"><span class="x"></span></div>
+      <button class="btn">筛选 ▾</button>
+      <div class="grow"></div>
+      <button class="btn ghost">导出</button>
+    </div>
+  </div>
+</div></div>
+
+<div><div class="tag">HEAD-NEW · 筛选生效态</div>
+<p class="cap">条件行只在有筛选时出现：单项 × 移除 + 清除全部。不占位、不重复控件。</p>
+<div class="page">
+  <div class="head">
+    <div class="row"><div><h1>订单</h1><p class="sub">2/4 张 · 活动 2</p></div>
+      <div class="grow"></div>
+      <div class="seg"><span>卡片</span><span class="on">看板</span><span>表格</span></div>
+      <button class="btn primary">新建</button></div>
+    <div class="row" style="margin-top:10px">
+      <div class="sb"><input value="双人" ><span class="x">×</span></div>
+      <button class="btn">筛选 ▾</button>
+      <div class="grow"></div>
+      <button class="btn ghost">导出</button>
+    </div>
+  </div>
+  <div class="cond">
+    <span class="mini">生效：</span>
+    <span class="chip"><b>来源</b> 米画师 <span class="rm">×</span></span>
+    <span class="chip"><b>状态</b> 活动 <span class="rm">×</span></span>
+    <span class="chip"><b>阶段</b> 线稿 <span class="rm">×</span></span>
+    <button class="link">清除全部</button>
+  </div>
+</div></div>
+
+<div><div class="tag">OVERVIEW-FLAT · 扁平总览 + 模板阶段筛选</div>
+<p class="cap">不再按阶段分列。所有订单同一网格；阶段与模板作为筛选条件；卡片自带当前阶段标签。</p>
+<div class="page">
+  <div class="head">
+    <div class="row"><div><h1>订单总览</h1><p class="sub">4 张 · 全部流程</p></div>
+      <div class="grow"></div><div class="seg"><span class="on">总览</span><span>聚焦</span></div></div>
+  </div>
+  <div class="stages">
+    <span class="mini">流程：</span>
+    <button class="btn" style="font-size:11px">全部流程 ▾</button>
+    <span class="chip">全部阶段</span>
+    <span class="chip">草稿</span><span class="chip">线稿</span><span class="chip">固有色</span><span class="chip">细化</span>
+    <span class="mini">· 插画 B：构思 初稿 修改 定稿</span>
+  </div>
+  <div class="body">
+    <div class="grid">
+      <div class="card"><div class="t">双完成演示稿</div><div class="m"><span>林小满</span><span>¥880</span></div>
+        <div class="f"><span class="stage">草稿</span><span class="tags"><span class="chip">三日内到期</span></span></div>
+        <div class="f"><span>2026-11-20</span><span class="mini">插画 A</span></div></div>
+      <div class="card"><div class="t">跨月完成稿</div><div class="m"><span>林小满</span><span>¥880</span></div>
+        <div class="f"><span class="stage">线稿</span></div><div class="f"><span>2026-11-20</span><span class="mini">插画 A</span></div></div>
+      <div class="card"><div class="t">这是一个非常非常长的中文订单标题用于测试换行与溢出处理</div><div class="m"><span>林小满</span><span>¥5250</span></div>
+        <div class="f"><span class="stage">固有色</span></div><div class="f"><span>2026-11-28</span><span class="mini">插画 B</span></div></div>
+      <div class="card"><div class="t">封面主视觉重绘</div><div class="m"><span>未分配</span><span>未知</span></div>
+        <div class="f"><span class="stage">定稿</span></div><div class="f"><span>未排期</span><span class="mini">插画 B</span></div></div>
+    </div>
+  </div>
+</div></div>
+
+<div><div class="tag">CARD-A · 轻量快捷操作</div>
+<p class="cap">卡片底部保留「下一阶段」与紧凑 ⋯；复杂跳转进详情。适合浏览为主。</p>
+<div class="page"><div class="body"><div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+  <div class="card"><div class="t">双完成演示稿</div><div class="m"><span>林小满</span><span>¥880</span></div>
+    <div class="f"><span class="stage">草稿</span><span class="tags"><span class="chip">三日内到期</span></span></div>
+    <div class="acts"><button class="btn">→ 线稿</button><button class="btn dots">⋯</button></div></div>
+  <div class="card"><div class="t">双完成演示稿</div><div class="m"><span>林小满</span><span>¥880</span></div>
+    <div class="f"><span class="stage">草稿</span><span class="tags"><span class="chip">三日内到期</span></span></div>
+    <div class="f mini">操作在详情里（极简卡片）</div></div>
+</div></div></div>
+
+</div></body></html>
