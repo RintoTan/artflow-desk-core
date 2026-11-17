@@ -196,6 +196,9 @@ fixtures.list_orders = [
 ];
 fixtures.get_order = (args) => fixtures.list_orders.find((item) => item.id === args?.orderId) ?? fixtures.list_orders[0];
 
+// 设置页会读图标变体；给它一个稳定值，截图才有意义。
+fixtures.ui_icon_get = { variant: "orbit", storedVariant: null, defaultVariant: "orbit" };
+
 // 深色主题由后端设置决定，不是 localStorage，所以必须在夹具里给。
 if (process.env.PROBE_DARK === "1") {
   fixtures.ui_theme_get = {
@@ -577,6 +580,19 @@ if (process.env.PROBE_TOOLTIP === "1") {
   const closed = await run(`!document.querySelector(".title-tooltip")`);
 
   console.log("TOOLTIP", JSON.stringify({ before, shown, afterScroll, closedAfterScroll: closed }, null, 2));
+}
+
+// PROBE_SHOT=/path.png：把当前视口截下来，供人眼复核（Blink，不是 WKWebView）。
+if (process.env.PROBE_SHOT) {
+  const shot = await send("Page.captureScreenshot", {
+    format: "png",
+    captureBeyondViewport: false,
+  });
+  if (shot.result?.data) {
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(process.env.PROBE_SHOT, Buffer.from(shot.result.data, "base64"));
+    console.log("SHOT", process.env.PROBE_SHOT);
+  }
 }
 
 const experiment = process.env.EXPERIMENT === "1";

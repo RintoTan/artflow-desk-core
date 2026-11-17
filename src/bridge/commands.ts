@@ -351,6 +351,22 @@ export const themeApi = {
     invoke<ThemeInfo>("ui_theme_set", { mode, accent }),
 };
 
+// ---------------------------------------------------------------- DEV-06B 应用图标
+
+export type IconInfo = {
+  /** orbit / layers / wave-a，已校验 */
+  variant: string;
+  /** 库里的原始值，用于识别"配置损坏" */
+  storedVariant: string | null;
+  /** 后端认定的默认变体，界面不必再硬编码一份 */
+  defaultVariant: string;
+};
+
+export const iconApi = {
+  get: () => invoke<IconInfo>("ui_icon_get"),
+  set: (variant: string) => invoke<IconInfo>("ui_icon_set", { variant }),
+};
+
 export const preferenceApi = {
   get: (key: string) => invoke<string | null>("preference_get", { key }),
   set: (key: string, value: string) => invoke<string | null>("preference_set", { key, value }),

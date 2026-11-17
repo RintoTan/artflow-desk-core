@@ -13,6 +13,8 @@ pub const KEY_LIST_DENSITY: &str = "list_density";
 pub const KEY_THEME_MODE: &str = "ui.theme_mode";
 /// 自定义强调色（#rrggbb）；空表示用主题自带强调色。
 pub const KEY_THEME_ACCENT: &str = "ui.accent";
+/// 应用图标变体：orbit / layers / wave-a。只存标识，不存图像。
+pub const KEY_ICON_VARIANT: &str = "ui.icon_variant";
 pub const KEY_STARTUP_PAGE: &str = "startup_page";
 pub const KEY_ACTIVE_LIGHT_THEME: &str = "active_light_theme";
 pub const KEY_ACTIVE_DARK_THEME: &str = "active_dark_theme";

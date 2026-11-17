@@ -1,5 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { api, describeError, type TimezoneInfo } from "../bridge/commands";
+import {
+  DEFAULT_ICON_VARIANT,
+  ICON_DESCRIPTION,
+  ICON_LABEL,
+  ICON_VARIANTS,
+  clearIconPreview,
+  hasIconPreview,
+  iconAsset,
+  persistIcon,
+  savedIcon,
+  setIconPreview,
+  subscribeIcon,
+  type IconVariant,
+} from "../lib/appIcon";
 import { usePageShortcuts } from "../lib/shortcuts";
 import { useUnsavedGuard } from "../lib/unsavedRegistry";
 import {
@@ -29,6 +43,15 @@ const COMMON_ZONES = [
   "UTC",
 ];
 
+/** 离页提示要说清"哪些东西还没存"，否则用户不知道关掉会丢什么。 */
+function dirtyLabel(parts: { timezoneDirty: boolean; themeDirty: boolean; iconDirty: boolean }) {
+  const names: string[] = [];
+  if (parts.themeDirty) names.push("主题");
+  if (parts.iconDirty) names.push("应用图标");
+  if (parts.timezoneDirty) names.push("工作时区");
+  return names.length ? names.join("与") : "设置";
+}
+
 const MODE_LABEL: Record<ThemeMode, string> = {
   arctic: "Arctic Blue（默认浅色）",
   dark: "深色",
@@ -44,8 +67,12 @@ export default function SettingsPage() {
 
   const [themeDraft, setThemeDraft] = useState<ThemeChoice>(() => savedChoice());
   const [themeSaved, setThemeSaved] = useState<ThemeChoice>(() => savedChoice());
+  const [iconDraft, setIconDraft] = useState<IconVariant>(() => savedIcon());
+  const [iconSaved, setIconSaved] = useState<IconVariant>(() => savedIcon());
   const themeDirtyRef = useRef(false);
+  const iconDirtyRef = useRef(false);
   const syncedRef = useRef(false);
+  const iconSyncedRef = useRef(false);
 
   useEffect(() => {
     api
@@ -72,17 +99,37 @@ export default function SettingsPage() {
     [],
   );
 
+  // 图标同理：后端读盘完成后才同步一次，不覆盖用户已经点过的预览。
+  useEffect(
+    () =>
+      subscribeIcon(() => {
+        if (iconDirtyRef.current || iconSyncedRef.current || hasIconPreview()) return;
+        const next = savedIcon();
+        setIconSaved(next);
+        setIconDraft(next);
+        iconSyncedRef.current = true;
+      }),
+    [],
+  );
+
   const timezoneDirty =
     info !== null && draft.trim() !== "" && draft.trim() !== info.workingTimezone;
   const themeDirty =
     themeDraft.mode !== themeSaved.mode ||
     normalizeAccent(themeDraft.accent) !== normalizeAccent(themeSaved.accent);
-  const dirty = timezoneDirty || themeDirty;
+  const iconDirty = iconDraft !== iconSaved;
+  const dirty = timezoneDirty || themeDirty || iconDirty;
   themeDirtyRef.current = themeDirty;
+  iconDirtyRef.current = iconDirty;
 
   function previewTheme(next: ThemeChoice) {
     setThemeDraft(next);
     setPreview(next);
+  }
+
+  function previewIcon(next: IconVariant) {
+    setIconDraft(next);
+    setIconPreview(next);
   }
 
   async function apply(): Promise<string | null> {
@@ -98,6 +145,15 @@ export default function SettingsPage() {
           return themeError;
         }
         setThemeSaved(savedChoice());
+      }
+      if (iconDirty) {
+        const iconError = await persistIcon(iconDraft);
+        if (iconError) {
+          // 图标没存上：保留预览与草稿，主题已经落库的不回滚。
+          setError(`应用图标：${iconError}`);
+          return iconError;
+        }
+        setIconSaved(savedIcon());
       }
       if (timezoneDirty) {
         const next = await api.timezoneSet(draft.trim());
@@ -117,12 +173,15 @@ export default function SettingsPage() {
 
   useUnsavedGuard({
     id: "settings",
-    label: timezoneDirty ? "工作时区与主题" : "主题",
+    // 传函数：保存掉一项之后，提示里就不该再写着它
+    label: () => dirtyLabel({ timezoneDirty, themeDirty, iconDirty }),
     dirty,
     save: () => apply(),
     discard: () => {
       clearPreview();
+      clearIconPreview();
       setThemeDraft(themeSaved);
+      setIconDraft(iconSaved);
       if (info) setDraft(info.workingTimezone);
     },
   });
@@ -232,6 +291,67 @@ export default function SettingsPage() {
           )}
         </div>
 
+        <div className="field field-wide">
+          <span>应用图标</span>
+          <div className="icon-grid" role="group" aria-label="应用图标">
+            {ICON_VARIANTS.map((variant) => {
+              const selected = iconDraft === variant;
+              return (
+                <button
+                  key={variant}
+                  type="button"
+                  className={selected ? "icon-card icon-card-active" : "icon-card"}
+                  aria-pressed={selected}
+                  aria-label={`应用图标 ${ICON_LABEL[variant]}（${ICON_DESCRIPTION[variant]}）`}
+                  onClick={() => previewIcon(variant)}
+                >
+                  <img
+                    className="icon-card-art"
+                    src={iconAsset(variant)}
+                    alt=""
+                    aria-hidden="true"
+                    width={64}
+                    height={64}
+                  />
+                  <span className="icon-card-name">{ICON_LABEL[variant]}</span>
+                  <span className="icon-card-desc">{ICON_DESCRIPTION[variant]}</span>
+                  <span className="icon-card-state" aria-hidden={!selected}>
+                    {selected ? (iconSaved === variant ? "已保存" : "未保存") : ""}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="icon-scale-row">
+            <span className="muted">32px 实际大小</span>
+            {ICON_VARIANTS.map((variant) => (
+              <img
+                key={variant}
+                className="icon-scale-item"
+                src={iconAsset(variant)}
+                alt={ICON_LABEL[variant]}
+                width={32}
+                height={32}
+              />
+            ))}
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() => previewIcon(DEFAULT_ICON_VARIANT)}
+            >
+              恢复默认图标
+            </button>
+          </div>
+          <p className="hint">
+            点卡片立刻预览左上角品牌图标；只有点「保存设置」才会写入。图标只换品牌图形，
+            不会改动主题强调色、订单状态色和错误提示色。
+          </p>
+          <p className="hint">
+            目前只切换<b>应用内</b>品牌图标。macOS Dock 图标与安装包图标不随此设置变化，
+            原因与可选方案见 <code>docs/DEV06B-ICON-RESULTS.md</code>。
+          </p>
+        </div>
+
         <div className="actions">
           <button type="button" className="btn btn-primary" onClick={apply} disabled={busy || !dirty}>
             {busy ? "保存中…" : "保存设置"}
@@ -242,7 +362,9 @@ export default function SettingsPage() {
             disabled={!dirty || busy}
             onClick={() => {
               clearPreview();
+              clearIconPreview();
               setThemeDraft(themeSaved);
+              setIconDraft(iconSaved);
               if (info) setDraft(info.workingTimezone);
             }}
           >
@@ -264,7 +386,12 @@ export default function SettingsPage() {
         )}
 
         {message && <p className="notice notice-ok">{message}</p>}
-        {error && <p className="notice notice-error">{error}</p>}
+        {/* 保存失败必须被读屏念出来，否则用户会以为已经存上了 */}
+        {error && (
+          <p className="notice notice-error" role="alert">
+            {error}
+          </p>
+        )}
       </section>
 
       <section className="panel">

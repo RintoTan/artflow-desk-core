@@ -50,6 +50,8 @@ const APPROVED: &[&str] = &[
     "confirm_close",
     "ui_theme_get",
     "ui_theme_set",
+    "ui_icon_get",
+    "ui_icon_set",
 ];
 
 /// 解析 `generate_handler![...]` 并取每项最后一段标识符。

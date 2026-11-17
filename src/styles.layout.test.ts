@@ -182,6 +182,24 @@ describe("DEV-06B-UI-POLISH 规则守卫", () => {
     expect(css).not.toContain("@media (max-width: 980px)");
   });
 
+  it("品牌图标用真实素材：不再叠背景色或矩形阴影，避免画出方角", () => {
+    const mark = rule(".brand-mark");
+    expect(mark).toMatch(/filter:\s*drop-shadow/);
+    expect(mark).not.toMatch(/background:/);
+    expect(mark).not.toMatch(/border-radius/);
+  });
+
+  it("图标预览卡：选中态只改边框底色，尺寸不变", () => {
+    const card = rule(".icon-card");
+    expect(card).toMatch(/border:\s*1px solid var\(--border\)/);
+    // 选中态不得改 padding / width，否则点击会跳一下
+    const active = rule(".icon-card-active");
+    expect(active).toMatch(/border-color:\s*var\(--accent\)/);
+    expect(active).not.toMatch(/padding|width|height/);
+    expect(rule(".icon-card-art")).toMatch(/width:\s*64px/);
+    expect(rule(".icon-scale-item")).toMatch(/width:\s*32px/);
+  });
+
   it("长标题气泡：固定定位、不拦截指针、可断行，且两种主题都有反向配色", () => {
     const tip = rule(".title-tooltip");
     expect(tip).toMatch(/position:\s*fixed/);

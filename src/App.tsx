@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 
 import { api, describeError } from "./bridge/commands";
 import UnsavedChangesDialog from "./components/UnsavedChangesDialog";
+import {
+  currentIcon,
+  iconAsset,
+  loadIcon,
+  subscribeIcon,
+} from "./lib/appIcon";
 import { subscribeModalStack, topModal } from "./lib/modalStack";
 import {
   applyTheme,
@@ -12,7 +18,12 @@ import {
   systemPrefersDark,
   watchSystemAppearance,
 } from "./lib/theme";
-import { activeGuard, dirtyGuards, useHasUnsavedDraft } from "./lib/unsavedRegistry";
+import {
+  activeGuard,
+  dirtyGuards,
+  guardLabel,
+  useHasUnsavedDraft,
+} from "./lib/unsavedRegistry";
 
 type NavIconName =
   | "dashboard"
@@ -123,6 +134,12 @@ export default function App() {
     applyTheme(document.documentElement, currentChoice(), systemPrefersDark());
   }, [themeTick]);
 
+  // 应用图标：只有品牌图标跟着变，主题色与状态色不受影响。
+  const iconVariant = useSyncExternalStore(subscribeIcon, currentIcon, currentIcon);
+  useEffect(() => {
+    void loadIcon();
+  }, []);
+
   useEffect(() => {
     try {
       window.localStorage.setItem("minidesk.sidebar", collapsed ? "collapsed" : "expanded");
@@ -169,7 +186,7 @@ export default function App() {
         return;
       }
       setCloseError(null);
-      setDirtyLabels(dirtyGuards().map((guard) => guard.label));
+      setDirtyLabels(dirtyGuards().map((guard) => guardLabel(guard)));
       setCloseKind(kind);
     },
     [finishClose],
@@ -267,7 +284,7 @@ export default function App() {
         if (!dirtyGuards().some((item) => item.id === guard.id)) continue;
         const error = await guard.save();
         if (error) {
-          setCloseError(`${guard.label}：${error}`);
+          setCloseError(`${guardLabel(guard)}：${error}`);
           return;
         }
       }
@@ -303,7 +320,13 @@ export default function App() {
     <div className={collapsed ? "shell shell-sidebar-collapsed" : "shell"}>
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true" />
+          <img
+            className="brand-mark"
+            src={iconAsset(iconVariant)}
+            alt=""
+            aria-hidden="true"
+            data-icon-variant={iconVariant}
+          />
           <div className="brand-text">
             <strong>ArtFlow miniDesk</strong>
             <small>{qa ? "QA 测试环境" : "本地委托台账"}</small>

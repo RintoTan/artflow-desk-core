@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ThemeInfo } from "../bridge/commands";
-import { activeGuard, resetUnsavedGuards } from "../lib/unsavedRegistry";
+import { activeGuard, guardLabel, resetUnsavedGuards } from "../lib/unsavedRegistry";
 import { currentChoice, loadTheme, resetThemeForTests } from "../lib/theme";
 
 let themeInfo: ThemeInfo = { mode: "arctic", accent: null, storedMode: null };
@@ -67,7 +67,10 @@ describe("设置页主题编辑", () => {
     await waitFor(() => expect(currentChoice().mode).toBe("dark"));
     expect(themeSet).not.toHaveBeenCalled();
     // 有草稿，关窗/离页保护应当接管
-    expect(activeGuard()?.label).toContain("主题");
+    // label 现在是函数：一个页面里可能同时有主题/图标/时区三份草稿
+    const guard = activeGuard();
+    expect(guard).not.toBeNull();
+    expect(guardLabel(guard!)).toContain("主题");
   });
 
   it("保存后写库并清掉草稿", async () => {

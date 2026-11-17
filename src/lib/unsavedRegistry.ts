@@ -12,8 +12,12 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
  */
 export type UnsavedGuard = {
   id: string;
-  /** 给用户看的名字（出现在关窗确认与错误里） */
-  label: string;
+  /**
+   * 给用户看的名字（出现在关窗确认与错误里）。
+   * 可以是函数：一个页面里可能同时有主题、图标、时区三份草稿，
+   * 提示要说清"这次到底丢的是什么"，而不是永远写死一个名字。
+   */
+  label: string | (() => string);
   isDirty: () => boolean;
   /** 保存当前草稿。返回 null 表示成功；返回字符串表示失败原因（窗口必须保持打开）。 */
   save: () => Promise<string | null>;
@@ -62,6 +66,11 @@ export function activeGuard(): UnsavedGuard | null {
   return dirtyGuards()[0] ?? null;
 }
 
+/** 取 guard 的当前显示名。函数形式每次求值，字符串原样返回。 */
+export function guardLabel(guard: UnsavedGuard): string {
+  return typeof guard.label === "function" ? guard.label() : guard.label;
+}
+
 export function hasUnsavedDraft(): boolean {
   return activeGuard() !== null;
 }
@@ -94,7 +103,7 @@ export function resetUnsavedGuards(): void {
  */
 export function useUnsavedGuard(guard: {
   id: string;
-  label: string;
+  label: string | (() => string);
   dirty: boolean;
   save: () => Promise<string | null>;
   discard: () => void;
@@ -114,7 +123,11 @@ export function useUnsavedGuard(guard: {
   useEffect(() => {
     const unregister = registerUnsavedGuard({
       id: idRef.current,
-      label: labelRef.current,
+      // 传函数而不是当次快照，否则标签永远停在挂载那一刻
+      label: () => {
+        const current = labelRef.current;
+        return typeof current === "function" ? current() : current;
+      },
       isDirty: () => dirtyRef.current,
       save: () => saveRef.current(),
       discard: () => discardRef.current(),
