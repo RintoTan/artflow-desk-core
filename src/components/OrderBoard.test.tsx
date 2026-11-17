@@ -108,12 +108,12 @@ describe("OrderBoard 真实交互", () => {
     render(<OrderBoard {...baseProps({ onApply })} />);
 
     drop(screen.getByText("线稿").closest(".board-col") as HTMLElement, "o1");
-    const dialog = await screen.findByRole("dialog", { name: "确认阶段变更" });
+    const dialog = await screen.findByRole("alertdialog");
     expect(dialog).toHaveTextContent("推进阶段");
     expect(dialog).toHaveTextContent("线稿");
 
     await user.click(screen.getByRole("button", { name: "取消" }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(onApply).not.toHaveBeenCalled();
   });
 
@@ -173,5 +173,42 @@ describe("OrderBoard 真实交互", () => {
     // 四张单都在"线稿"列：数量 4，已知合计只有 100，未知 3 张单独标注。
     expect(screen.getByText(/4 · ¥100/)).toBeInTheDocument();
     expect(screen.getByText(/\+3 未知/)).toBeInTheDocument();
+  });
+
+  it("空阶段也能作为放置目标：列存在但没有卡片", () => {
+    render(<OrderBoard {...baseProps({ orders: [order()] })} />);
+    // 只有一张单，但它自己的后续阶段都作为空列出现，可以拖过去。
+    const titles = Array.from(document.querySelectorAll(".board-col-title")).map(
+      (n) => n.textContent,
+    );
+    expect(titles).toEqual(["草稿", "线稿", "上色"]);
+    expect(document.querySelectorAll(".board-empty")).toHaveLength(2);
+  });
+
+  it("键盘可达：卡片上的「→ 下一阶段」按钮能打开同一个确认框", async () => {
+    const user = userEvent.setup();
+    const onApply = vi.fn(async () => {});
+    render(<OrderBoard {...baseProps({ onApply })} />);
+
+    // o1 在草稿列，下一阶段是线稿。
+    await user.click(screen.getAllByRole("button", { name: "→ 线稿" })[0]!);
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent("线稿");
+
+    await user.click(screen.getByRole("button", { name: "确认变更" }));
+    expect(onApply).toHaveBeenCalledTimes(1);
+  });
+
+  it("Esc 取消确认框且零写入", async () => {
+    const user = userEvent.setup();
+    const onApply = vi.fn(async () => {});
+    render(<OrderBoard {...baseProps({ onApply })} />);
+
+    drop(screen.getByText("线稿").closest(".board-col") as HTMLElement, "o1");
+    await screen.findByRole("alertdialog");
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(onApply).not.toHaveBeenCalled();
   });
 });

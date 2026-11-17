@@ -349,8 +349,8 @@ export default function App() {
       <main className="main">
         {qa && (
           <p className="qa-banner" role="status">
-            ArtFlow Desk Core — QA 测试环境（{qa.scenario === "clean" ? "空白场景" : "预置场景"}）·
-            数据目录与正式应用完全隔离，这里的订单不会出现在正式台账里
+            <strong>QA 测试环境</strong>（{qa.scenario === "clean" ? "空白场景" : "预置场景"}）·
+            数据目录与正式台账完全隔离
           </p>
         )}
         <Outlet />

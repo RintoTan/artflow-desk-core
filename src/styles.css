@@ -2311,13 +2311,15 @@ body:has(.row-dragging) {
 }
 
 .qa-banner {
-  margin: 0 0 16px;
-  padding: 9px 14px;
+  /* 压到一行内：原来两行会吃掉首屏约 70px，但隔离提示必须留着。 */
+  margin: 0 0 12px;
+  padding: 6px 12px;
   border: 1px solid var(--warn);
   border-radius: var(--radius-sm);
   background: var(--warn-soft);
   color: var(--warn);
-  font-size: 12.5px;
+  font-size: 12px;
+  line-height: 1.5;
   letter-spacing: 0.01em;
 }
 
@@ -2962,3 +2964,97 @@ body:has(.row-dragging) {
 }
 
 
+
+/* ---------------------------------------------------------------- 订单页工作区
+   卡片 = 原有并排双栏；看板/表格 = 占满主工作区，详情以右侧抽屉覆盖。
+   抽屉用 fixed 定位，不参与网格，避免把宽视图挤窄。
+   ------------------------------------------------------------------------ */
+
+.orders-detail-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(560px, 92vw);
+  z-index: 40;
+  overflow-y: auto;
+  padding: 18px 20px 28px;
+  background: var(--surface);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: -18px 0 40px rgba(15, 22, 30, 0.18);
+}
+
+.orders-detail.is-hidden {
+  display: none;
+}
+
+.drawer-close {
+  position: sticky;
+  top: 0;
+  float: right;
+  z-index: 1;
+  margin: -6px -6px 8px 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.drawer-close:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.board-card-move {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  padding: 4px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.board-card-move:hover,
+.board-card-move:focus-visible {
+  color: var(--text);
+  border-color: var(--accent, #5a7c9b);
+  border-style: solid;
+}
+
+/* 视图切换与筛选行：统一高度，避免切视图时控件跳动 */
+.list-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.list-tools .list-search {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
+.notice {
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.notice-warn {
+  border: 1px solid var(--warn);
+  background: var(--warn-soft);
+  color: var(--warn);
+}

@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 
 import type { OrderView } from "../bridge/commands";
-import { buildBoard, planStageMove, type StageMovePlan } from "../lib/board";
+import { advanceBlockedReason, buildBoard, planStageMove, type StageMovePlan } from "../lib/board";
+import ConfirmDialog from "./ConfirmDialog";
 import { riskBadge } from "../lib/ordersView";
 import { TruncatedTitle } from "./TitleTooltip";
 
@@ -45,6 +46,24 @@ export default function OrderBoard({
 
   const columns = model.columns;
   const columnCount = columns.length;
+
+  /** 该订单自己的下一个阶段名（用于键盘可达的"推进"按钮）。 */
+  function nextStageTitle(order: OrderView): string | null {
+    if (advanceBlockedReason(order)) return null;
+    const next = order.stages[(order.currentStageIndex ?? 0) + 1];
+    return next ? next.title : null;
+  }
+
+  function requestNext(order: OrderView) {
+    const title = nextStageTitle(order);
+    if (!title) return;
+    const plan = planStageMove(order, title);
+    if (plan.kind === "advance" || plan.kind === "rework") {
+      setPending({ order, plan });
+    } else if (plan.kind === "blocked") {
+      onError(plan.reason);
+    }
+  }
 
   function handleDrop(event: React.DragEvent, title: string) {
     event.preventDefault();
@@ -138,6 +157,16 @@ export default function OrderBoard({
                       </span>
                     </span>
                   </button>
+                  {nextStageTitle(order) && (
+                    <button
+                      type="button"
+                      className="board-card-move"
+                      title={`推进到「${nextStageTitle(order)}」`}
+                      onClick={() => requestNext(order)}
+                    >
+                      → {nextStageTitle(order)}
+                    </button>
+                  )}
                 </article>
               ))}
               {column.orders.length === 0 && <p className="board-empty muted">拖到这里</p>}
@@ -180,53 +209,38 @@ export default function OrderBoard({
         </div>
       )}
 
-      {pending && (
-        <div className="board-confirm" role="dialog" aria-modal="true" aria-label="确认阶段变更">
-          <div className="board-confirm-body">
-            <h3>
-              {pending.plan.kind === "advance" ? "推进阶段" : "返工到更早阶段"}
-            </h3>
+      <ConfirmDialog
+        open={pending !== null}
+        title={pending?.plan.kind === "rework" ? "返工到更早阶段" : "推进阶段"}
+        confirmLabel="确认变更"
+        busy={busy}
+        onCancel={() => setPending(null)}
+        onConfirm={async () => {
+          const current = pending;
+          if (!current) return;
+          setPending(null);
+          await onApply(current.order, current.plan);
+        }}
+      >
+        {pending && (
+          <>
             <p>
               <strong>{pending.order.code}</strong> {pending.order.title}
             </p>
             <p>
-              将执行：
-              {pending.plan.kind === "advance" ? "「推进阶段」" : "「返工」"}
-              ，从「{pending.order.currentStageTitle}」到「
-              <strong>{pending.plan.targetStageTitle}</strong>」
+              将执行{pending.plan.kind === "advance" ? "「推进阶段」" : "「返工」"}：从「
+              {pending.order.currentStageTitle}」到「<strong>{pending.plan.targetStageTitle}</strong>」
               {pending.plan.kind === "rework" && pending.plan.steps > 1
                 ? `（一次退回 ${pending.plan.steps} 个阶段）`
                 : ""}
               。
             </p>
             <p className="muted">
-              这会按现有业务流程记录一条阶段变更记录；不改开工、完成、取消，也不改排队顺序。
+              按现有业务流程记录一条阶段变更；不改开工、完成、取消，也不改排队顺序。
             </p>
-            <div className="board-confirm-actions">
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setPending(null)}
-                disabled={busy}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={busy}
-                onClick={async () => {
-                  const current = pending;
-                  setPending(null);
-                  await onApply(current.order, current.plan);
-                }}
-              >
-                确认变更
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </ConfirmDialog>
 
       {columns.length === 0 && model.finished.length === 0 && (
         <div className="empty">

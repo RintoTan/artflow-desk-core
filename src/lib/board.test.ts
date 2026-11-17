@@ -71,8 +71,13 @@ describe("buildBoard", () => {
       order({ id: "a", currentStageTitle: "细化", stages: stages(["草稿", "细化"], 1) }),
       order({ id: "b", currentStageTitle: " 细化 ", stages: stages(["线稿", "细化"], 1) }),
     ]);
-    expect(board.columns).toHaveLength(1);
-    expect(board.columns[0]!.orders.map((o) => o.id).sort()).toEqual(["a", "b"]);
+    // 草稿 / 细化 / 线稿 三个阶段都来自真实模板，因此三列都在；
+    // 同名「细化」合并成一列。
+    // 两个模板的首阶段都是 0 号位：跨模板时没有"正确"先后，按名称稳定排序。
+    // 顺序只求大致从左到右，不承诺业务含义。
+    expect(board.columns.map((c) => c.title)).toEqual(["线稿", "草稿", "细化"]);
+    const thin = board.columns.find((c) => c.title === "细化")!;
+    expect(thin.orders.map((o) => o.id).sort()).toEqual(["a", "b"]);
   });
 
   it("列按最小阶段序号排序，近似流程顺序", () => {
@@ -81,7 +86,9 @@ describe("buildBoard", () => {
       order({ id: "early", currentIndex: 0 }),
     ]);
     expect(board.columns[0]!.title).toBe("草稿");
-    expect(board.columns[1]!.title).toBe("上色");
+    expect(board.columns[1]!.title).toBe("细化");
+    // 空阶段也算列：一张单也能把卡片拖到"还没人"的下一个阶段。
+    expect(board.columns.map((c) => c.title)).toEqual(["草稿", "细化", "上色", "完稿"]);
   });
 
   it("已完成与已取消不进入阶段列", () => {
@@ -104,6 +111,13 @@ describe("buildBoard", () => {
     expect(column.orders).toHaveLength(3);
     expect(column.knownAmountCents).toBe(15_000);
     expect(column.unknownAmountCount).toBe(1);
+  });
+
+  it("空阶段列存在但没有卡片，不虚构阶段", () => {
+    const board = buildBoard([order({ titles: ["草稿", "完稿"], currentIndex: 0 })]);
+    expect(board.columns.map((c) => c.title)).toEqual(["草稿", "完稿"]);
+    expect(board.columns[1]!.orders).toHaveLength(0);
+    expect(board.columns[1]!.knownAmountCents).toBe(0);
   });
 
   it("未开工订单仍在自己阶段列里", () => {

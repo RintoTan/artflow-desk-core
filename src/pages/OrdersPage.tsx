@@ -115,6 +115,21 @@ function useTimeFormatter(timezone: string | null) {
 
 type ViewMode = "cards" | "board" | "table";
 
+/** 与 Rust `settings::KEY_ORDERS_VIEW_MODE` 必须逐字一致。 */
+const KEY_ORDERS_VIEW = "orders_view_mode";
+const KEY_LIST_DENSITY = "list_density";
+const VIEW_MODES: ViewMode[] = ["cards", "board", "table"];
+
+/** 偏好读取的容错包装：读不到就返回 null，让调用方用自己的默认值。 */
+async function readPreference(key: string): Promise<string | null> {
+  try {
+    const value = await preferenceApi.get(key);
+    return typeof value === "string" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 type Draft = {
   title: string;
   clientId: string;
@@ -181,6 +196,11 @@ export default function OrdersPage() {
   const [workFilter, setWorkFilter] = useState<WorkFilter>("all");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
+  /** 偏好保存失败时的提示：视图仍会切换，但不能假装已经记住。 */
+  const [viewPersistError, setViewPersistError] = useState<string | null>(null);
+  /** 看板/表格模式下详情以右侧抽屉呈现；卡片模式永远并排显示。 */
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const detailVisible = viewMode === "cards" || drawerOpen;
   /** 从客户页跳进来时的稳定 ID 过滤；null = 不按客户过滤 */
   const [clientFilter, setClientFilter] = useState<string | null>(null);
   const [boardCommit, setBoardCommit] = useState<string | null>(null);
@@ -230,6 +250,21 @@ export default function OrdersPage() {
     },
   });
   const formatTime = useTimeFormatter(timezone);
+
+  // Esc 关闭看板/表格的详情抽屉。卡片视图是并排布局，不需要这个手势。
+  useEffect(() => {
+    if (!drawerOpen || viewMode === "cards") return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (!dirty) {
+        setDrawerOpen(false);
+        return;
+      }
+      setNotice("还有未保存的修改：请先「保存」或「撤销」，再关闭详情。");
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [drawerOpen, viewMode, dirty]);
 
   // 光标移动才滚动一次；数据刷新导致的重新渲染不会滚动，避免"滚到错误订单"。
   // block: "nearest" 表示"已可见就不动"，所以不会每按一下就居中。
@@ -325,8 +360,10 @@ export default function OrdersPage() {
           templateApi.list(),
           api.status(),
           queueApi.list(),
-          preferenceApi.get("orders_view_mode"),
-          preferenceApi.get("list_density"),
+          // 偏好读取失败**不能**拖垮整个列表：视图选择只是"上次用哪种看法"，
+          // 读不到就退回默认卡片视图，并把原因留给需要它的人（见 changeView 的提示）。
+          readPreference(KEY_ORDERS_VIEW),
+          readPreference(KEY_LIST_DENSITY),
         ]);
         if (!alive) return;
         setOrders(list);
@@ -337,9 +374,10 @@ export default function OrdersPage() {
         if (densityValue === "compact" || densityValue === "comfortable") {
           setDensity(densityValue);
         }
-        if (viewValue === "cards" || viewValue === "board" || viewValue === "table") {
-          setViewMode(viewValue);
-        }
+        // 未设置或值非法都退回卡片：卡片是产品主工作流。
+        setViewMode(
+          VIEW_MODES.includes(viewValue as ViewMode) ? (viewValue as ViewMode) : "cards",
+        );
         // 从客户页按客户 ID 跳进来：用稳定的 clientId 过滤，不靠名称猜。
         const clientParam = params.get("client");
         if (clientParam) {
@@ -370,12 +408,19 @@ export default function OrdersPage() {
     return now ?? 0;
   }, [timezone]);
 
+  /**
+   * 视图选择会写进偏好；写失败不影响当前这次切换，但要让用户知道"下次不会记住"，
+   * 而不是静默当成功——这正是上一轮 `DENIED` 被藏住的地方。
+   */
   const changeView = useCallback(async (next: ViewMode) => {
     setViewMode(next);
     try {
-      await preferenceApi.set("orders_view_mode", next);
-    } catch {
-      // 偏好写失败只影响下次默认值，不打断当前操作。
+      await preferenceApi.set(KEY_ORDERS_VIEW, next);
+      setViewPersistError(null);
+    } catch (e) {
+      setViewPersistError(
+        `当前视图已切换，但没能记住偏好（${describeError(e)}）。下次打开会回到上次成功保存的视图。`,
+      );
     }
   }, []);
 
@@ -625,6 +670,8 @@ export default function OrdersPage() {
       setManualNav({ kind: "order", orderId });
       return;
     }
+    // 用户主动点开：看板/表格里以抽屉呈现详情（卡片视图本来就并排）。
+    setDrawerOpen(true);
     void selectOrder(orderId);
   }
 
@@ -781,6 +828,11 @@ export default function OrdersPage() {
             ))}
           </select>
         </div>
+        {viewPersistError && (
+          <p className="notice notice-warn" role="status">
+            {viewPersistError}
+          </p>
+        )}
         {clientFilter && (
           <p className="filter-note">
             只显示客户「{clientFilterName ?? "（未知）"}」的订单
@@ -989,6 +1041,11 @@ export default function OrdersPage() {
           </select>
         </div>
 
+        {viewPersistError && (
+          <p className="notice notice-warn" role="status">
+            {viewPersistError}
+          </p>
+        )}
         {clientFilter && (
           <p className="filter-note">
             只显示客户「{clientFilterName ?? "（未知）"}」的订单
@@ -998,6 +1055,11 @@ export default function OrdersPage() {
           </p>
         )}
         {boardCommit && <p className="muted list-hint">正在应用：{boardCommit}</p>}
+        {viewPersistError && (
+          <p className="notice notice-warn" role="status">
+            {viewPersistError}
+          </p>
+        )}
 
         {viewMode === "board" ? (
           <OrderBoard
@@ -1021,7 +1083,29 @@ export default function OrdersPage() {
       </section>
       )}
 
-      <section className="orders-detail">
+      <section
+        className={`orders-detail${viewMode === "cards" ? "" : " orders-detail-drawer"}${
+          detailVisible ? "" : " is-hidden"
+        }`}
+        aria-label={viewMode === "cards" ? undefined : "订单详情面板"}
+        aria-hidden={!detailVisible}
+      >
+        {viewMode !== "cards" && (
+          <button
+            type="button"
+            className="drawer-close"
+            onClick={() => {
+              // 有未保存修改时不静默关闭：草稿会留在内存里，用户以为已经"关掉"了。
+              if (dirty) {
+                setNotice("还有未保存的修改：请先「保存」或「撤销」，再关闭详情。");
+                return;
+              }
+              setDrawerOpen(false);
+            }}
+          >
+            关闭详情
+          </button>
+        )}
         {error && (
           <div className="banner banner-error">
             <span>{error}</span>

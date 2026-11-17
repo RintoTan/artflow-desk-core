@@ -48,22 +48,29 @@ export function buildBoard(orders: OrderView[]): BoardModel {
       finished.push(order);
       continue;
     }
+
+    // 先把该订单**自己的**阶段全部登记为列，再往里放卡片。
+    // 否则空阶段不会出现，只有一张订单时就没有可拖的下一阶段目标
+    // （实测：一张单只能看到自己所在的那一列）。
+    // 这些阶段都来自真实模板，不是虚构出来的。
+    order.stages.forEach((stage, index) => {
+      const key = stageKey(stage.title);
+      const existing = columns.get(key);
+      if (existing) {
+        existing.minIndex = Math.min(existing.minIndex, index);
+      } else {
+        columns.set(key, { title: stage.title, orders: [], minIndex: index });
+      }
+    });
+
     if (!order.currentStageTitle) {
       unassigned.push(order);
       continue;
     }
     const key = stageKey(order.currentStageTitle);
-    const index = order.currentStageIndex ?? Number.MAX_SAFE_INTEGER;
     const existing = columns.get(key);
     if (existing) {
       existing.orders.push(order);
-      existing.minIndex = Math.min(existing.minIndex, index);
-    } else {
-      columns.set(key, {
-        title: order.currentStageTitle,
-        orders: [order],
-        minIndex: index,
-      });
     }
   }
 
