@@ -20,6 +20,7 @@ const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const url = process.argv[2] ?? "http://127.0.0.1:1420/";
 const width = Number(process.argv[3] ?? 900);
 const route = process.argv[4] ?? "/orders";
+const height = Number(process.env.PROBE_HEIGHT ?? 800);
 const port = 9333 + (Number(process.env.PROBE_SLOT ?? 0) || 0);
 
 const profile = mkdtempSync(join(tmpdir(), "layout-probe-"));
@@ -185,8 +186,24 @@ fixtures.list_orders = [
     "这是一个非常非常长的中文订单标题用于测试换行与溢出处理是否会撑破容器宽度",
     3,
   ),
+  // 真的会被两行截断的标题：中文 + 英文 + 一长串不带空格的 token
+  order(
+    "o4",
+    "AF-2026-0004",
+    "封面主视觉重绘与全彩上色第二版修订稿第三轮细化和背景补画以及最终交付前的整体检查IllustrationFullRedrawRevisionWithoutAnySpacesAtAll请勿删改直接覆盖原稿",
+    4,
+  ),
 ];
 fixtures.get_order = (args) => fixtures.list_orders.find((item) => item.id === args?.orderId) ?? fixtures.list_orders[0];
+
+// 深色主题由后端设置决定，不是 localStorage，所以必须在夹具里给。
+if (process.env.PROBE_DARK === "1") {
+  fixtures.ui_theme_get = {
+    mode: "dark",
+    accent: null,
+    storedMode: "dark",
+  };
+}
 
 const mockScript = `
 window.__TAURI_INTERNALS__ = {
@@ -204,6 +221,7 @@ window.__TAURI_INTERNALS__ = {
   metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
 };
 window.isTauri = true;
+${process.env.PROBE_COLLAPSED === "1" ? `try { window.localStorage.setItem("minidesk.sidebar", "collapsed"); } catch {}` : ""}
 `;
 
 const chrome = spawn(
@@ -279,7 +297,7 @@ await send("Page.enable");
 await send("Runtime.enable");
 await send("Emulation.setDeviceMetricsOverride", {
   width,
-  height: 800,
+  height,
   deviceScaleFactor: 1,
   mobile: false,
 });
@@ -313,6 +331,16 @@ const expression = `(() => {
     gridColumns: layout ? cs(layout, "gridTemplateColumns") : null,
     listPosition: list ? cs(list, "position") : null,
     listMaxHeight: list ? cs(list, "maxHeight") : null,
+    listComputed: list
+      ? {
+          height: cs(list, "height"),
+          maxHeight: cs(list, "maxHeight"),
+          minHeight: cs(list, "minHeight"),
+          overflow: cs(list, "overflow"),
+          display: cs(list, "display"),
+          alignSelf: cs(list, "alignSelf"),
+        }
+      : null,
     detailChildren: detail ? detail.children.length : null,
     list: a,
     detail: b,
@@ -343,7 +371,99 @@ const expression = `(() => {
       text: el.textContent.slice(0, 12),
       h: Math.round(el.getBoundingClientRect().height),
       scrollH: el.scrollHeight,
+      clientW: el.clientWidth,
+      scrollW: el.scrollWidth,
     })),
+
+    // 列表卡片内部各块的高度拆分：判断"可滚动区域被谁吃掉"
+    listChrome: list
+      ? {
+          total: Math.round(list.getBoundingClientRect().height),
+          parts: Array.from(list.children).map((el) => ({
+            cls: String(el.className).slice(0, 28),
+            h: Math.round(el.getBoundingClientRect().height),
+          })),
+        }
+      : null,
+    rowsBox: (() => {
+      const el = document.querySelector(".order-rows");
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      const rowH = el.firstElementChild ? el.firstElementChild.getBoundingClientRect().height : 0;
+      return {
+        h: Math.round(r.height),
+        clientH: el.clientHeight,
+        scrollH: el.scrollHeight,
+        rowHeight: Math.round(rowH),
+        visibleRows: rowH ? Math.floor(el.clientHeight / rowH) : null,
+      };
+    })(),
+
+    // 导航几何：命中区、图标盒、SVG、文字的实际矩形
+    navGeom: Array.from(document.querySelectorAll(".nav-item")).map((el) => {
+      const box = el.querySelector(".nav-icon-box");
+      const svg = el.querySelector("svg");
+      const label = el.querySelector(".nav-label");
+      const rr = (n) => {
+        if (!n) return null;
+        const r = n.getBoundingClientRect();
+        return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), cy: Math.round(r.y + r.height / 2) };
+      };
+      const item = rr(el);
+      const bx = rr(box);
+      const sx = rr(svg);
+      const lb = rr(label);
+      const cs2 = getComputedStyle(el);
+      return {
+        label: el.textContent.trim(),
+        item,
+        box: bx,
+        svg: sx,
+        text: lb,
+        // 图标盒中心 - 命中区中心：越接近 0 越居中
+        boxOffsetX: item && bx ? Math.round(bx.x + bx.w / 2 - (item.x + item.w / 2)) : null,
+        boxOffsetY: item && bx ? bx.cy - item.cy : null,
+        svgOffset: bx && sx ? { x: Math.round(sx.x + sx.w / 2 - (bx.x + bx.w / 2)), y: Math.round(sx.y + sx.h / 2 - (bx.y + bx.h / 2)) } : null,
+        textLeft: lb ? lb.x : null,
+        justify: cs2.justifyContent,
+        paddingLeft: cs2.paddingLeft,
+        height: cs2.height,
+      };
+    }),
+    collapseGeom: (() => {
+      const b = document.querySelector(".sidebar-collapse");
+      const s = document.querySelector(".sidebar");
+      const f = document.querySelector(".sidebar-foot");
+      const rr = (n) => {
+        if (!n) return null;
+        const r = n.getBoundingClientRect();
+        return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), bottom: Math.round(r.bottom) };
+      };
+      const br = rr(b);
+      const sr = rr(s);
+      const fr = rr(f);
+      return {
+        button: br,
+        sidebar: sr,
+        foot: fr,
+        gapToFoot: br && fr ? Math.round(fr.y - br.bottom) : null,
+        gapToBottom: br && sr ? Math.round(sr.bottom - br.bottom) : null,
+      };
+    })(),
+    navBox: (() => {
+      const n = document.querySelector("nav");
+      if (!n) return null;
+      const r = n.getBoundingClientRect();
+      return {
+        y: Math.round(r.y),
+        bottom: Math.round(r.bottom),
+        h: Math.round(r.height),
+        clientH: n.clientHeight,
+        scrollH: n.scrollHeight,
+        overflowY: getComputedStyle(n).overflowY,
+      };
+    })(),
+    viewport: { w: window.innerWidth, h: window.innerHeight },
     bodyText: document.body.innerText.slice(0, 1200),
   };
 })()`;
@@ -355,6 +475,109 @@ const result = await send("Runtime.evaluate", {
 });
 
 console.log(JSON.stringify({ width, route, ...result.result?.result?.value }, null, 2));
+
+// PROBE_MUTATE：用 "||" 分隔的若干段临时 CSS 修改，逐段应用后重新测量。
+// 用来定位"哪一条属性真正在决定高度"，比反复改源码快，也不会留下补丁。
+if (process.env.PROBE_MUTATE) {
+  const measure = `(() => {
+    const l = document.querySelector(".orders-layout");
+    const list = document.querySelector(".orders-list");
+    const rows = document.querySelector(".order-rows");
+    const detail = l ? l.children[1] : null;
+    const rr = (e) => { if (!e) return null; const r = e.getBoundingClientRect(); return { y: Math.round(r.y), h: Math.round(r.height), bottom: Math.round(r.bottom) }; };
+    const a = rr(list), b = rr(detail);
+    return {
+      rows: l ? getComputedStyle(l).gridTemplateRows : null,
+      listH: a ? a.h : null,
+      rowsH: rows ? Math.round(rows.getBoundingClientRect().height) : null,
+      overlap: a && b ? Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.y, b.y)) : null,
+    };
+  })()`;
+
+  for (const step of process.env.PROBE_MUTATE.split("||")) {
+    const value = await send("Runtime.evaluate", {
+      expression: `${step} ; ${measure}`,
+      returnByValue: true,
+    });
+    console.log("MUTATE", step.slice(0, 72).padEnd(74), JSON.stringify(value.result?.result?.value));
+  }
+}
+
+// PROBE_TOOLTIP：模拟悬停长标题，验证气泡出现位置、是否被裁、滚动后是否收起。
+if (process.env.PROBE_TOOLTIP === "1") {
+  const run = async (expression) => {
+    const value = await send("Runtime.evaluate", { expression, returnByValue: true });
+    return value.result?.result?.value;
+  };
+
+  const before = await run(`(() => {
+    const spans = Array.from(document.querySelectorAll(".order-row-title"));
+    const span = spans[spans.length - 1];
+    const r = span.getBoundingClientRect();
+    span.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse", clientX: r.x + 8, clientY: r.y + 6 }));
+    const host = span.closest("li");
+    const clone = span.cloneNode(true);
+    Object.assign(clone.style, { position: "absolute", visibility: "hidden", left: "0", top: "0", width: span.clientWidth + "px", height: "auto", display: "block", overflow: "visible" });
+    clone.style.setProperty("-webkit-line-clamp", "unset");
+    clone.style.setProperty("-webkit-box-orient", "initial");
+    host.appendChild(clone);
+    const ccs = getComputedStyle(clone);
+    const cloneDiag = {
+      h: Math.round(clone.getBoundingClientRect().height),
+      display: ccs.display,
+      clamp: ccs.webkitLineClamp,
+      orient: ccs.webkitBoxOrient,
+      w: Math.round(clone.getBoundingClientRect().width),
+      scrollH: clone.scrollHeight,
+    };
+    const cloneH = Math.round(clone.getBoundingClientRect().height);
+    clone.remove();
+    const range = document.createRange();
+    range.selectNodeContents(span);
+    const lineRects = Array.from(range.getClientRects()).filter((x) => x.height > 1);
+    return {
+      text: span.textContent.slice(0, 24),
+      clampedH: Math.round(r.height),
+      scrollH: span.scrollHeight,
+      clientH: span.clientHeight,
+      cloneH, cloneDiag,
+      rangeLines: lineRects.length,
+      rangeH: Math.round(lineRects.reduce((max, x) => Math.max(max, x.bottom), 0) - lineRects[0]?.top ?? 0),
+      truncated: span.scrollHeight > Math.round(r.height) + 1,
+    };
+  })()`);
+
+  await sleep(700);
+  const shown = await run(`(() => {
+    const tip = document.querySelector(".title-tooltip");
+    if (!tip) return null;
+    const t = tip.getBoundingClientRect();
+    const rows = document.querySelector(".order-rows");
+    const rr = rows.getBoundingClientRect();
+    const cs = getComputedStyle(tip);
+    return {
+      text: tip.textContent.slice(0, 24),
+      rect: { x: Math.round(t.x), y: Math.round(t.y), w: Math.round(t.width), h: Math.round(t.height), bottom: Math.round(t.bottom) },
+      placement: tip.dataset.placement,
+      inViewport: t.x >= 0 && t.y >= 0 && t.right <= window.innerWidth && t.bottom <= window.innerHeight,
+      // 与列表滚动容器相交并不代表被裁：它是 fixed + portal 到 body
+      parent: tip.parentElement === document.body ? "body" : tip.parentElement?.className,
+      pointerEvents: cs.pointerEvents,
+      overflowWrap: cs.overflowWrap,
+    };
+  })()`);
+
+  const afterScroll = await run(`(() => {
+    const rows = document.querySelector(".order-rows");
+    rows.scrollTop = rows.scrollTop + 20;
+    rows.dispatchEvent(new Event("scroll", { bubbles: true }));
+    return true;
+  })()`);
+  await sleep(120);
+  const closed = await run(`!document.querySelector(".title-tooltip")`);
+
+  console.log("TOOLTIP", JSON.stringify({ before, shown, afterScroll, closedAfterScroll: closed }, null, 2));
+}
 
 const experiment = process.env.EXPERIMENT === "1";
 if (experiment) {
