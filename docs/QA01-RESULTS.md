@@ -196,7 +196,7 @@ npm run build             → ✓ built in 125ms（dist/assets/index-MDnilfYO.js
 
 | 项 | 开工前 | 收工后 |
 |---|---|---|
-| HEAD / 分支 | `ac32bab` / `master` | 见第 11 节，未推送 |
+| HEAD / 分支 | `ac32bab` / `master`（工作区干净） | `34c778d` / `master`，未推送 |
 | 活动代际 | `gen-c00a879220964299af7adcef8b9fc1c5` | 同 |
 | schema | v3 | v3 |
 | 订单 / 客户 / 模板 / 附件 | 4 / 1 / 2 / 2 | 4 / 1 / 2 / 2 |
@@ -267,18 +267,19 @@ QA 数据全部在 `.../dev.artflow.minidesk.qa/`，与正式目录是兄弟关�
 
 ## 11. 本地 Git 提交
 
+本轮之前的两个提交（DEV-05 关闭与控件恢复）：
+
 ```text
-20e24e0 feat(orders): restore the workflow template selector
 bf6bc0b docs: close DEV-05 (8/8 + 5/5 + 3/3) and record the T1 ruling
-<本报告相关提交见下>
+20e24e0 feat(orders): restore the workflow template selector
 ```
 
-本轮（QA-01）按三组提交：安全机制 / 数据预置 / 测试与文档，具体哈希见下：
+QA-01 按三组提交（每组都能独立编译）：
 
 ```text
-(1) feat(qa): identify the QA build by app identifier and isolate scenarios
-(2) feat(qa): deterministic seeded dataset with clean scenario and rebuild guard
-(3) test/docs: qa isolation suite, sandbox manual and QA-01 report
+a67e3b1 feat(qa): deterministic seeded dataset and clean scenario preparation
+27cef6f feat(qa): isolate the QA build by app identifier instead of an env path
+34c778d test(qa): isolation, seed idempotency and asset scope coverage
 ```
 
 未推送远程。
