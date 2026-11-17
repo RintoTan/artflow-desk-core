@@ -1,3 +1,5 @@
+pub mod dashboard;
+pub mod deadline;
 pub mod attachments;
 pub mod clients;
 pub mod events;
@@ -7,3 +9,5 @@ pub mod orders;
 pub mod queue;
 pub mod templates;
 pub mod workflow;
+pub mod export;
+pub mod stats;

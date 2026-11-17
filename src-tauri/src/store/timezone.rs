@@ -52,6 +52,49 @@ pub fn year_of(timestamp_utc: &str, tz: Tz) -> AppResult<i32> {
     Ok(parsed.with_timezone(&tz).year())
 }
 
+/// 工作时时区下的今天（日历日期）。
+pub fn local_today(tz: Tz) -> chrono::NaiveDate {
+    Utc::now().with_timezone(&tz).date_naive()
+}
+
+/// 给定 `YYYY-MM`，返回该自然月在工作时时区下的 UTC 区间 [起, 止)。
+pub fn month_bounds_utc(tz: Tz, month: &str) -> AppResult<(String, String)> {
+    let naive = chrono::NaiveDate::parse_from_str(&format!("{month}-01"), "%Y-%m-%d")
+        .map_err(|_| AppError::invalid(format!("月份格式必须是 YYYY-MM：{month}")))?;
+    let (next_year, next_month) = if naive.month() == 12 {
+        (naive.year() + 1, 1)
+    } else {
+        (naive.year(), naive.month() + 1)
+    };
+    let next = chrono::NaiveDate::from_ymd_opt(next_year, next_month, 1)
+        .ok_or_else(|| AppError::invalid("月份越界"))?;
+
+    let start_local = naive
+        .and_hms_opt(0, 0, 0)
+        .and_then(|dt| tz.from_local_datetime(&dt).earliest())
+        .ok_or_else(|| AppError::timezone("该月起点在此时区不存在"))?;
+    let end_local = next
+        .and_hms_opt(0, 0, 0)
+        .and_then(|dt| tz.from_local_datetime(&dt).earliest())
+        .ok_or_else(|| AppError::timezone("该月终点在此时区不存在"))?;
+
+    Ok((
+        start_local.with_timezone(&Utc).to_rfc3339_opts(SecondsFormat::Millis, true),
+        end_local.with_timezone(&Utc).to_rfc3339_opts(SecondsFormat::Millis, true),
+    ))
+}
+
+/// 把 UTC 时间戳转成工作时时区的可读字符串（YYYY-MM-DD HH:MM）。
+pub fn to_local_string(timestamp_utc: &str, tz: Tz) -> String {
+    match DateTime::parse_from_rfc3339(timestamp_utc) {
+        Ok(parsed) => parsed
+            .with_timezone(&tz)
+            .format("%Y-%m-%d %H:%M")
+            .to_string(),
+        Err(_) => timestamp_utc.to_string(),
+    }
+}
+
 /// 计划日期解析（纯日历日期，不带时间与时区）。
 pub fn parse_calendar_date(raw: &str) -> AppResult<NaiveDate> {
     NaiveDate::parse_from_str(raw.trim(), "%Y-%m-%d")

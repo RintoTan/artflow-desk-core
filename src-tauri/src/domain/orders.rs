@@ -4,6 +4,7 @@ use chrono_tz::Tz;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 
+use crate::domain::deadline::{self, DeadlineState};
 use crate::domain::events::{self, NewEvent};
 use crate::domain::lifecycle::{self, Capabilities, WorkState};
 use crate::domain::numbering;
@@ -43,6 +44,8 @@ pub struct OrderView {
     pub queue_position: i64,
     pub planned_start_date: Option<String>,
     pub planned_delivery_date: Option<String>,
+    /// 按工作时时区判定的交付风险；终态订单恒为 `scheduled`（不参与提醒）。
+    pub deadline_state: DeadlineState,
     pub started_at: Option<String>,
     pub completed_at: Option<String>,
     pub cancelled_at: Option<String>,
@@ -201,6 +204,14 @@ pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
         .and_then(|i| facts.stages.get(i))
         .map(|(_, title)| title.clone());
 
+    // 风险分类只对活动订单有意义；终态订单不进入提醒。
+    let deadline_state = if row.8 == lifecycle::STATUS_ACTIVE {
+        let tz = settings::working_timezone(conn).unwrap_or(chrono_tz::Tz::UTC);
+        deadline::classify_str(row.12.as_deref(), tz)?
+    } else {
+        DeadlineState::Scheduled
+    };
+
     Ok(OrderView {
         id: row.0,
         code: row.1,
@@ -220,6 +231,7 @@ pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
         queue_position: row.10,
         planned_start_date: row.11,
         planned_delivery_date: row.12,
+        deadline_state,
         started_at: row.13,
         completed_at: row.14,
         cancelled_at: row.15,
