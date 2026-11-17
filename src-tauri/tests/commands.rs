@@ -48,6 +48,8 @@ const APPROVED: &[&str] = &[
     "export_summary_csv",
     "export_orders_csv",
     "confirm_close",
+    "ui_theme_get",
+    "ui_theme_set",
 ];
 
 /// 解析 `generate_handler![...]` 并取每项最后一段标识符。

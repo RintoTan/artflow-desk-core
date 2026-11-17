@@ -334,6 +334,23 @@ export const templateApi = {
     invoke<TemplateView[]>("template_set_default", { input }),
 };
 
+// ---------------------------------------------------------------- DEV-06B 主题
+
+export type ThemeInfo = {
+  /** arctic / dark / system，已校验 */
+  mode: string;
+  /** #rrggbb 或 null */
+  accent: string | null;
+  /** 库里的原始值，用于识别"配置损坏" */
+  storedMode: string | null;
+};
+
+export const themeApi = {
+  get: () => invoke<ThemeInfo>("ui_theme_get"),
+  set: (mode: string, accent: string | null) =>
+    invoke<ThemeInfo>("ui_theme_set", { mode, accent }),
+};
+
 export const preferenceApi = {
   get: (key: string) => invoke<string | null>("preference_get", { key }),
   set: (key: string, value: string) => invoke<string | null>("preference_set", { key, value }),

@@ -9,6 +9,10 @@ use crate::store::timezone;
 
 pub const KEY_WORKING_TIMEZONE: &str = "working_timezone";
 pub const KEY_LIST_DENSITY: &str = "list_density";
+/// 主题模式：arctic / dark / system。存的是"用户选择"，不是"当前外观"。
+pub const KEY_THEME_MODE: &str = "ui.theme_mode";
+/// 自定义强调色（#rrggbb）；空表示用主题自带强调色。
+pub const KEY_THEME_ACCENT: &str = "ui.accent";
 pub const KEY_STARTUP_PAGE: &str = "startup_page";
 pub const KEY_ACTIVE_LIGHT_THEME: &str = "active_light_theme";
 pub const KEY_ACTIVE_DARK_THEME: &str = "active_dark_theme";

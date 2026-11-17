@@ -156,7 +156,9 @@ pub fn run() {
             commands::stats::stats_report,
             commands::stats::export_summary_csv,
             commands::stats::export_orders_csv,
-            infra::close::confirm_close
+            infra::close::confirm_close,
+            commands::theme::ui_theme_get,
+            commands::theme::ui_theme_set
         ])
         .build(tauri::generate_context!())
         .expect("ArtFlow miniDesk 启动失败");

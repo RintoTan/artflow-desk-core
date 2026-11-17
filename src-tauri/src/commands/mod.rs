@@ -4,5 +4,6 @@ pub mod orders;
 pub mod preferences;
 pub mod queue;
 pub mod stats;
+pub mod theme;
 pub mod status;
 pub mod templates;
