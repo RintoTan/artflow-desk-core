@@ -3,6 +3,9 @@
 //! 原图与缩略图分离：缩略图是缓存，损坏可重建，绝不反向影响原图。
 //! 所有落盘路径都必须是**代际目录内的相对路径**，禁止盘符与绝对路径。
 
+pub mod import;
+pub mod thumb;
+
 use std::path::{Component, Path, PathBuf};
 
 use crate::error::{AppError, AppResult};
