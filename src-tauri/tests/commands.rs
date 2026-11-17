@@ -42,6 +42,11 @@ const APPROVED: &[&str] = &[
     "attachment_rebuild_thumbs",
     "attachment_repair",
     "attachment_update_meta",
+    "dashboard_metrics",
+    "dashboard_completed_events",
+    "stats_report",
+    "export_summary_csv",
+    "export_orders_csv",
 ];
 
 /// 解析 `generate_handler![...]` 并取每项最后一段标识符。
