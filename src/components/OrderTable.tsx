@@ -109,12 +109,16 @@ export default function OrderTable({
             {header("client", "客户")}
             {header("title", "委托标题")}
             {header("source", "来源")}
-            <th scope="col">类型</th>
+            <th scope="col" className="col-secondary">
+              类型
+            </th>
             {header("stage", "阶段")}
             {header("status", "状态")}
             {header("delivery", "计划交付")}
             {header("amount", "已知金额", "num")}
-            <th scope="col">排期</th>
+            <th scope="col" className="col-secondary">
+              排期
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -140,7 +144,7 @@ export default function OrderTable({
                 )}
               </td>
               <td>{order.source ?? "—"}</td>
-              <td>{order.commissionType ?? "—"}</td>
+              <td className="col-secondary">{order.commissionType ?? "—"}</td>
               <td>{order.currentStageTitle ?? "—"}</td>
               <td>
                 <span className={`chip chip-${order.status}`}>{STATUS_LABEL[order.status]}</span>
@@ -150,7 +154,7 @@ export default function OrderTable({
               </td>
               <td>{formatDate(order.plannedDeliveryDate)}</td>
               <td className="num">{formatMoney(order.amountCents)}</td>
-              <td className="muted schedule-cell">
+              <td className="muted schedule-cell col-secondary">
                 {order.plannedStartDate || order.plannedDeliveryDate
                   ? `${order.plannedStartDate ?? "…"} → ${order.plannedDeliveryDate ?? "…"}`
                   : "未排期"}
@@ -159,6 +163,9 @@ export default function OrderTable({
           ))}
         </tbody>
       </table>
+      <p className="table-hint muted">
+        列排序只影响当前展示。窄窗口下「类型 / 排期」会收起，点开订单可在详情里查看。
+      </p>
       {rows.length === 0 && (
         <div className="empty">
           <p>没有符合筛选条件的订单。</p>

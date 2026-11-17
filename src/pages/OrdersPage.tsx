@@ -759,23 +759,24 @@ export default function OrdersPage() {
   }
 
   return (
-    <div className={`orders-layout orders-page view-${viewMode}`}>
+    <div className={`orders-page view-${viewMode}`}>
       {/* 来源是自由文本，只用已有来源做输入建议，避免同义重复 */}
       <datalist id="order-source-options">
         {sourceOptions.map((name) => (
           <option key={name} value={name} />
         ))}
       </datalist>
-      {viewMode === "cards" ? (
-      <aside className="orders-list panel">
-        <header className="panel-head compact">
-          <div>
-            <h2>订单</h2>
+
+      {/* 三视图共用同一套页头：切换按钮永远在同一个位置，不随视图搬家。 */}
+      <header className="panel orders-head">
+        <div className="orders-head-top">
+          <div className="orders-head-title">
+            <h2 className="orders-head-h">订单</h2>
             <p className="muted">
               {visible.length}/{orders.length} 张 · 活动在前
             </p>
           </div>
-          <div className="attach-actions">
+          <div className="orders-head-actions">
             <ViewSwitch value={viewMode} onChange={(next) => void changeView(next)} />
             <button
               type="button"
@@ -789,29 +790,17 @@ export default function OrdersPage() {
               新建
             </button>
           </div>
-        </header>
+        </div>
 
-        <div className="list-tools">
+        <div className="orders-head-filters">
           <input
             ref={searchRef}
             className="list-search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索标题 / 编号 / 客户"
+            placeholder="搜索标题 / 编号 / 客户 / 来源"
             aria-label="搜索订单"
           />
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost"
-            onClick={() => void toggleDensity()}
-            aria-pressed={density === "compact"}
-            title={density === "compact" ? "切换到舒适模式" : "切换到紧凑模式"}
-          >
-            {density === "compact" ? "紧凑" : "舒适"}
-          </button>
-        </div>
-
-        <div className="filter-row" role="group" aria-label="按来源筛选">
           <select
             className="select-inline"
             value={sourceFilter}
@@ -819,7 +808,6 @@ export default function OrdersPage() {
             aria-label="按来源筛选"
           >
             <option value="all">所有来源</option>
-          <option value="">未设置</option>
             <option value="">未设置</option>
             {sourceOptions.map((name) => (
               <option key={name} value={name}>
@@ -827,7 +815,40 @@ export default function OrdersPage() {
               </option>
             ))}
           </select>
+          {/* 状态用胶囊而不是下拉：当前生效的条件要一眼看得见。 */}
+          <div className="filter-row" role="group" aria-label="按状态筛选">
+            {(
+              [
+                ["all", "全部"],
+                ["active", "活动"],
+                ["complete", "已完成"],
+                ["cancelled", "已取消"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={`filter-chip${statusFilter === value ? " filter-chip-active" : ""}`}
+                aria-pressed={statusFilter === value}
+                onClick={() => setStatusFilter(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {viewMode === "cards" && (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              onClick={() => void toggleDensity()}
+              aria-pressed={density === "compact"}
+              title={density === "compact" ? "切换到舒适模式" : "切换到紧凑模式"}
+            >
+              {density === "compact" ? "紧凑" : "舒适"}
+            </button>
+          )}
         </div>
+
         {viewPersistError && (
           <p className="notice notice-warn" role="status">
             {viewPersistError}
@@ -841,28 +862,11 @@ export default function OrdersPage() {
             </button>
           </p>
         )}
+      </header>
 
-        <div className="filter-row" role="group" aria-label="按状态筛选">
-          {(
-            [
-              ["all", "全部"],
-              ["active", "活动"],
-              ["complete", "已完成"],
-              ["cancelled", "已取消"],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              className={`filter-chip${statusFilter === value ? " filter-chip-active" : ""}`}
-              aria-pressed={statusFilter === value}
-              onClick={() => setStatusFilter(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
+      <div className="orders-layout">
+      {viewMode === "cards" ? (
+      <aside className="orders-list panel">
         {visible.length === 0 ? (
           <div className="empty">
             <p>{orders.length === 0 ? "还没有订单。" : "没有符合筛选条件的订单。"}</p>
@@ -982,84 +986,8 @@ export default function OrdersPage() {
       </aside>
       ) : (
       <section className="orders-wide panel">
-        <header className="panel-head compact">
-          <div>
-            <h2>{viewMode === "board" ? "看板" : "表格"}</h2>
-            <p className="muted">
-              {visible.length}/{orders.length} 张 · 与卡片视图同一份数据与筛选
-            </p>
-          </div>
-          <div className="attach-actions">
-            <ViewSwitch value={viewMode} onChange={(next) => void changeView(next)} />
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => setExportOpen(true)}
-              disabled={orders.length === 0}
-            >
-              导出
-            </button>
-            <button type="button" className="btn btn-primary btn-sm" onClick={attemptCreate}>
-              新建
-            </button>
-          </div>
-        </header>
 
-        <div className="list-tools">
-          <input
-            className="list-search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索标题 / 编号 / 客户 / 来源"
-            aria-label="搜索订单"
-          />
-          <select
-            className="select-inline"
-            value={sourceFilter}
-            onChange={(e) => setSourceFilter(e.target.value)}
-            aria-label="按来源筛选"
-          >
-            <option value="all">所有来源</option>
-          <option value="">未设置</option>
-            <option value="">未设置</option>
-            {sourceOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-          <select
-            className="select-inline"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-            aria-label="按状态筛选"
-          >
-            <option value="all">全部状态</option>
-            <option value="active">活动</option>
-            <option value="complete">已完成</option>
-            <option value="cancelled">已取消</option>
-          </select>
-        </div>
-
-        {viewPersistError && (
-          <p className="notice notice-warn" role="status">
-            {viewPersistError}
-          </p>
-        )}
-        {clientFilter && (
-          <p className="filter-note">
-            只显示客户「{clientFilterName ?? "（未知）"}」的订单
-            <button type="button" className="link-btn" onClick={() => setClientFilter(null)}>
-              清除
-            </button>
-          </p>
-        )}
         {boardCommit && <p className="muted list-hint">正在应用：{boardCommit}</p>}
-        {viewPersistError && (
-          <p className="notice notice-warn" role="status">
-            {viewPersistError}
-          </p>
-        )}
 
         {viewMode === "board" ? (
           <OrderBoard
@@ -1156,6 +1084,7 @@ export default function OrdersPage() {
                       {WORK_LABEL[detail.workState]}
                     </span>
                   </div>
+                  {/* 详情的订单标题是整页唯一的 h1；页头的「订单」是 h2 区段标题。 */}
                   <h1 className="detail-title">{detail.title}</h1>
                   <p className="muted">
                     当前阶段 {detail.currentStageTitle ?? "—"} · 第{" "}
@@ -1266,6 +1195,7 @@ export default function OrdersPage() {
         )}
 
       </section>
+      </div>
 
       <ConfirmDialog
         open={exportOpen}

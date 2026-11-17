@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import type { OrderView } from "../bridge/commands";
 import { advanceBlockedReason, buildBoard, planStageMove, type StageMovePlan } from "../lib/board";
@@ -46,6 +46,24 @@ export default function OrderBoard({
 
   const columns = model.columns;
   const columnCount = columns.length;
+  const boardRef = useRef<HTMLDivElement | null>(null);
+  const [currentKey, setCurrentKey] = useState<string | null>(null);
+
+  /** 把某个阶段列滚到视野内，并把它标成"当前位置"。 */
+  function goToColumn(key: string) {
+    const board = boardRef.current;
+    if (!board) return;
+    const target = board.querySelector<HTMLElement>(`[data-col="${key}"]`);
+    if (!target) return;
+    board.scrollTo({ left: Math.max(0, target.offsetLeft - board.offsetLeft - 8), behavior: "smooth" });
+    setCurrentKey(key);
+  }
+
+  function step(direction: -1 | 1) {
+    const index = columns.findIndex((column) => column.key === currentKey);
+    const next = columns[Math.min(columns.length - 1, Math.max(0, (index < 0 ? 0 : index) + direction))];
+    if (next) goToColumn(next.key);
+  }
 
   /** 该订单自己的下一个阶段名（用于键盘可达的"推进"按钮）。 */
   function nextStageTitle(order: OrderView): string | null {
@@ -85,11 +103,67 @@ export default function OrderBoard({
 
   return (
     <div className="board-wrap">
-      <div className="board" role="list" aria-label="按制作阶段分列的看板">
+      {columns.length > 1 && (
+        <div className="board-nav" aria-label="阶段导航">
+          <button
+            type="button"
+            className="board-nav-step"
+            aria-label="上一组阶段"
+            onClick={() => step(-1)}
+          >
+            ‹
+          </button>
+          <div className="board-nav-track" role="group" aria-label="跳到阶段">
+            {columns.map((column) => (
+              <button
+                key={column.key}
+                type="button"
+                className={`board-nav-chip${currentKey === column.key ? " is-current" : ""}`}
+                aria-current={currentKey === column.key ? "true" : undefined}
+                onClick={() => goToColumn(column.key)}
+                title={`跳到「${column.title}」`}
+              >
+                {column.title}
+                <span className="board-nav-count">{column.orders.length}</span>
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="board-nav-step"
+            aria-label="下一组阶段"
+            onClick={() => step(1)}
+          >
+            ›
+          </button>
+        </div>
+      )}
+
+      <div
+        className="board"
+        role="list"
+        aria-label="按制作阶段分列的看板"
+        ref={boardRef}
+        onScroll={(event) => {
+          const board = event.currentTarget;
+          // 滚动后把"当前位置"同步到最靠近左边缘的那一列。
+          let bestKey: string | null = null;
+          let bestDist = Number.POSITIVE_INFINITY;
+          board.querySelectorAll<HTMLElement>("[data-col]").forEach((node) => {
+            const dist = Math.abs(node.offsetLeft - board.offsetLeft - board.scrollLeft);
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestKey = node.dataset.col ?? null;
+            }
+          });
+          if (bestKey) setCurrentKey(bestKey);
+        }}
+      >
         {columns.map((column) => (
           <section
             key={column.key}
             role="listitem"
+            data-col={column.key}
             className={`board-col${overColumn === column.key ? " board-col-over" : ""}`}
             onDragOver={(event) => {
               if (busy) return;

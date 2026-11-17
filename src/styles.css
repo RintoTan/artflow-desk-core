@@ -132,6 +132,11 @@ body,
   margin: 0;
 }
 
+html {
+  /* 预留滚动条槽位：切换视图时页面高度会变，滚动条出现/消失会让工具区左右抖 15px。 */
+  scrollbar-gutter: stable;
+}
+
 body {
   background: var(--bg-grad), var(--bg);
   background-attachment: fixed;
@@ -344,6 +349,8 @@ nav {
 .main {
   padding: 28px 34px 40px;
   overflow-y: auto;
+  /* 真正滚动的是这一层：切视图改变页面高度时，滚动条出现/消失会让内容整体平移 15px。 */
+  scrollbar-gutter: stable;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -704,7 +711,9 @@ code.mono {
   /* 第一行必须显式 max-content。留 auto 时，这张"高度由内容决定"的卡片
      只会贡献 34px（实测：auto → 行高 34px，max-content → 458.5px），
      卡片自己的内容照样按 459px 画出来，于是压在详情上。 */
-  .orders-page.orders-layout {
+  /* 页头已上移，工作区是 .orders-page 的子节点：行定义要跟着改选择器，
+     否则单栏时列表轨道会按 40px 排、行却按内容画，直接压在详情上。 */
+  .orders-page .orders-layout {
     grid-template-rows: max-content auto;
   }
 
@@ -2518,10 +2527,63 @@ body:has(.row-dragging) {
    横向滚动**只发生在面板内部**，页面本身不允许出现横向溢出。
    ------------------------------------------------------------------------ */
 
-.orders-layout.view-board,
-.orders-layout.view-table {
+/* 页头与工作区分层：页头永远在同一个位置，切换视图只换下面这块。 */
+.orders-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.orders-page.view-board .orders-layout,
+.orders-page.view-table .orders-layout {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: max-content auto;
+}
+
+.orders-head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.orders-head-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.orders-head-h {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: 0.01em;
+}
+
+.orders-head-title p {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+.orders-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.orders-head-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.orders-head-filters .list-search {
+  flex: 1 1 240px;
+  min-width: 160px;
 }
 
 .orders-wide {
@@ -3057,4 +3119,114 @@ body:has(.row-dragging) {
   border: 1px solid var(--warn);
   background: var(--warn-soft);
   color: var(--warn);
+}
+
+/* 看板阶段导航：让"还有哪些阶段"可见，不再只靠底部滚动条发现。 */
+.board-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.board-nav-track {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1;
+  padding: 2px;
+}
+
+.board-nav-track::-webkit-scrollbar {
+  display: none;
+}
+
+.board-nav-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.board-nav-chip:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.board-nav-chip.is-current {
+  color: var(--text);
+  border-color: var(--accent, #5a7c9b);
+  background: var(--accent-soft, rgba(90, 124, 155, 0.12));
+}
+
+.board-nav-count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.board-nav-step {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+}
+
+.board-nav-step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 表格：核心信息不逐字断行 */
+.order-table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.order-table th,
+.order-table td {
+  white-space: nowrap;
+}
+
+.order-table .col-title,
+.order-table .title-cell {
+  white-space: normal;
+  max-width: 220px;
+}
+
+.order-table .col-title .table-title {
+  white-space: nowrap;
+}
+
+.orders-wide {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+/* 窄容器优先保证核心列可读：次要列收进详情抽屉。 */
+@container (max-width: 720px) {
+  .order-table .col-secondary {
+    display: none;
+  }
+}
+
+.table-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
 }
