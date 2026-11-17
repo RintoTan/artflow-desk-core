@@ -404,7 +404,7 @@ fn suspicious_relative_paths_never_reach_the_frontend() {
     let view = import_one(&ctx, &order, &write_image(img_dir.path(), "图.png", 100, 100));
 
     // 绕过领域层直接写一条越界路径，验证读取侧仍然守住
-    let mut conn = ctx.conn();
+    let conn = ctx.conn();
     conn.execute(
         "UPDATE attachments SET rel_path = '../../environment.json' WHERE id = ?1",
         [&view.id],
