@@ -167,7 +167,8 @@ db 大小 196608 字节
 ## 7. 本地 Git 提交（未推送）
 
 ```text
-（提交后补）
+5933d75 docs: DEV-06C report (schedule model, contrast numbers, geometry, acceptance)
+1f9a5a3 feat(ui): read-only schedule bar in order rows and a readable stats chart
 ```
 
 ## 8. 最短 Mac 实机验收
