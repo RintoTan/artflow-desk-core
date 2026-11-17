@@ -30,11 +30,15 @@
 
 ### A.2 已实现但**尚未**获用户实机验收
 
+只剩一项：
+
 | 项 | 状态 | 说明 |
 |---|---|---|
-| ~~DEV-06C 首轮~~ | 已被合并修复取代 | C1/C2/C3 PARTIAL、C4 PASS；S2 PARTIAL |
-| DEV-06C-UX-FIX + PRODUCT-RENAME | **已验收并关闭** | R1 PASS、R2 PASS、R3 PASS、R4 **NOT RUN**（窗口下限 880px 不可达）、R5 PASS |
-| D-00-24 快捷键 | 已实现 | `REMAINING-WORK #4` 仍写「待用户实机验收」 |
+| D-00-24 快捷键（Cmd+N/S/F、上下键、Enter） | 已实现待验 | `REMAINING-WORK #4`；建议并入下一次最小回归，不必重测整轮 |
+
+> DEV-06C（含合并修复）已于 2026-11-17 验收关闭，不再属于本节：
+> R1/R2/R3/R5 PASS，R4 = **NOT RUN**（窗口 `minWidth: 880`，530px 物理不可达）。
+> 记录见 `DEV06C-UX-FIX-RENAME-RESULTS.md` §0。
 
 ### A.3 未开始
 
@@ -50,7 +54,9 @@ DEV-09（Windows）。
 
 ### A.5 完成度表述
 
-不给百分比。按阶段计数：**已验收 6 个阶段 / 待验收 1 个合并任务 / 未开始 5 个阶段**。
+不给百分比。按阶段计数：**已验收关闭 7 个**（DEV-01～05、QA-01、DEV-06A、DEV-06B、
+UI-NAV-ICON-REFINE、DEV-06C）**／未开始 5 个**（DEV-07-PRE、DEV-07、DEV-07-FINISH、DEV-08、DEV-09）。
+待验只剩规格层面的一条（D-00-24 快捷键），不构成阶段。
 
 ---
 
@@ -64,81 +70,96 @@ DEV-09（Windows）。
 
 | 编号 | 摘要（非原文） | 实现 | 测试 | 实机 | 状态 | 缺口 / 去向 |
 |---|---|---|---|---|---|---|
-| D-00-01 | 活动队列拖拽与上移/下移，事务化与并发冲突 | `domain/queue.rs`、`OrdersPage` 拖拽 | `tests/queue.rs`、`OrdersPage.drag.test.tsx` | 基础验收 | 已验收 | — |
-| D-00-02 | 宽屏列表 + 快速预览双栏 | `OrdersPage` 双栏、`@container` 单栏 | `styles.layout.test.ts`、`layout:check` | L1–L4 PASS（布局） | 已实现待确认 | 「快速预览」具体交互（悬停/预览态）无单独验收条款，建议并入 DEV-08 回归 |
-| D-00-03 | 资料分区编辑整体保存；推进与附件独立事务 | `update_order_details` | `order_details.rs` | 基础验收 | 已验收 | — |
-| D-00-04 | 详情含资料/图片/历史三区 | 三块 `<section className="panel">` | 页面测试 | 基础验收 | 已验收 | — |
-| D-00-05 | **订单列表轻量时间轴（只读）** | 原实现于列表 → 现迁至详情「排期概览」 | `scheduleBar.test.ts`、`OrdersPage.schedule.test.tsx` | **R2 PASS**（详情概览） | **已验收（产品变更后）** | 位置变更经用户裁定；列表侧零轨道由 R1 实机确认 |
-| D-00-06 | 计划日期可选；3 日内/当天/逾期；未排期 | `domain/deadline.rs`、工作台 | `deadline` 单测、`dashboard` 集成 | DEV-05 基础 8/8 | 已验收 | — |
-| D-00-07 | 仅标题必填；默认流程；建单可指定模板 | `create_order` + 新建面板 `模板` 下拉 | `order_create.rs`、`OrdersPage.create.test.tsx` | **T1 PASS** | 已验收 | — |
-| D-00-08 | 类型自由填写；金额可空/非负/整数分 | `orders.amount_cents` | `order_details.rs` | 基础验收 | 已验收 | — |
-| D-00-09 | 新单活动、首阶段、入队尾、编号不复用 | `create_order` | `numbering.rs`、`order_create.rs` | 基础验收 | 已验收 | — |
-| D-00-10 | 排队/制作由开工与有效开工时间决定 | `lifecycle::work_state` | `lifecycle.rs` | 基础验收 | 已验收 | — |
-| D-00-11 | 撤销开工；历史只记生命周期事件 | `domain/events.rs` | `lifecycle.rs` | 基础验收 | 已验收 | — |
-| D-00-12 | 订单流程可增删改序；删当前阶段需替代 | `domain/workflow.rs` | `workflow_edit.rs` | 基础验收 | 已验收 | — |
-| D-00-13 | 一次一步；返工回退；完成是独立终态 | `domain/lifecycle.rs` | `lifecycle.rs` | 基础验收 | 已验收 | — |
-| D-00-14 | 模板 1–20 阶段、名称唯一、唯一默认 | `domain/templates.rs` | `templates.rs` | 基础验收 | 已验收 | — |
-| D-00-15 | 参考图网格、标签、原图保留、缩略图可重建、相对路径 | `domain/attachments.rs`、`AttachmentPanel` | `attachments.rs`、`AttachmentPanel.test.tsx` | 基础验收 | **部分完成** | **拖拽导入未做** → 见 C.1 |
-| D-00-16 | 查看器缩放/平移/切换；原名保留；100 MB；格式校验 | `components/ImageViewer.tsx`、`media/*` | `media.rs`、查看器测试 | 基础验收 | 已验收 | — |
-| D-00-17 | 客户轻量档案；稳定 ID；改名反映；同名不合并 | `domain/clients.rs` | `clients.rs` | 基础验收 | 已验收 | 无删除（未在规格摘要内） |
-| D-00-18 | 搜索、状态筛选、临时视图排序；仅手动改队列 | `lib/ordersView.ts` | `ordersView.test.ts` | 基础验收 | 已验收 | `SPEC-INDEX` 写的「临时视图排序」实现为"手动队列排序"，语义需产品确认 |
-| D-00-19 | 工作台指标 + 历史统计；提醒不改排序；卡片下钻 | `domain/dashboard.rs`、`StatsPage` | `DashboardPage.test.tsx`、`stats.rs` | DEV-05 | 已验收 | — |
-| D-00-20 | 可折叠侧边栏 + 主区；宽屏双栏窄屏单栏 | `App.tsx` + `@container` | `App.sidebar.test.tsx`、`layout:check` | P1–P5 + L1–L4 PASS | **已验收**（原索引写"部分"已过时） | — |
-| D-00-21 | 默认 Arctic Blue；浅/深/跟随系统/自定义主题 | `lib/theme.ts`、`commands/theme.rs` | `theme.test.ts`、`styles.theme.test.ts` | V1 + I1-A–C PASS | 已验收（三模式部分） | 「自定义主题」见 D-00-30 |
-| D-00-22 | 固定数据目录；完整备份含库与必要原图；恢复前回退备份 | 代际机制已具备，**备份未实现** | `environment.rs`、`zip_safety.rs` | — | **未实现** | DEV-07 |
-| D-00-23 | 未保存保护三选项；冲突不静默覆盖 | `UnsavedChangesDialog`、`unsavedRegistry`、`infra/close.rs` | `App.close.test.tsx` 等 18 条 | R1–R3、M1、A/B/C/E PASS | 已验收（应用内与关窗） | **Dock 退出未覆盖** → D 节 |
-| D-00-24 | 快速操作与快捷键（N/S/F/Esc/上下键） | `lib/shortcuts.ts` | `shortcuts.test.tsx`、`OrdersPage.keyboard.test.tsx` | **未单独验收** | 已实现待验 | `REMAINING-WORK #4`；建议并入下一次最小回归 |
-| D-00-25 | 列表舒适/紧凑密度，选择持久 | `preference_set` | `ordersView.test.ts` | 基础验收 | 已验收 | — |
-| D-00-26 | `AF-YYYY-NNNN`、年度序列、不可编辑不复用 | `domain/numbering.rs`、`store/highwater.rs` | `numbering.rs` | 基础验收 | 已验收 | — |
-| D-00-27 | 终态锁定流程/开工，可改资料；可重开；可永久删除 | 终态与重开已实现 | `lifecycle.rs`、`reopen` 断言 | 基础验收 | **部分完成** | **永久删除未实现** → DEV-07-PRE |
-| D-00-28 | 概览 + 统计；金额汇总；CSV；NULL 区别零 | `domain/stats.rs`、`export.rs` | `stats.rs`、`export_csv.rs` | DEV-05 | 已验收 | — |
-| D-00-29 | 永久删除需输入编号；清理专属文件；不删客户/模板 | — | — | — | **未实现** | DEV-07-PRE |
-| D-00-30 | 自定义主题创建/复制/删除；对比度警告；恢复默认 | 仅 `themes` 表 + 内置行；**无 CRUD 命令** | 无 | — | **未实现**（存储层预留） | 见 C.5，需产品裁定 |
-| D-00-31 | 事件次数口径；金额按创建月；自然月；删除不计 | `domain/stats.rs` | `stats.rs` 18 条 | DEV-05 专项 | 已验收 | — |
-| D-00-32 | 双平台验收矩阵；P0 为零 | 各阶段报告含验收表 | — | 仅 macOS 部分 | 进行中 | DEV-08 / DEV-09 |
-| D-00-33 | 应用/结构/备份格式三版本独立；升级前快照 | 结构版本 + 代际已实现 | `migrations.rs` | — | 部分完成 | 备份格式版本 → DEV-07 |
+| D-00-01 | 活动队列拖拽与上移/下移，事务化与并发冲突 | `domain/queue.rs`、`OrdersPage` 拖拽 | `tests/queue.rs`、`OrdersPage.drag.test.tsx` | 基础验收 | **已验收** | — |
+| D-00-02 | 宽屏列表 + 快速预览双栏 | `OrdersPage` 双栏、`@container` 单栏 | `styles.layout.test.ts`、`layout:check` | L1–L4 PASS（布局） | **已实现待验**（双栏布局已验收；「快速预览」语义未验） | 「快速预览」具体交互（悬停/预览态）无单独验收条款，建议并入 DEV-08 回归 |
+| D-00-03 | 资料分区编辑整体保存；推进与附件独立事务 | `update_order_details` | `order_details.rs` | 基础验收 | **已验收** | — |
+| D-00-04 | 详情含资料/图片/历史三区 | 三块 `<section className="panel">` | 页面测试 | 基础验收 | **已验收** | — |
+| D-00-05 | **订单列表轻量时间轴（只读）** | 原实现于列表 → 现迁至详情「排期概览」 | `scheduleBar.test.ts`、`OrdersPage.schedule.test.tsx` | **R2 PASS**（详情概览） | **已验收**（产品变更后：R1/R2 PASS） | 位置变更经用户裁定；列表侧零轨道由 R1 实机确认 |
+| D-00-06 | 计划日期可选；3 日内/当天/逾期；未排期 | `domain/deadline.rs`、工作台 | `deadline` 单测、`dashboard` 集成 | DEV-05 基础 8/8 | **已验收** | — |
+| D-00-07 | 仅标题必填；默认流程；建单可指定模板 | `create_order` + 新建面板 `模板` 下拉 | `order_create.rs`、`OrdersPage.create.test.tsx` | **T1 PASS** | **已验收** | — |
+| D-00-08 | 类型自由填写；金额可空/非负/整数分 | `orders.amount_cents` | `order_details.rs` | 基础验收 | **已验收** | — |
+| D-00-09 | 新单活动、首阶段、入队尾、编号不复用 | `create_order` | `numbering.rs`、`order_create.rs` | 基础验收 | **已验收** | — |
+| D-00-10 | 排队/制作由开工与有效开工时间决定 | `lifecycle::work_state` | `lifecycle.rs` | 基础验收 | **已验收** | — |
+| D-00-11 | 撤销开工；历史只记生命周期事件 | `domain/events.rs` | `lifecycle.rs` | 基础验收 | **已验收** | — |
+| D-00-12 | 订单流程可增删改序；删当前阶段需替代 | `domain/workflow.rs` | `workflow_edit.rs` | 基础验收 | **已验收** | — |
+| D-00-13 | 一次一步；返工回退；完成是独立终态 | `domain/lifecycle.rs` | `lifecycle.rs` | 基础验收 | **已验收** | — |
+| D-00-14 | 模板 1–20 阶段、名称唯一、唯一默认 | `domain/templates.rs` | `templates.rs` | 基础验收 | **已验收** | — |
+| D-00-15 | 参考图网格、标签、原图保留、缩略图可重建、相对路径 | `domain/attachments.rs`、`AttachmentPanel` | `attachments.rs`、`AttachmentPanel.test.tsx` | 基础验收 | **部分完成**（主体已验收；拖拽导入未实现） | **拖拽导入未做** → 见 C.1 |
+| D-00-16 | 查看器缩放/平移/切换；原名保留；100 MB；格式校验 | `components/ImageViewer.tsx`、`media/*` | `media.rs`、查看器测试 | 基础验收 | **已验收** | — |
+| D-00-17 | 客户轻量档案；稳定 ID；改名反映；同名不合并 | `domain/clients.rs` | `clients.rs` | 基础验收 | **已验收** | 无删除（未在规格摘要内） |
+| D-00-18 | 搜索、状态筛选、临时视图排序；仅手动改队列 | `lib/ordersView.ts` | `ordersView.test.ts` | 基础验收 | **已验收** | `SPEC-INDEX` 写的「临时视图排序」实现为"手动队列排序"，语义需产品确认 |
+| D-00-19 | 工作台指标 + 历史统计；提醒不改排序；卡片下钻 | `domain/dashboard.rs`、`StatsPage` | `DashboardPage.test.tsx`、`stats.rs` | DEV-05 | **已验收** | — |
+| D-00-20 | 可折叠侧边栏 + 主区；宽屏双栏窄屏单栏 | `App.tsx` + `@container` | `App.sidebar.test.tsx`、`layout:check` | P1–P5 + L1–L4 PASS | **已验收**（DEV-06B P1–P5 / L1–L4） | — |
+| D-00-21 | 默认 Arctic Blue；浅/深/跟随系统/自定义主题 | `lib/theme.ts`、`commands/theme.rs` | `theme.test.ts`、`styles.theme.test.ts` | V1 + I1-A–C PASS | **部分完成**（三模式+强调色已验收；自定义主题未实现→D-00-30） | 「自定义主题」见 D-00-30 |
+| D-00-22 | 固定数据目录；完整备份含库与必要原图；恢复前回退备份 | 代际机制已具备，**备份未实现** | `environment.rs`、`zip_safety.rs` | — | **未实现**（备份恢复属 DEV-07） | DEV-07 |
+| D-00-23 | 未保存保护三选项；冲突不静默覆盖 | `UnsavedChangesDialog`、`unsavedRegistry`、`infra/close.rs` | `App.close.test.tsx` 等 18 条 | R1–R3、M1、A/B/C/E PASS | **已验收**（关窗与应用内退出；Dock 退出另记 DOCK-01） | **Dock 退出未覆盖** → D 节 |
+| D-00-24 | 快速操作与快捷键（N/S/F/Esc/上下键） | `lib/shortcuts.ts` | `shortcuts.test.tsx`、`OrdersPage.keyboard.test.tsx` | **未单独验收** | **已实现待验**（缺用户实机确认） | `REMAINING-WORK #4`；建议并入下一次最小回归 |
+| D-00-25 | 列表舒适/紧凑密度，选择持久 | `preference_set` | `ordersView.test.ts` | 基础验收 | **已验收** | — |
+| D-00-26 | `AF-YYYY-NNNN`、年度序列、不可编辑不复用 | `domain/numbering.rs`、`store/highwater.rs` | `numbering.rs` | 基础验收 | **已验收** | — |
+| D-00-27 | 终态锁定流程/开工，可改资料；可重开；可永久删除 | 终态与重开已实现 | `lifecycle.rs`、`reopen` 断言 | 基础验收 | **部分完成**（终态与重开已验收；永久删除未实现） | **永久删除未实现** → DEV-07-PRE |
+| D-00-28 | 概览 + 统计；金额汇总；CSV；NULL 区别零 | `domain/stats.rs`、`export.rs` | `stats.rs`、`export_csv.rs` | DEV-05 | **已验收** | — |
+| D-00-29 | 永久删除需输入编号；清理专属文件；不删客户/模板 | — | — | — | **未实现**（DEV-07-PRE） | DEV-07-PRE |
+| D-00-30 | 自定义主题创建/复制/删除；对比度警告；恢复默认 | 仅 `themes` 表 + 内置行；**无 CRUD 命令** | 无 | — | **未实现**（themes 表已预留，无 CRUD 命令） | 见 C.5，需产品裁定 |
+| D-00-31 | 事件次数口径；金额按创建月；自然月；删除不计 | `domain/stats.rs` | `stats.rs` 18 条 | DEV-05 专项 | **已验收** | — |
+| D-00-32 | 双平台验收矩阵；P0 为零 | 各阶段报告含验收表 | — | 仅 macOS 部分 | **进行中**（仅 macOS 侧有部分矩阵） | DEV-08 / DEV-09 |
+| D-00-33 | 应用/结构/备份格式三版本独立；升级前快照 | 结构版本 + 代际已实现 | `migrations.rs` | — | **部分完成**（结构版本已实现；备份格式版本待 DEV-07） | 备份格式版本 → DEV-07 |
 
 ### B.2 FIX-01～12（12 条）
 
 | 编号 | 摘要（非原文） | 实现 | 测试 | 实机 | 状态 | 缺口 / 去向 |
 |---|---|---|---|---|---|---|
-| FIX-01 | 编号高水位独立持久化，恢复不回退 | `store/highwater.rs` | `numbering.rs` | 基础验收 | 已验收 | — |
-| FIX-02 | 必须先开工才能完成；单阶段可直接完成 | `lifecycle::complete_order` | `lifecycle.rs` | 基础验收 | 已验收 | — |
-| FIX-03 | 撤销开工三条件 | `lifecycle::capabilities` | `lifecycle.rs` | 基础验收 | 已验收 | — |
-| FIX-04 | 只显示当前有效终态时间；重开保留阶段与开工 | `reopen_order` | `lifecycle.rs` | 基础验收 | 已验收 | — |
-| FIX-05 | 清理任务事务化、可重试、只删无引用文件 | `cleanup_tasks` + `run_cleanup` | `attachments.rs`、`attachments_recovery.rs` | 基础验收 | 已验收（附件侧） | 订单删除的清理 → 随 DEV-07-PRE |
-| FIX-06 | 「本月完成次数」按事件次数，可下钻 | `dashboard::completed_events_in_month` | `StatsDrilldown.test.tsx` | S3-A/S3-B PASS | 已验收 | — |
-| FIX-07 | 汇总/明细分别导出；转义与防注入；默认不含联系方式 | `domain/export.rs` | `export_csv.rs` | DEV-05 | 已验收 | 表头旧品牌名见 C.2 |
-| FIX-08 | 计划日期为日历日期；事件为时间戳；持久 IANA 时区 | `store/timezone.rs` | `timezone.rs` | 基础验收 | 已验收 | — |
-| FIX-09 | 主题损坏安全回退；删除当前主题前先切换 | 损坏回退已实现（`normalize`） | `theme.test.ts` | V1 PASS | **部分完成** | 无"删除主题"功能，故"先切换"无从实现 → 随 D-00-30 |
-| FIX-10 | 备份格式兼容矩阵；隔离代际恢复；失败保留现状 | 代际复制已具备 | `zip_safety.rs` | — | **未实现** | DEV-07 |
-| FIX-11 | 100 MB、像素与解码限制；原图丢失可修复；批量导入逐项报告 | `media/*`、`attachments::repair` | `media.rs`、`attachments.rs` | 基础验收 | 已验收 | 批量导入含拖拽？见 C.1 |
-| FIX-12 | 区分首次启动与数据丢失；异常不建空库；失败不谎报 | `store/environment.rs` | `environment.rs` | 基础验收 | 已验收 | — |
+| FIX-01 | 编号高水位独立持久化，恢复不回退 | `store/highwater.rs` | `numbering.rs` | 基础验收 | **已验收** | — |
+| FIX-02 | 必须先开工才能完成；单阶段可直接完成 | `lifecycle::complete_order` | `lifecycle.rs` | 基础验收 | **已验收** | — |
+| FIX-03 | 撤销开工三条件 | `lifecycle::capabilities` | `lifecycle.rs` | 基础验收 | **已验收** | — |
+| FIX-04 | 只显示当前有效终态时间；重开保留阶段与开工 | `reopen_order` | `lifecycle.rs` | 基础验收 | **已验收** | — |
+| FIX-05 | 清理任务事务化、可重试、只删无引用文件 | `cleanup_tasks` + `run_cleanup` | `attachments.rs`、`attachments_recovery.rs` | 基础验收 | **部分完成**（附件清理已验收；订单删除侧随 D-00-29） | 订单删除的清理 → 随 DEV-07-PRE |
+| FIX-06 | 「本月完成次数」按事件次数，可下钻 | `dashboard::completed_events_in_month` | `StatsDrilldown.test.tsx` | S3-A/S3-B PASS | **已验收** | — |
+| FIX-07 | 汇总/明细分别导出；转义与防注入；默认不含联系方式 | `domain/export.rs` | `export_csv.rs` | DEV-05 | **已验收** | 表头旧品牌名见 C.2 |
+| FIX-08 | 计划日期为日历日期；事件为时间戳；持久 IANA 时区 | `store/timezone.rs` | `timezone.rs` | 基础验收 | **已验收** | — |
+| FIX-09 | 主题损坏安全回退；删除当前主题前先切换 | 损坏回退已实现（`normalize`） | `theme.test.ts` | V1 PASS | **部分完成**（损坏回退已验收；无删除主题功能） | 无"删除主题"功能，故"先切换"无从实现 → 随 D-00-30 |
+| FIX-10 | 备份格式兼容矩阵；隔离代际恢复；失败保留现状 | 代际复制已具备 | `zip_safety.rs` | — | **未实现**（DEV-07） | DEV-07 |
+| FIX-11 | 100 MB、像素与解码限制；原图丢失可修复；批量导入逐项报告 | `media/*`、`attachments::repair` | `media.rs`、`attachments.rs` | 基础验收 | **已验收** | 批量导入含拖拽？见 C.1 |
+| FIX-12 | 区分首次启动与数据丢失；异常不建空库；失败不谎报 | `store/environment.rs` | `environment.rs` | 基础验收 | **已验收** | — |
 
 ### B.3 R-01～04（4 条）
 
 | 编号 | 摘要（非原文） | 实现 | 测试 | 实机 | 状态 | 缺口 / 去向 |
 |---|---|---|---|---|---|---|
-| R-01 | 重开订单入队尾，保留阶段与开工 | `reopen_order` | `lifecycle.rs` | 基础验收 | 已验收 | — |
-| R-02 | 高水位崩溃一致；恢复不降低 | `highwater` + merge | `numbering.rs` | — | 已实现待验 | 恢复路径随 DEV-07 一并验 |
-| R-03 | 恢复后清理任务需重新校验代际与引用 | `run_cleanup` 代际守卫 | `attachments_recovery.rs` | — | 部分完成 | 备份恢复路径不存在，端到端待 DEV-07 |
-| R-04 | 统计按事件次数与自然月；明细每单一行 | `domain/stats.rs`、`export.rs` | `stats.rs`、`export_csv.rs` | DEV-05 | 已验收 | — |
+| R-01 | 重开订单入队尾，保留阶段与开工 | `reopen_order` | `lifecycle.rs` | 基础验收 | **已验收** | — |
+| R-02 | 高水位崩溃一致；恢复不降低 | `highwater` + merge | `numbering.rs` | — | **已实现待验**（恢复路径随 DEV-07 验） | 恢复路径随 DEV-07 一并验 |
+| R-03 | 恢复后清理任务需重新校验代际与引用 | `run_cleanup` 代际守卫 | `attachments_recovery.rs` | — | **部分完成**（备份恢复路径不存在，端到端待 DEV-07） | 备份恢复路径不存在，端到端待 DEV-07 |
+| R-04 | 统计按事件次数与自然月；明细每单一行 | `domain/stats.rs`、`export.rs` | `stats.rs`、`export_csv.rs` | DEV-05 | **已验收** | — |
 
-### B.4 统计
+### B.4 统计（脚本核对，与逐行状态一一对应）
 
-| 状态 | 条数 | 编号 |
+| 状态 | 条数 | 编号名单 |
 |---|---|---|
-| 已验收（有实机证据） | 27 | 01,03,04,06,07,08,09,10,11,12,13,14,16,17,18,19,20,21,23,25,26,28,31, FIX-01～04, FIX-06 |
-| 部分完成 | 6 | 15（拖拽）、27（永久删除）、33（备份版本）、FIX-05（订单删除侧）、FIX-09（主题删除）、R-03（备份后校验） |
-| 已实现待验 / 证据不足 | 4 | 02（快速预览细节）、24（快捷键）、R-02、FIX-11 的批量导入分支 |
-| 未实现 | 5 | 22、29、30、32（进行中）、FIX-10 |
-| 已验收（产品变更后） | 1 | 05（位置迁入详情，R1/R2 PASS） |
-| **合计** | **49** | 44 条有明确归属 + 5 条需补证据或裁定（02/24/R-02/FIX-11 批量分支/R-03） |
+| **已验收** | **34** | D-00-01, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 23, 25, 26, 28, 31；FIX-01, 02, 03, 04, 06, 07, 08, 11, 12；R-01, R-04 |
+| **部分完成** | **7** | D-00-15, 21, 27, 33；FIX-05, 09；R-03 |
+| **已实现待验** | **3** | D-00-02, 24；R-02 |
+| **未实现** | **4** | D-00-22, 29, 30；FIX-10 |
+| **进行中** | **1** | D-00-32 |
+| **合计** | **49** | 33（D-00）+ 12（FIX）+ 4（R），每个编号恰好一次 |
+
+**校验方式**：脚本解析 B.1–B.3 的表格行，要求编号唯一、合计 49、分类名单与逐行"状态"列完全对应。
+上一版把 28+6+4+5 手工汇总成 43（漏加），已纠正并改为脚本产出。
+
+**六条容易误判的判定依据**：
+
+| 编号 | 判定 | 理由 |
+|---|---|---|
+| `D-00-21` | 部分完成 | 摘要同时含"三模式"与"自定义主题"；前者已验收、后者未实现（D-00-30）。**一条规格含两个子功能，不能因前半段完成就整条算通过** |
+| `D-00-24` | 已实现待验 | 代码与自动化都在，但缺针对快捷键的用户实机记录 |
+| `D-00-32` | 进行中 | 要求"双平台验收矩阵"，目前只有 macOS 侧部分矩阵 |
+| `FIX-05` | 部分完成 | "清理任务事务化"在附件侧已验收；"删除订单时清理专属文件"依赖未实现的 D-00-29 |
+| `FIX-11` | 已验收 | 限额 / 原图修复 / 批量导入逐项报告三项都在本条范围内；拖拽导入属 D-00-15，不计入 |
+| `R-03` | 部分完成 | 代际与引用守卫已实现；"恢复备份后重新校验"要等 DEV-07 才有端到端路径 |
 
 > 说明：上表"已验收 27"里，D-00 系列的实机证据多来自 DEV-01～05 的**批次验收**（基础 8/8），
 > 不是逐条点对点验收。逐条证据只对 DEV-05 专项、DEV-06A/B 的专项条目存在。
 
 ---
+
 ## C. 需求遗漏与范围差异清单
 
 ### C.1 文件拖拽导入（`REMAINING-WORK #8`）
@@ -217,8 +238,9 @@ DEV-09（Windows）。
 原始摘要写的是"订单列表轻量时间轴"。用户在 DEV-06C 首轮实机后明确裁定：
 **列表恢复简洁，时间轴移入订单详情**。当前代码已按此实现（列表零轨道、详情有「排期概览」）。
 
-**审计处理**：保留原摘要，另记"后续产品裁定"，状态 = **已变更待确认**——
-新位置尚未实机验收，不能因为代码存在就判通过。
+**审计处理**：保留原摘要，另记"后续产品裁定"。状态 = **已验收（产品变更后）**：
+R1（列表恢复简洁）与 R2（详情排期概览）均已实机 PASS，两头都有证据。
+位置变更不作为"未实现"处理，但也没有把原摘要改写成条文。
 
 ### C.9 D-00-02 宽屏快速预览双栏
 
