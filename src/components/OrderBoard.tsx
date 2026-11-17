@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useElementWidth } from "../lib/useElementWidth";
 
@@ -39,8 +39,8 @@ export default function OrderBoard({
   onError,
 }: Props) {
   const model = useMemo(() => buildBoard(orders), [orders]);
-  const [dragging, setDragging] = useState<string | null>(null);
-  const [overColumn, setOverColumn] = useState<string | null>(null);
+  /** 显式阶段操作：哪张卡片的合法目标列表被展开 */
+  const [menuFor, setMenuFor] = useState<string | null>(null);
   const [pending, setPending] = useState<{
     order: OrderView;
     plan: Extract<StageMovePlan, { kind: "advance" | "rework" }>;
@@ -75,14 +75,27 @@ export default function OrderBoard({
   const visibleColumns = columns.slice(startIndex, startIndex + perView);
 
   /** 把某个阶段列滚到视野内，并把它标成"当前位置"。 */
+  /**
+   * 跳转阶段。
+   * QA-02 P1-02 的根因：旧实现先 `querySelector` 找目标列，找不到就 return，
+   * 才轮到 setCurrentKey。而聚焦到靠后阶段时，草稿/线稿根本不在渲染切片里，
+   * 于是"往前点"永远无事发生。必须先改状态让切片重算，再由 effect 滚动。
+   */
   function goToColumn(key: string) {
-    const board = boardRef.current;
-    if (!board) return;
-    const target = board.querySelector<HTMLElement>(`[data-col="${key}"]`);
-    if (!target) return;
-    board.scrollTo({ left: Math.max(0, target.offsetLeft - board.offsetLeft - 8), behavior: "smooth" });
     setCurrentKey(key);
   }
+
+  useEffect(() => {
+    const board = boardRef.current;
+    if (!board || !currentKey) return;
+    const target = board.querySelector<HTMLElement>(`[data-col="${currentKey}"]`);
+    if (target && typeof board.scrollTo === "function") {
+      board.scrollTo({
+        left: Math.max(0, target.offsetLeft - board.offsetLeft - 8),
+        behavior: "smooth",
+      });
+    }
+  }, [currentKey, startIndex]);
 
   function step(direction: -1 | 1) {
     const index = columns.findIndex((column) => column.key === currentKey);
@@ -108,29 +121,7 @@ export default function OrderBoard({
     }
   }
 
-  function handleDrop(event: React.DragEvent, title: string) {
-    event.preventDefault();
-    setOverColumn(null);
-    // WebKit（WKWebView）只保证 text/plain 可读，自定义 MIME 会静默返回空串，
-    // 所以用 text/plain + 前缀，并且保留 dragging 状态作为兜底。
-    const raw =
-      event.dataTransfer?.getData("text/plain") ||
-      event.dataTransfer?.getData("text/minidesk-order") ||
-      "";
-    const orderId = raw.startsWith("minidesk-order:") ? raw.slice("minidesk-order:".length) : raw || dragging;
-    setDragging(null);
-    if (!orderId) return;
-    const order = orders.find((item) => item.id === orderId);
-    if (!order) return;
 
-    const plan = planStageMove(order, title);
-    if (plan.kind === "noop") return;
-    if (plan.kind === "blocked") {
-      onError(plan.reason);
-      return;
-    }
-    setPending({ order, plan });
-  }
 
   return (
     <div className="board-wrap" ref={wrapRef}>
@@ -195,15 +186,7 @@ export default function OrderBoard({
             key={column.key}
             role="listitem"
             data-col={column.key}
-            className={`board-col${overColumn === column.key ? " board-col-over" : ""}`}
-            onDragEnter={() => setOverColumn(column.key)}
-            onDragOver={(event) => {
-              if (busy) return;
-              event.preventDefault();
-              setOverColumn(column.key);
-            }}
-            onDragLeave={() => setOverColumn((current) => (current === column.key ? null : current))}
-            onDrop={(event) => handleDrop(event, column.title)}
+            className="board-col"
           >
             <header className="board-col-head">
               <span className="board-col-title" title={column.title}>
@@ -224,27 +207,8 @@ export default function OrderBoard({
               {column.orders.map((order) => (
                 <article
                   key={order.id}
-                  className={`board-card${dragging === order.id ? " board-card-dragging" : ""}`}
+                  className="board-card"
                 >
-                  <div
-                    className="board-card-grip"
-                    role="button"
-                    tabIndex={-1}
-                    aria-label={`拖动 ${order.code} 到其它阶段`}
-                    title="按住这里拖动到目标阶段"
-                    draggable={!busy}
-                    onDragStart={(event) => {
-                      event.dataTransfer.setData("text/plain", `minidesk-order:${order.id}`);
-                      event.dataTransfer.effectAllowed = "move";
-                      setDragging(order.id);
-                    }}
-                    onDragEnd={() => {
-                      setDragging(null);
-                      setOverColumn(null);
-                    }}
-                  >
-                    ⠿
-                  </div>
                   <button
                     type="button"
                     className="board-card-open"
@@ -272,15 +236,67 @@ export default function OrderBoard({
                       </span>
                     </span>
                   </button>
-                  {nextStageTitle(order) && (
-                    <button
-                      type="button"
-                      className="board-card-move"
-                      title={`推进到「${nextStageTitle(order)}」`}
-                      onClick={() => requestNext(order)}
-                    >
-                      → {nextStageTitle(order)}
-                    </button>
+                  {order.status === "active" && (
+                    <div className="board-card-actions">
+                      {nextStageTitle(order) && (
+                        <button
+                          type="button"
+                          className="board-card-move"
+                          title={`推进到「${nextStageTitle(order)}」`}
+                          onClick={() => requestNext(order)}
+                        >
+                          → {nextStageTitle(order)}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="board-card-more"
+                        aria-expanded={menuFor === order.id}
+                        aria-haspopup="menu"
+                        title="选择阶段操作"
+                        onClick={() => setMenuFor(menuFor === order.id ? null : order.id)}
+                      >
+                        阶段操作
+                      </button>
+                      {menuFor === order.id && (
+                        <ul className="stage-menu" role="menu" aria-label={`${order.code} 的阶段操作`}>
+                          {order.stages
+                            .filter((stage) => stage.id !== order.currentStageId)
+                            .map((stage) => {
+                              const plan = planStageMove(order, stage.title);
+                              const usable = plan.kind === "advance" || plan.kind === "rework";
+                              // 禁用项必须有原因：blocked 用领域给的理由，
+                              // 其余（noop 等）也要给一句人话，不能让按钮"灰着不说话"。
+                              const reason =
+                                plan.kind === "blocked"
+                                  ? plan.reason
+                                  : usable
+                                    ? null
+                                    : "无法通过单个合法动作到达该阶段";
+                              return (
+                                <li key={stage.id} role="none">
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    className="stage-menu-item"
+                                    disabled={!usable}
+                                    title={reason ?? undefined}
+                                    onClick={() => {
+                                      setMenuFor(null);
+                                      if (plan.kind === "advance" || plan.kind === "rework") {
+                                        setPending({ order, plan });
+                                      }
+                                    }}
+                                  >
+                                    {plan.kind === "rework" ? "返工到" : "推进到"}「{stage.title}」
+                                    {reason && <span className="stage-menu-reason">{reason}</span>}
+                                  </button>
+                                </li>
+                              );
+                            })}
+                        </ul>
+                      )}
+                    </div>
                   )}
                 </article>
               ))}

@@ -3320,3 +3320,13 @@ body:has(.row-dragging) {
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* 底部留白必须在**滚动内容内部**，否则滚到底时最后一张卡仍贴着边界。
+   UI-03 只给容器加 padding，实测无效，这里改用 ::after 作为内容末尾的间隙。 */
+.board-cards::after,
+.table-scroll::after,
+.order-rows::after {
+  content: "";
+  display: block;
+  height: 22px;
+}

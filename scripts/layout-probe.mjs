@@ -762,6 +762,25 @@ if (process.env.PROBE_VIEW) {
           };
         });
       })(),
+      bottomGap: (() => {
+        const map = [
+          [".order-rows", "rows"],
+          [".board-cards", "board"],
+          [".table-scroll", "table"],
+        ];
+        for (const [sel, key] of map) {
+          const box = document.querySelector(sel);
+          if (!box) continue;
+          box.scrollTop = box.scrollHeight;
+          const items = box.querySelectorAll(".order-row, .board-card, tbody tr");
+          const last = items[items.length - 1];
+          if (!last) continue;
+          const b = box.getBoundingClientRect();
+          const l = last.getBoundingClientRect();
+          return { key, gap: Math.round(b.bottom - l.bottom) };
+        }
+        return null;
+      })(),
       bottomPad: (() => {
         const pick = (sel) => {
           const node = document.querySelector(sel);

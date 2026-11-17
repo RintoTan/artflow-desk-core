@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -90,19 +90,6 @@ function columnEl(title: string): HTMLElement {
   return hit;
 }
 
-/** jsdom 没有真实 DataTransfer，手工造一个最小实现。 */
-function drop(target: HTMLElement, orderId: string) {
-  const store: Record<string, string> = { "text/minidesk-order": orderId };
-  fireEvent.drop(target, {
-    dataTransfer: {
-      getData: (key: string) => store[key] ?? "",
-      setData: (key: string, value: string) => {
-        store[key] = value;
-      },
-      effectAllowed: "move",
-    },
-  });
-}
 
 describe("OrderBoard 真实交互", () => {
   it("按阶段名分列，列头显示数量与已知金额合计", () => {
@@ -117,7 +104,8 @@ describe("OrderBoard 真实交互", () => {
     const onApply = vi.fn(async () => {});
     render(<OrderBoard {...baseProps({ onApply })} />);
 
-    drop(columnEl("线稿"), "o1");
+    // 拖拽已在 UI-04 移除（QA-02 实机 FAIL），改走显式「→ 下一阶段」按钮。
+    await user.click(screen.getAllByRole("button", { name: /^→ / })[0]!);
     const dialog = await screen.findByRole("alertdialog");
     expect(dialog).toHaveTextContent("推进阶段");
     expect(dialog).toHaveTextContent("线稿");
@@ -132,7 +120,8 @@ describe("OrderBoard 真实交互", () => {
     const onApply = vi.fn(async () => {});
     render(<OrderBoard {...baseProps({ onApply })} />);
 
-    drop(columnEl("线稿"), "o1");
+    // 拖拽已在 UI-04 移除（QA-02 实机 FAIL），改走显式「→ 下一阶段」按钮。
+    await user.click(screen.getAllByRole("button", { name: /^→ / })[0]!);
     await user.click(screen.getByRole("button", { name: "确认变更" }));
 
     expect(onApply).toHaveBeenCalledTimes(1);
@@ -144,15 +133,37 @@ describe("OrderBoard 真实交互", () => {
     expect(plan).toMatchObject({ kind: "advance", targetStageId: "s-线稿" });
   });
 
-  it("跨两个阶段直接拒绝，不弹确认框", async () => {
+  it("阶段菜单里的每一项要么是合法单步动作，要么禁用并说明原因", async () => {
+    const user = userEvent.setup();
     const onApply = vi.fn(async () => {});
     const onError = vi.fn();
-    render(<OrderBoard {...baseProps({ onApply, onError })} />);
+    const atDraft = order({
+      id: "o1",
+      currentStageId: "s-草稿",
+      currentStageTitle: "草稿",
+      stages: stages(["草稿", "线稿", "上色"], 0),
+    });
+    render(<OrderBoard {...baseProps({ orders: [atDraft], onApply, onError })} />);
 
-    drop(columnEl("上色"), "o1");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "阶段操作" }));
+    const items = screen.getAllByRole("menuitem") as HTMLButtonElement[];
+    expect(items.length).toBeGreaterThan(0);
+
+    for (const item of items) {
+      if (item.disabled) {
+        // 禁用项必须给出原因，不能让用户猜
+        expect(item.getAttribute("title") ?? "").not.toBe("");
+        await user.click(item);
+        expect(screen.queryByRole("alertdialog")).toBeNull();
+      }
+    }
+
+    // 至少存在一条可点的合法动作，且点了会弹确认框（不是静默写入）
+    const enabled = items.filter((item) => !item.disabled);
+    expect(enabled.length).toBeGreaterThan(0);
+    await user.click(enabled[0]!);
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
     expect(onApply).not.toHaveBeenCalled();
-    expect(onError).toHaveBeenCalledWith(expect.stringContaining("不能跳过中间阶段"));
   });
 
   it("终态订单不进阶段列，而是单独列出", () => {
@@ -214,11 +225,48 @@ describe("OrderBoard 真实交互", () => {
     const onApply = vi.fn(async () => {});
     render(<OrderBoard {...baseProps({ onApply })} />);
 
-    drop(columnEl("线稿"), "o1");
+    // 拖拽已在 UI-04 移除（QA-02 实机 FAIL），改走显式「→ 下一阶段」按钮。
+    await user.click(screen.getAllByRole("button", { name: /^→ / })[0]!);
     await screen.findByRole("alertdialog");
     await user.keyboard("{Escape}");
 
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it("阶段导航可以双向切换（QA-02 P1-02 回归）", async () => {
+    const user = userEvent.setup();
+    // 必须阶段数 > 一次可见列数，才真正触发切片（否则测不出回退失败）。
+    const five = stages(["草稿", "线稿", "固有色", "细化", "最终调整"], 0);
+    const orders = [
+      order({ id: "o1", currentStageId: "s-草稿", currentStageTitle: "草稿", stages: five }),
+      ...threeOrders().slice(1),
+    ];
+    render(<OrderBoard {...baseProps({ orders })} />);
+
+    const navChips = () => Array.from(document.querySelectorAll(".board-nav-chip"));
+    // 先跳到最后一个阶段
+    await user.click(navChips()[navChips().length - 1]!);
+    expect(navChips().at(-1)?.getAttribute("aria-current")).toBe("true");
+    // 再点回第一个：切片里原本没有它，旧实现会静默失败
+    await user.click(navChips()[0]!);
+    expect(navChips()[0]?.getAttribute("aria-current")).toBe("true");
+    expect(columnEl("草稿")).toBeTruthy();
+  });
+
+  it("拖拽柄已移除：不再提供无效的拖放暗示", () => {
+    render(<OrderBoard {...baseProps()} />);
+    expect(document.querySelector(".board-card-grip")).toBeNull();
+    expect(document.querySelector("[draggable='true']")).toBeNull();
+  });
+
+  it("阶段操作菜单只列该订单模板里的合法目标", async () => {
+    const user = userEvent.setup();
+    render(<OrderBoard {...baseProps({ orders: [order()] })} />);
+    await user.click(screen.getAllByRole("button", { name: "阶段操作" })[0]!);
+    const items = screen.getAllByRole("menuitem");
+    // 3 个阶段去掉当前阶段 = 2 个候选
+    expect(items).toHaveLength(2);
+    expect(items.map((i) => i.textContent)).toEqual(["返工到「草稿」", "推进到「上色」"]);
   });
 });
