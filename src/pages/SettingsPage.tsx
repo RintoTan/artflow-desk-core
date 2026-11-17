@@ -1,7 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, describeError, type TimezoneInfo } from "../bridge/commands";
 import { usePageShortcuts } from "../lib/shortcuts";
 import { useUnsavedGuard } from "../lib/unsavedRegistry";
+import {
+  DEFAULT_CHOICE,
+  checkAccent,
+  clearPreview,
+  hasPreview,
+  normalizeAccent,
+  subscribeTheme,
+  persistTheme,
+  resolveTheme,
+  savedChoice,
+  setPreview,
+  systemPrefersDark,
+  type ThemeChoice,
+  type ThemeMode,
+} from "../lib/theme";
 
 const COMMON_ZONES = [
   "Asia/Shanghai",
@@ -14,12 +29,23 @@ const COMMON_ZONES = [
   "UTC",
 ];
 
+const MODE_LABEL: Record<ThemeMode, string> = {
+  arctic: "Arctic Blue（默认浅色）",
+  dark: "深色",
+  system: "跟随系统",
+};
+
 export default function SettingsPage() {
   const [info, setInfo] = useState<TimezoneInfo | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [themeDraft, setThemeDraft] = useState<ThemeChoice>(() => savedChoice());
+  const [themeSaved, setThemeSaved] = useState<ThemeChoice>(() => savedChoice());
+  const themeDirtyRef = useRef(false);
+  const syncedRef = useRef(false);
 
   useEffect(() => {
     api
@@ -31,15 +57,54 @@ export default function SettingsPage() {
       .catch((e) => setError(describeError(e)));
   }, []);
 
+  // 主题可能在设置页打开后才加载完成；只有"当前没有草稿"时才同步，避免覆盖用户的修改。
+  useEffect(
+    () =>
+      subscribeTheme(() => {
+        // 只在"还没同步过、且没有草稿"时同步一次。
+        // 预览也会触发通知，若这里无条件覆盖，用户刚选的模式会被立刻打回去。
+        if (themeDirtyRef.current || syncedRef.current || hasPreview()) return;
+        const next = savedChoice();
+        setThemeSaved(next);
+        setThemeDraft(next);
+        syncedRef.current = true;
+      }),
+    [],
+  );
+
+  const timezoneDirty =
+    info !== null && draft.trim() !== "" && draft.trim() !== info.workingTimezone;
+  const themeDirty =
+    themeDraft.mode !== themeSaved.mode ||
+    normalizeAccent(themeDraft.accent) !== normalizeAccent(themeSaved.accent);
+  const dirty = timezoneDirty || themeDirty;
+  themeDirtyRef.current = themeDirty;
+
+  function previewTheme(next: ThemeChoice) {
+    setThemeDraft(next);
+    setPreview(next);
+  }
+
   async function apply(): Promise<string | null> {
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
-      const next = await api.timezoneSet(draft.trim());
-      setInfo(next);
-      setDraft(next.workingTimezone);
-      setMessage("工作时区已保存。历史事件的时间点不会改变，只影响展示、提醒与统计月份归属。");
+      if (themeDirty) {
+        const themeError = await persistTheme(themeDraft);
+        if (themeError) {
+          // 主题没存上：不清预览、不改已保存值，用户还能继续调整。
+          setError(`主题：${themeError}`);
+          return themeError;
+        }
+        setThemeSaved(savedChoice());
+      }
+      if (timezoneDirty) {
+        const next = await api.timezoneSet(draft.trim());
+        setInfo(next);
+        setDraft(next.workingTimezone);
+      }
+      setMessage("设置已保存。");
       return null;
     } catch (e) {
       const text = describeError(e);
@@ -50,14 +115,14 @@ export default function SettingsPage() {
     }
   }
 
-  const dirty = info !== null && draft.trim() !== "" && draft.trim() !== info.workingTimezone;
-
   useUnsavedGuard({
     id: "settings",
-    label: "工作时区",
+    label: timezoneDirty ? "工作时区与主题" : "主题",
     dirty,
     save: () => apply(),
     discard: () => {
+      clearPreview();
+      setThemeDraft(themeSaved);
       if (info) setDraft(info.workingTimezone);
     },
   });
@@ -68,8 +133,140 @@ export default function SettingsPage() {
     },
   });
 
+  const resolved = resolveTheme(themeDraft.mode, systemPrefersDark());
+  const accent = normalizeAccent(themeDraft.accent);
+  const accentCheck = accent ? checkAccent(accent, resolved) : null;
+
   return (
     <>
+      <section className="panel">
+        <header className="panel-head">
+          <div>
+            <h2>外观</h2>
+            <p className="muted">
+              选择的是「模式」，实际外观由模式和系统共同决定。跟随系统时改的是系统的深色开关，
+              这里不会把当前外观记成你的选择。
+            </p>
+          </div>
+        </header>
+
+        <div className="row">
+          <span className="row-label">用户选择</span>
+          <span className="row-value">{MODE_LABEL[themeDraft.mode]}</span>
+        </div>
+        <div className="row">
+          <span className="row-label">当前实际外观</span>
+          <span className="row-value">
+            {resolved === "dark" ? "深色" : "浅色"}
+            {themeDraft.mode === "system" ? `（系统当前：${systemPrefersDark() ? "深色" : "浅色"}）` : ""}
+          </span>
+        </div>
+        <div className="row">
+          <span className="row-label">已保存</span>
+          <span className="row-value">
+            {MODE_LABEL[themeSaved.mode]}
+            {themeSaved.accent ? ` · 强调色 ${themeSaved.accent}` : " · 主题自带强调色"}
+          </span>
+        </div>
+
+        <div className="field">
+          <span>主题模式</span>
+          <div className="segmented" role="group" aria-label="主题模式">
+            {(["arctic", "dark", "system"] as ThemeMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={themeDraft.mode === mode ? "btn btn-primary" : "btn"}
+                aria-pressed={themeDraft.mode === mode}
+                onClick={() => previewTheme({ ...themeDraft, mode })}
+              >
+                {MODE_LABEL[mode]}
+              </button>
+            ))}
+          </div>
+          <p className="hint">切换会立刻预览，但只有点「保存设置」才会写入。</p>
+        </div>
+
+        <div className="field">
+          <label htmlFor="accent">
+            <span>强调色</span>
+          </label>
+          <div className="inline-row">
+            <input
+              id="accent"
+              type="color"
+              className="color-input"
+              value={accent ?? "#2c6fb5"}
+              onChange={(e) => previewTheme({ ...themeDraft, accent: e.target.value })}
+            />
+            <input
+              aria-label="强调色十六进制"
+              value={accent ?? ""}
+              placeholder="留空用主题自带色，例如 #2c6fb5"
+              spellCheck={false}
+              onChange={(e) => {
+                const raw = e.target.value.trim();
+                previewTheme({ ...themeDraft, accent: raw === "" ? null : raw });
+              }}
+            />
+            <button
+              type="button"
+              className="btn"
+              onClick={() => previewTheme({ ...themeDraft, accent: null })}
+            >
+              用默认色
+            </button>
+          </div>
+          <p className="hint">
+            只接受 #rrggbb；只影响强调色相关的按钮、焦点与选中态，不改动页面结构。
+          </p>
+          {accent === null && themeDraft.accent !== null && (
+            <p className="notice notice-error" role="alert">
+              强调色格式不对（需要 #rrggbb），已按默认色预览，保存时会拒绝。
+            </p>
+          )}
+          {accentCheck?.message && (
+            <p className={accentCheck.level === "warn" ? "notice notice-warn" : "notice"} role="status">
+              {accentCheck.message}
+            </p>
+          )}
+        </div>
+
+        <div className="actions">
+          <button type="button" className="btn btn-primary" onClick={apply} disabled={busy || !dirty}>
+            {busy ? "保存中…" : "保存设置"}
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={!dirty || busy}
+            onClick={() => {
+              clearPreview();
+              setThemeDraft(themeSaved);
+              if (info) setDraft(info.workingTimezone);
+            }}
+          >
+            放弃修改
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            onClick={() => previewTheme({ ...DEFAULT_CHOICE })}
+          >
+            恢复默认主题
+          </button>
+        </div>
+        {dirty && (
+          <p className="hint">
+            有未保存的修改。离开本页或关闭窗口会先问你。
+          </p>
+        )}
+
+        {message && <p className="notice notice-ok">{message}</p>}
+        {error && <p className="notice notice-error">{error}</p>}
+      </section>
+
       <section className="panel">
         <header className="panel-head">
           <div>
@@ -113,22 +310,12 @@ export default function SettingsPage() {
           </datalist>
           <p className="hint">必须是有效的 IANA 名称；非法值会被拒绝保存。</p>
         </div>
-
-        <div className="actions">
-          <button type="button" className="btn btn-primary" onClick={apply} disabled={busy}>
-            {busy ? "保存中…" : "保存时区"}
-          </button>
-        </div>
-
-        {message && <p className="notice notice-ok">{message}</p>}
-        {error && <p className="notice notice-error">{error}</p>}
       </section>
 
       <section className="panel panel-quiet">
         <h2>本阶段尚未提供的设置</h2>
         <p className="muted">
-          主题编辑、列表密度、启动页面、备份提醒等属于后续阶段，界面在此明确标注，
-          不会用占位控件伪装成已实现功能。
+          启动页面、备份提醒等属于后续阶段，界面在此明确标注，不会用占位控件伪装成已实现功能。
         </p>
       </section>
     </>

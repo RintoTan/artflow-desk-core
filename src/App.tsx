@@ -4,17 +4,67 @@ import { NavLink, Outlet } from "react-router-dom";
 import { api, describeError } from "./bridge/commands";
 import UnsavedChangesDialog from "./components/UnsavedChangesDialog";
 import { subscribeModalStack, topModal } from "./lib/modalStack";
+import {
+  applyTheme,
+  currentChoice,
+  loadTheme,
+  subscribeTheme,
+  systemPrefersDark,
+  watchSystemAppearance,
+} from "./lib/theme";
 import { activeGuard, dirtyGuards, useHasUnsavedDraft } from "./lib/unsavedRegistry";
 
-const NAV = [
-  { to: "/", label: "工作台", end: true },
-  { to: "/orders", label: "订单" },
-  { to: "/clients", label: "客户" },
-  { to: "/templates", label: "流程模板" },
-  { to: "/stats", label: "历史统计" },
-  { to: "/settings", label: "设置" },
-  { to: "/status", label: "数据环境" },
+type NavIconName =
+  | "dashboard"
+  | "orders"
+  | "clients"
+  | "templates"
+  | "stats"
+  | "settings"
+  | "status";
+
+type NavItem = {
+  to: string;
+  label: string;
+  icon: NavIconName;
+  end?: boolean;
+};
+
+const NAV: NavItem[] = [
+  { to: "/", label: "工作台", icon: "dashboard", end: true },
+  { to: "/orders", label: "订单", icon: "orders" },
+  { to: "/clients", label: "客户", icon: "clients" },
+  { to: "/templates", label: "流程模板", icon: "templates" },
+  { to: "/stats", label: "历史统计", icon: "stats" },
+  { to: "/settings", label: "设置", icon: "settings" },
+  { to: "/status", label: "数据环境", icon: "status" },
 ];
+
+/** 折叠后只剩图标，所以每个图标要能独立辨认，并配 title 提示。 */
+const ICON_PATHS: Record<NavIconName, string> = {
+  dashboard: "M3 3h7v7H3zM14 3h7v4h-7zM14 10h7v11h-7zM3 13h7v8H3z",
+  orders: "M4 4h16v16H4zM8 9h8M8 13h8M8 17h5",
+  clients: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M17 8h5M19.5 5.5v5",
+  templates: "M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5M3 17l9 5 9-5",
+  stats: "M4 20V10M10 20V4M16 20v-7M22 20H2",
+  settings: "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19.4 15a7.9 7.9 0 0 0 .1-1 7.9 7.9 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a8 8 0 0 0-1.7-1l-.4-2.6h-4l-.4 2.6a8 8 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a8 8 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a8 8 0 0 0 1.7 1l.4 2.6h4l.4-2.6a8 8 0 0 0 1.7-1l2.4 1 2-3.4z",
+  status: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.6 2.5 15.4 0 18M12 3c-2.5 2.6-2.5 15.4 0 18",
+};
+
+function NavIcon({ name }: { name: NavIconName }) {
+  return (
+    <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d={ICON_PATHS[name]}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 type CloseKind = "window" | "quit";
 
@@ -31,6 +81,14 @@ export default function App() {
   const [closeBusy, setCloseBusy] = useState(false);
 
   const hasDraft = useHasUnsavedDraft();
+  const [themeTick, setThemeTick] = useState(0);
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem("minidesk.sidebar") === "collapsed";
+    } catch {
+      return false;
+    }
+  });
   // 打开确认框时快照一次草稿名单，用于提示"有几处、分别是什么"。
   const [dirtyLabels, setDirtyLabels] = useState<string[]>([]);
   const closingRef = useRef(false);
@@ -40,6 +98,33 @@ export default function App() {
   const bridgeRef = useRef<TauriBridge | null>(null);
 
   closeKindRef.current = closeKind;
+
+  // 主题：启动读一次、跟随系统、预览/保存都会通过 subscribeTheme 触发重渲染。
+  useEffect(() => {
+    let alive = true;
+    void loadTheme().then(() => {
+      if (alive) setThemeTick((n) => n + 1);
+    });
+    const stopWatching = watchSystemAppearance();
+    const unsubscribe = subscribeTheme(() => setThemeTick((n) => n + 1));
+    return () => {
+      alive = false;
+      stopWatching();
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    applyTheme(document.documentElement, currentChoice(), systemPrefersDark());
+  }, [themeTick]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("minidesk.sidebar", collapsed ? "collapsed" : "expanded");
+    } catch {
+      /* 存不了就只在本次会话生效 */
+    }
+  }, [collapsed]);
 
   useEffect(() => {
     let alive = true;
@@ -210,11 +295,11 @@ export default function App() {
   }
 
   return (
-    <div className="shell">
+    <div className={collapsed ? "shell shell-sidebar-collapsed" : "shell"}>
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true" />
-          <div>
+          <div className="brand-text">
             <strong>ArtFlow miniDesk</strong>
             <small>{qa ? "QA 测试环境" : "本地委托台账"}</small>
           </div>
@@ -226,12 +311,36 @@ export default function App() {
               key={item.to}
               to={item.to}
               end={item.end}
+              title={item.label}
+              aria-current={undefined}
               className={({ isActive }) => (isActive ? "nav-item nav-item-active" : "nav-item")}
             >
-              {item.label}
+              <NavIcon name={item.icon} />
+              <span className="nav-label">{item.label}</span>
             </NavLink>
           ))}
         </nav>
+
+        <button
+          type="button"
+          className="sidebar-collapse"
+          onClick={() => setCollapsed((value) => !value)}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "展开侧边栏" : "折叠侧边栏"}
+          title={collapsed ? "展开侧边栏" : "折叠侧边栏"}
+        >
+          <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d={collapsed ? "M9 5l7 7-7 7" : "M15 5l-7 7 7 7"}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span className="nav-label">折叠</span>
+        </button>
 
         <footer className="sidebar-foot">
           <span>{hasDraft ? "有未保存的修改" : "DEV-06A 关窗保护"}</span>
