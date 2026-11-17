@@ -43,6 +43,9 @@
   --warn-soft: #fbf1dd;
   --radius: 12px;
   --radius-sm: 8px;
+  /* 控件统一尺寸：同层级按钮/输入框高度一致 */
+  --control-h: 34px;
+  --control-h-sm: 28px;
   --shadow: 0 1px 2px rgba(22, 40, 60, 0.05), 0 8px 24px rgba(22, 40, 60, 0.05);
 
   font-family: "PingFang SC", "Hiragino Sans GB", "Source Han Sans SC", "Noto Sans SC",
@@ -128,18 +131,27 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 10px;
-  border: 1px solid var(--border);
+  padding: 0 10px;
+  min-height: 44px;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text-muted);
+  background: transparent;
+  color: var(--text-faint);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
 }
 
+/* 低优先级操作：默认几乎不出现，hover/聚焦时才显形 */
 .sidebar-collapse:hover {
-  border-color: var(--border-strong);
+  background: var(--neutral-soft);
+  color: var(--text-muted);
+}
+
+.sidebar-collapse:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
   color: var(--text);
 }
 
@@ -174,6 +186,27 @@ body {
 /* 命中区域：折叠后只剩图标，必须仍然够大（>=44×44） */
 .nav-item {
   min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 图标盒固定 24×24：不同形状的图标（齿轮 vs 列表）视觉重心不同，
+   用统一盒子承载，文字起点才不会随图标外形跳动。 */
+.nav-icon-box {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .shell-sidebar-collapsed .nav-item {
@@ -266,7 +299,7 @@ nav {
 
 /* ------------------------------------------------------------ 主区域 */
 .main {
-  padding: 26px 30px 34px;
+  padding: 28px 34px 40px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -282,7 +315,7 @@ nav {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 18px 20px 20px;
+  padding: 20px 22px 22px;
 }
 
 .panel-quiet {
@@ -452,8 +485,9 @@ code.mono {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-top: 14px;
-  max-width: 380px;
+  margin-top: 16px;
+  min-width: 0;
+  max-width: 460px;
 }
 
 .field label {
@@ -462,7 +496,10 @@ code.mono {
 }
 
 .field input {
-  padding: 9px 11px;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-h);
+  padding: 6px 11px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -490,12 +527,19 @@ code.mono {
   border: 1px solid var(--border-strong);
   background: var(--surface);
   color: var(--text);
-  padding: 8px 16px;
+  min-height: var(--control-h);
+  padding: 0 14px;
   border-radius: var(--radius-sm);
   font-size: 13px;
   font-family: inherit;
+  line-height: 1.2;
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .btn:hover:not(:disabled) {
@@ -590,13 +634,21 @@ code.mono {
 /* 内容区不够放两栏时改成上下堆叠：列表在上（限高可滚），详情在下。
    不用 absolute、不裁切、不强制横向滚动，也不改变任何页面状态。 */
 @container workspace (max-width: 780px) {
+  /* 单栏时给列表一个"确定高度"。
+     原因：.orders-list 是 overflow:hidden 的弹性滚动容器，它的内在高度贡献
+     只有表头那 40px，而 align-items:start 又让它不拉伸 —— 轨道按 40px 排、
+     元素按 320px 画，于是列表整块压在详情上。实测：行高 40px / 元素 320px。 */
   .orders-layout {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: stretch;
   }
 
   .orders-list {
     position: static;
+    height: 42vh;
     max-height: 42vh;
+    min-height: 220px;
   }
 
   .orders-detail {
@@ -607,7 +659,9 @@ code.mono {
 /* 极窄：进一步压缩列表高度，保证详情和按钮仍可操作 */
 @container workspace (max-width: 560px) {
   .orders-list {
+    height: 34vh;
     max-height: 34vh;
+    min-height: 180px;
   }
 
   .form-grid {
@@ -620,11 +674,15 @@ code.mono {
   @media (max-width: 1120px) {
     .orders-layout {
       grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto auto;
+      align-items: stretch;
     }
 
     .orders-list {
       position: static;
-      max-height: 320px;
+      height: 42vh;
+      max-height: 42vh;
+      min-height: 220px;
     }
   }
 }
@@ -684,12 +742,16 @@ code.mono {
   letter-spacing: 0.02em;
 }
 
+/* 列表里最多两行，超出省略：长标题不再撑破行宽，也不再挤掉编号与状态 */
 .order-row-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
   font-size: 13.5px;
   font-weight: 560;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
 }
 
 .order-row-meta {
@@ -791,6 +853,11 @@ code.mono {
   font-size: 20px;
   font-weight: 620;
   letter-spacing: -0.01em;
+  line-height: 1.3;
+  /* 连续英文/数字/无空格串也要能断行，否则撑破卡片 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
 }
 
 .facts {
