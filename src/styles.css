@@ -2646,9 +2646,11 @@ body:has(.row-dragging) {
 }
 
 .board-col {
-  flex: 0 0 200px;
-  min-width: 180px;
-  max-width: 260px;
+  /* 可伸缩：只显示 1–2 列时把可用宽度用起来，不必留一条空白。
+     上限 300px，避免宽屏下单列被拉成一大片。 */
+  flex: 1 1 200px;
+  min-width: 190px;
+  max-width: 300px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface-soft, rgba(0, 0, 0, 0.02));
@@ -3050,25 +3052,49 @@ body:has(.row-dragging) {
   display: none;
 }
 
-.drawer-close {
+/* 抽屉标题栏：标题 + 关闭，整条可预期，不再悬浮在边界外。 */
+.drawer-bar {
   position: sticky;
-  top: 0;
-  float: right;
-  z-index: 1;
-  margin: -6px -6px 8px 12px;
-  padding: 4px 10px;
+  top: -18px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -18px -20px 14px;
+  padding: 12px 16px 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.drawer-bar-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.drawer-close {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 9px;
   background: var(--surface);
   color: var(--text-muted);
-  font: inherit;
-  font-size: 12px;
   cursor: pointer;
 }
 
 .drawer-close:hover {
   color: var(--text);
   border-color: var(--border-strong);
+  background: var(--surface-soft);
+}
+
+.drawer-close:focus-visible {
+  outline: 2px solid var(--accent, #5a7c9b);
+  outline-offset: 2px;
 }
 
 .board-card-move {
@@ -3229,4 +3255,68 @@ body:has(.row-dragging) {
 .table-hint {
   margin: 8px 0 0;
   font-size: 11px;
+}
+
+/* 看板卡片拖拽柄：WebKit 不允许从 <button> 上起拖，必须有一个非按钮的抓手。 */
+.board-card {
+  position: relative;
+}
+
+.board-card-grip {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: -1px;
+  cursor: grab;
+  opacity: 0.55;
+  touch-action: none;
+}
+
+.board-card-grip:hover,
+.board-card-grip:focus-visible {
+  opacity: 1;
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.board-card-grip:active {
+  cursor: grabbing;
+}
+
+.board-card .board-card-open {
+  padding-left: 30px;
+}
+
+/* 底部安全距离：滚到底时最后一项与窗口边缘留 22px，避免"贴着窗口底"。 */
+.orders-list .order-rows {
+  padding-bottom: 22px;
+}
+
+.board-cards {
+  padding-bottom: 22px;
+}
+
+.table-wrap {
+  padding-bottom: 22px;
+}
+
+.orders-detail {
+  padding-bottom: 34px;
+}
+
+.orders-wide {
+  padding-bottom: 18px;
+}
+
+/* 工具区二级行：把辅助操作推到右侧，主次分明 */
+.head-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
 }

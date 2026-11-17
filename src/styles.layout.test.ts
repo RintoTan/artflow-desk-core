@@ -157,7 +157,9 @@ describe("DEV-06B-UI-POLISH 规则守卫", () => {
 
   it("订单页只给列表体确定高度，卡片高度由内容决定", () => {
     const narrow = blockAt("@container workspace (max-width: 780px)");
-    expect(narrow).toMatch(/\.orders-page\.orders-layout\s*\{[^}]*grid-template-rows:\s*max-content auto/);
+    // 选择器在 UI-02 由 `.orders-page.orders-layout` 改为后代选择器（页头上移），
+    // 断言的意图不变：窄容器下工作区仍是「列表自适应高度 + 详情占剩余」。
+    expect(narrow).toMatch(/\.orders-page \.orders-layout\s*\{[^}]*grid-template-rows:\s*max-content auto/);
     const list = /\.orders-page \.orders-list\s*\{([^}]*)\}/.exec(narrow)?.[1] ?? "";
     expect(list).toMatch(/height:\s*auto/);
     expect(list).toMatch(/max-height:\s*none/);

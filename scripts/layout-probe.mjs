@@ -691,6 +691,15 @@ if (process.env.PROBE_VIEW) {
   })()`);
   await sleep(500);
 
+  if (process.env.PROBE_DRAWER) {
+    await run(`(() => {
+      const card = document.querySelector(".board-card-open");
+      if (card) card.click();
+      return true;
+    })()`);
+    await new Promise((r) => setTimeout(r, 700));
+  }
+
   const geom = await run(`(() => {
     const root = document.documentElement;
     const board = document.querySelector(".board");
@@ -711,6 +720,7 @@ if (process.env.PROBE_VIEW) {
         ? {
             exists: true,
             cols: cols.length,
+            totalCols: document.querySelectorAll(".board-nav-chip").length,
             minColW: widths.length ? Math.min(...widths) : 0,
             scrollW: Math.round(board.scrollWidth),
             clientW: Math.round(board.clientWidth),
@@ -751,6 +761,32 @@ if (process.env.PROBE_VIEW) {
             w: Math.round(td.getBoundingClientRect().width),
           };
         });
+      })(),
+      bottomPad: (() => {
+        const pick = (sel) => {
+          const node = document.querySelector(sel);
+          return node ? Math.round(parseFloat(getComputedStyle(node).paddingBottom || "0")) : null;
+        };
+        return {
+          rows: pick(".order-rows"),
+          board: pick(".board-cards"),
+          table: pick(".table-wrap"),
+          detail: pick(".orders-detail"),
+        };
+      })(),
+      drawer: (() => {
+        const bar = document.querySelector(".drawer-bar");
+        const close = document.querySelector(".drawer-close");
+        const panel = document.querySelector(".orders-detail");
+        if (!bar || !close || !panel) return null;
+        const c = close.getBoundingClientRect();
+        const p = panel.getBoundingClientRect();
+        return {
+          size: Math.round(c.width),
+          h: Math.round(c.height),
+          offsetTop: Math.round(c.top - p.top),
+          inside: c.left >= p.left - 1 && c.right <= p.right + 1,
+        };
       })(),
       boardNav: (() => {
         const nav = document.querySelector(".board-nav");

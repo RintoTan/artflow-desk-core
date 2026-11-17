@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 
+import { useElementWidth } from "../lib/useElementWidth";
+
 import type { OrderView } from "../bridge/commands";
 import { riskBadge } from "../lib/ordersView";
 
@@ -68,6 +70,12 @@ export default function OrderTable({
   formatDate,
 }: Props) {
   const [sort, setSort] = useState<{ key: SortKey; asc: boolean } | null>(null);
+  const [wrapRef, wrapWidth] = useElementWidth<HTMLDivElement>();
+  /**
+   * 窄容器用「两行单元格」而不是削窄十列：编号 / 委托(+客户·来源) /
+   * 阶段(+状态) / 交付(+金额) 四格，横向不再需要滚动。
+   */
+  const compact = wrapWidth > 0 && wrapWidth < 760;
 
   const rows = useMemo(() => {
     if (!sort) return orders;
@@ -98,7 +106,7 @@ export default function OrderTable({
   }
 
   return (
-    <div className="table-wrap">
+    <div className="table-wrap" ref={wrapRef}>
       <table className="order-table">
         <caption className="muted">
           共 {rows.length} 张。列排序只影响当前展示，不改变队列顺序。
@@ -106,19 +114,29 @@ export default function OrderTable({
         <thead>
           <tr>
             {header("code", "编号")}
-            {header("client", "客户")}
-            {header("title", "委托标题")}
-            {header("source", "来源")}
-            <th scope="col" className="col-secondary">
-              类型
-            </th>
-            {header("stage", "阶段")}
-            {header("status", "状态")}
-            {header("delivery", "计划交付")}
-            {header("amount", "已知金额", "num")}
-            <th scope="col" className="col-secondary">
-              排期
-            </th>
+            {compact ? (
+              <>
+                {header("title", "委托")}
+                {header("stage", "阶段")}
+                {header("delivery", "交付 / 金额")}
+              </>
+            ) : (
+              <>
+                {header("client", "客户")}
+                {header("title", "委托标题")}
+                {header("source", "来源")}
+                <th scope="col" className="col-secondary">
+                  类型
+                </th>
+                {header("stage", "阶段")}
+                {header("status", "状态")}
+                {header("delivery", "计划交付")}
+                {header("amount", "已知金额", "num")}
+                <th scope="col" className="col-secondary">
+                  排期
+                </th>
+              </>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -136,29 +154,65 @@ export default function OrderTable({
               }}
             >
               <td className="mono">{order.code}</td>
-              <td>{order.clientName ?? "—"}</td>
-              <td className="title-cell">
-                <TruncatedTitleText text={order.title}>{order.title}</TruncatedTitleText>
-                {riskBadge(order) && (
-                  <span className={`risk-chip risk-${order.deadlineState}`}>{riskBadge(order)}</span>
-                )}
-              </td>
-              <td>{order.source ?? "—"}</td>
-              <td className="col-secondary">{order.commissionType ?? "—"}</td>
-              <td>{order.currentStageTitle ?? "—"}</td>
-              <td>
-                <span className={`chip chip-${order.status}`}>{STATUS_LABEL[order.status]}</span>
-                {order.status === "active" && (
-                  <span className="muted table-sub">{WORK_LABEL[order.workState]}</span>
-                )}
-              </td>
-              <td>{formatDate(order.plannedDeliveryDate)}</td>
-              <td className="num">{formatMoney(order.amountCents)}</td>
-              <td className="muted schedule-cell col-secondary">
-                {order.plannedStartDate || order.plannedDeliveryDate
-                  ? `${order.plannedStartDate ?? "…"} → ${order.plannedDeliveryDate ?? "…"}`
-                  : "未排期"}
-              </td>
+              {compact ? (
+                <>
+                  <td className="title-cell">
+                    <TruncatedTitleText text={order.title}>{order.title}</TruncatedTitleText>
+                    <span className="muted table-sub">
+                      {order.clientName ?? "未分配"}
+                      {order.source ? ` · ${order.source}` : ""}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="table-main">{order.currentStageTitle ?? "—"}</span>
+                    <span className="table-sub">
+                      <span className={`chip chip-${order.status}`}>{STATUS_LABEL[order.status]}</span>
+                      {order.status === "active" && (
+                        <span className="muted"> · {WORK_LABEL[order.workState]}</span>
+                      )}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="table-main num-inline">
+                      {formatDate(order.plannedDeliveryDate)}
+                    </span>
+                    <span className="table-sub">
+                      {riskBadge(order) && (
+                        <span className={`risk-chip risk-${order.deadlineState}`}>
+                          {riskBadge(order)}
+                        </span>
+                      )}
+                      <span className="num">{formatMoney(order.amountCents)}</span>
+                    </span>
+                  </td>
+                </>
+              ) : (
+                <>
+                  <td>{order.clientName ?? "—"}</td>
+                  <td className="title-cell">
+                    <TruncatedTitleText text={order.title}>{order.title}</TruncatedTitleText>
+                    {riskBadge(order) && (
+                      <span className={`risk-chip risk-${order.deadlineState}`}>{riskBadge(order)}</span>
+                    )}
+                  </td>
+                  <td>{order.source ?? "—"}</td>
+                  <td className="col-secondary">{order.commissionType ?? "—"}</td>
+                  <td>{order.currentStageTitle ?? "—"}</td>
+                  <td>
+                    <span className={`chip chip-${order.status}`}>{STATUS_LABEL[order.status]}</span>
+                    {order.status === "active" && (
+                      <span className="muted table-sub">{WORK_LABEL[order.workState]}</span>
+                    )}
+                  </td>
+                  <td>{formatDate(order.plannedDeliveryDate)}</td>
+                  <td className="num">{formatMoney(order.amountCents)}</td>
+                  <td className="muted schedule-cell col-secondary">
+                    {order.plannedStartDate || order.plannedDeliveryDate
+                      ? `${order.plannedStartDate ?? "…"} → ${order.plannedDeliveryDate ?? "…"}`
+                      : "未排期"}
+                  </td>
+                </>
+              )}
             </tr>
           ))}
         </tbody>
