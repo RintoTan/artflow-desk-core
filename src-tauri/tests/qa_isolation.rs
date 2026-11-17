@@ -1,237 +1,439 @@
-//! QA 沙箱隔离验证。
+//! QA 沙箱隔离与预置数据验证。
 //!
-//! 这些用例全部在 `tempfile` 临时目录里跑，目标只有一个：
-//! **证明 QA 环境不可能读写到别的数据根**。它们不打开真实用户数据目录。
+//! 全部在 `tempfile` 临时目录里跑：不打开、不写入真实用户数据目录。
+//! 这里检查的是**结构性质**（两个根互不可达）与**真实数据状态**，不是比较配置字符串。
 
-use std::ffi::OsStr;
 use std::fs;
 
 use tempfile::TempDir;
 
+use minidesk::domain::{attachments, orders};
 use minidesk::infra::state::AppState;
-use minidesk::store::qa;
-use minidesk::store::paths::Layout;
+use minidesk::qa_dataset::{self, SeedOptions};
+use minidesk::store::qa::{self, Scenario};
+use minidesk::store::settings;
 
-fn os(value: &str) -> &OsStr {
-    OsStr::new(value)
-}
-
-#[test]
-fn without_env_vars_the_app_stays_in_production_mode() {
-    let prod = TempDir::new().unwrap();
-    let resolved = qa::resolve_root(prod.path(), None, None).unwrap();
-    assert!(resolved.is_none(), "没有环境变量时必须返回 None");
-}
-
-#[test]
-fn only_one_key_is_rejected_in_both_directions() {
-    let prod = TempDir::new().unwrap();
-    let qa_dir = TempDir::new().unwrap();
-
-    let only_root = qa::resolve_root(prod.path(), Some(os(&qa_dir.path().to_string_lossy())), None)
-        .unwrap_err();
-    assert_eq!(only_root.code, "ENV");
-    assert!(only_root.message.contains(qa::QA_FLAG_ENV));
-
-    let only_flag = qa::resolve_root(prod.path(), None, Some(os("1"))).unwrap_err();
-    assert_eq!(only_flag.code, "ENV");
-    assert!(only_flag.message.contains(qa::QA_ROOT_ENV));
-}
-
-#[test]
-fn qa_root_without_marker_is_refused() {
-    let prod = TempDir::new().unwrap();
-    let qa_dir = TempDir::new().unwrap();
-
-    let err = qa::resolve_root(
-        prod.path(),
-        Some(os(&qa_dir.path().to_string_lossy())),
-        Some(os("1")),
-    )
-    .unwrap_err();
-    assert_eq!(err.code, "ENV");
-    assert!(
-        err.message.contains(qa::QA_MARKER_FILE),
-        "错误信息必须点名缺少标记文件：{}",
-        err.message
-    );
-}
-
-#[test]
-fn qa_root_with_wrong_marker_body_is_refused() {
-    let prod = TempDir::new().unwrap();
-    let qa_dir = TempDir::new().unwrap();
-    fs::write(qa_dir.path().join(qa::QA_MARKER_FILE), "something-else\n").unwrap();
-
-    let err = qa::resolve_root(
-        prod.path(),
-        Some(os(&qa_dir.path().to_string_lossy())),
-        Some(os("1")),
-    )
-    .unwrap_err();
-    assert_eq!(err.code, "ENV");
-    assert!(err.message.contains("标记内容不正确"), "{}", err.message);
-}
-
-#[test]
-fn qa_root_cannot_overlap_production_in_either_direction() {
-    let outer = TempDir::new().unwrap();
-    let production = outer.path().join("production");
+fn env_roots(outer: &TempDir) -> (std::path::PathBuf, std::path::PathBuf) {
+    // 模拟两个应用标识下的 app_data_dir：正式与 QA 是兄弟目录。
+    let production = outer.path().join("dev.artflow.minidesk");
+    let qa_base = outer.path().join("dev.artflow.minidesk.qa");
     fs::create_dir_all(&production).unwrap();
-    qa::write_marker(&production).unwrap();
+    (production, qa_base)
+}
 
-    // 同一个目录
-    let same = qa::resolve_root(
-        &production,
-        Some(os(&production.to_string_lossy())),
-        Some(os("1")),
-    )
-    .unwrap_err();
-    assert_eq!(same.code, "ENV");
+fn seed_dir(outer: &TempDir) -> std::path::PathBuf {
+    let (_, base) = env_roots(outer);
+    let dir = qa::scenario_root(&base, Scenario::Seeded);
+    qa_dataset::seed_seeded(&dir, &SeedOptions::default()).unwrap();
+    dir
+}
 
-    // QA 在正式目录里
-    let inner = production.join("qa");
-    fs::create_dir_all(&inner).unwrap();
-    qa::write_marker(&inner).unwrap();
-    let inside = qa::resolve_root(&production, Some(os(&inner.to_string_lossy())), Some(os("1")))
-        .unwrap_err();
-    assert_eq!(inside.code, "ENV");
-    assert!(inside.message.contains("互相包含"), "{}", inside.message);
+// ---------------------------------------------------------------- 隔离
 
-    // 正式目录在 QA 里
-    let wrapper = outer.path().join("wrapper");
-    fs::create_dir_all(wrapper.join("production")).unwrap();
-    qa::write_marker(&wrapper).unwrap();
-    let wrapping = qa::resolve_root(
-        &wrapper.join("production"),
-        Some(os(&wrapper.to_string_lossy())),
-        Some(os("1")),
-    )
-    .unwrap_err();
-    assert_eq!(wrapping.code, "ENV");
+#[test]
+fn qa_and_production_directories_differ() {
+    let outer = TempDir::new().unwrap();
+    let (production, base) = env_roots(&outer);
+    let seeded = qa::scenario_root(&base, Scenario::Seeded);
+    let clean = qa::scenario_root(&base, Scenario::Clean);
+
+    assert_ne!(production, seeded);
+    assert_ne!(production, clean);
+    assert_ne!(seeded, clean, "两个场景必须互相隔离");
+    assert!(seeded.starts_with(&base) && clean.starts_with(&base));
+    qa::ensure_isolated(&seeded, Some(&production)).unwrap();
+    qa::ensure_isolated(&clean, Some(&production)).unwrap();
+}
+
+#[test]
+fn symlink_alias_cannot_bypass_the_isolation_check() {
+    let outer = TempDir::new().unwrap();
+    let (production, base) = env_roots(&outer);
+
+    // 建一个指向正式目录的符号链接，再把它当成"QA 父目录"。
+    let alias = outer.path().join("alias-to-prod");
+    std::os::unix::fs::symlink(&production, &alias).unwrap();
+
+    let sneaky = alias.join("seeded");
+    let err = qa::ensure_isolated(&sneaky, Some(&production)).unwrap_err();
+    assert_eq!(err.code, "ENV");
+    assert!(err.message.contains("重叠"), "{}", err.message);
+
+    // 反向：正式目录藏在 QA 目录里面，也要被拒。
+    let nested_prod = base.join("hidden-prod");
+    fs::create_dir_all(&nested_prod).unwrap();
+    let err2 = qa::ensure_isolated(&base, Some(&nested_prod)).unwrap_err();
+    assert_eq!(err2.code, "ENV");
+}
+
+#[test]
+fn scenario_names_are_allowlisted_not_paths() {
+    assert_eq!(Scenario::parse("seeded").unwrap(), Scenario::Seeded);
+    assert_eq!(Scenario::parse("clean").unwrap(), Scenario::Clean);
+    for bad in ["/tmp", "../../etc", "seeded/../clean", ""] {
+        let err = Scenario::parse(bad).unwrap_err();
+        assert_eq!(err.code, "ENV", "{bad} 不应被接受");
+    }
+}
+
+#[test]
+fn only_the_qa_identifier_enters_qa_mode() {
+    assert!(qa::is_qa_identifier(qa::QA_IDENTIFIER));
+    assert!(!qa::is_qa_identifier(qa::PRODUCTION_IDENTIFIER));
+    assert!(!qa::is_qa_identifier("dev.artflow.minidesk.qa.evil"));
 }
 
 #[test]
 fn production_start_refuses_when_a_qa_marker_sits_in_the_real_root() {
-    let prod = TempDir::new().unwrap();
-    qa::write_marker(prod.path()).unwrap();
+    let outer = TempDir::new().unwrap();
+    let (production, _) = env_roots(&outer);
+    qa::write_marker(&production).unwrap();
 
-    let err = qa::resolve_root(prod.path(), None, None).unwrap_err();
+    let err = qa::guard_production_root(&production).unwrap_err();
     assert_eq!(err.code, "ENV");
-    assert!(
-        err.message.contains(qa::QA_MARKER_FILE),
-        "正式模式发现 QA 标记必须明确报错：{}",
-        err.message
+    assert!(err.message.contains(qa::QA_MARKER_FILE));
+}
+
+#[test]
+fn qa_marker_is_required_before_any_wipe() {
+    let outer = TempDir::new().unwrap();
+    let plain = outer.path().join("plain");
+    fs::create_dir_all(&plain).unwrap();
+    fs::write(plain.join("keep-me"), b"data").unwrap();
+
+    let err = qa::verify_marker(&plain).unwrap_err();
+    assert_eq!(err.code, "DENIED");
+    assert!(plain.join("keep-me").exists(), "没有标记时不得删除任何东西");
+}
+
+// ---------------------------------------------------------------- 数据独立性
+
+#[test]
+fn qa_and_production_keep_separate_highwater_and_pointer() {
+    let outer = TempDir::new().unwrap();
+    let (production, base) = env_roots(&outer);
+    let seeded = qa::scenario_root(&base, Scenario::Seeded);
+    qa_dataset::seed_seeded(&seeded, &SeedOptions::default()).unwrap();
+
+    let prod_state = AppState::open(&production).unwrap();
+    let qa_state = AppState::open_qa(&seeded, Some(Scenario::Seeded)).unwrap();
+
+    assert_ne!(
+        prod_state.env.active_generation(),
+        qa_state.env.active_generation(),
+        "代际指针必须独立"
     );
+    // 启动时会对根做 canonicalize（macOS 的 /var → /private/var），比较用同一份。
+    assert!(
+        qa_state
+            .env
+            .layout()
+            .highwater_db()
+            .starts_with(qa::normalize(&seeded)),
+        "QA 高水位必须在 QA 根内"
+    );
+    assert!(
+        prod_state
+            .env
+            .layout()
+            .highwater_db()
+            .starts_with(qa::normalize(&production)),
+        "正式高水位必须在正式根内"
+    );
+
+    let prod_conn = prod_state.env.open_db().unwrap();
+    let qa_conn = qa_state.env.open_db().unwrap();
+    let prod_orders: i64 = prod_conn
+        .query_row("SELECT COUNT(*) FROM orders", [], |r| r.get(0))
+        .unwrap();
+    let qa_orders: i64 = qa_conn
+        .query_row("SELECT COUNT(*) FROM orders", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(prod_orders, 0, "QA 预置不得写进正式库");
+    assert!(qa_orders >= 12, "seeded 场景应有预置订单");
 }
 
 #[test]
-fn a_valid_qa_root_resolves_only_to_itself() {
+fn qa_attachment_files_live_only_under_the_qa_root() {
     let outer = TempDir::new().unwrap();
-    let production = outer.path().join("production");
-    let qa_dir = outer.path().join("qa");
-    fs::create_dir_all(&production).unwrap();
-    qa::write_marker(&qa_dir).unwrap();
+    let seeded = seed_dir(&outer);
+    let state = AppState::open_qa(&seeded, Some(Scenario::Seeded)).unwrap();
+    let layout = state.env.layout().clone();
+    let generation = state.env.active_generation().to_string();
+    let conn = state.env.open_db().unwrap();
 
-    let resolved = qa::resolve_root(
-        &production,
-        Some(os(&qa_dir.to_string_lossy())),
-        Some(os("1")),
-    )
-    .unwrap();
-    assert_eq!(resolved, Some(qa::normalize(&qa_dir)));
-}
+    let first_order: String = conn
+        .query_row("SELECT order_id FROM attachments LIMIT 1", [], |r| r.get(0))
+        .unwrap();
+    let list = attachments::list(&conn, &layout, &generation, &first_order).unwrap();
+    assert!(!list.is_empty(), "seeded 场景应至少有一张附件");
 
-/// 打开两个独立环境，确认各自的数据只落在自己的根里。
-#[test]
-fn two_roots_stay_separate() {
-    let outer = TempDir::new().unwrap();
-    let production = outer.path().join("production");
-    let qa_dir = outer.path().join("qa");
-    fs::create_dir_all(&production).unwrap();
-    qa::write_marker(&qa_dir).unwrap();
-
-    // 正式目录先放一个哨兵文件，用来证明 QA 启动没有碰它。
-    let sentinel = production.join("SENTINEL");
-    fs::write(&sentinel, "production-data\n").unwrap();
-    let before: Vec<_> = fs::read_dir(&production).unwrap().flatten().map(|e| e.file_name()).collect();
-
-    let qa_state = AppState::open_mode(&qa_dir, true).unwrap();
-    // 启动会对根目录做 canonicalize（macOS 的 /var → /private/var），比较时用同一份。
-    let qa_canon = qa::normalize(&qa_dir);
-    let qa_layout = qa_state.env.layout().clone();
-    let qa_generation = qa_state.env.active_generation().to_string();
-
-    // 全部路径都在 QA 根之下。
-    for path in [
-        qa_layout.marker(),
-        qa_layout.highwater_db(),
-        qa_layout.active_pointer(),
-        qa_layout.generation_db(&qa_generation),
-    ] {
+    let seeded_canon = qa::normalize(&seeded);
+    for item in &list {
+        let path = state
+            .env
+            .layout()
+            .attachments_dir(&generation)
+            .join(&item.original_path);
         assert!(
-            path.starts_with(&qa_canon),
-            "{} 不在 QA 根之下",
+            path.starts_with(&seeded_canon),
+            "附件 {} 落在 QA 根之外：{}",
+            item.original_path,
             path.display()
         );
-        assert!(path.exists(), "{} 没有被创建", path.display());
+        assert!(path.exists(), "附件文件应真实存在：{}", path.display());
     }
-    assert!(qa_state.qa_mode());
-    drop(qa_state);
-
-    // 正式目录原样未动。
-    assert_eq!(fs::read_to_string(&sentinel).unwrap(), "production-data\n");
-    let after: Vec<_> = fs::read_dir(&production).unwrap().flatten().map(|e| e.file_name()).collect();
-    assert_eq!(before.len(), after.len(), "QA 启动不得在正式目录产生任何文件");
-    assert!(!Layout::new(&production).marker().exists());
 }
 
-/// QA 环境自己的维护动作（这里用代际回收）不会跨到另一个根。
 #[test]
-fn maintenance_of_one_root_does_not_touch_the_other() {
-    use minidesk::store::generation;
-
+fn cleanup_of_the_qa_layout_does_not_touch_other_roots() {
     let outer = TempDir::new().unwrap();
-    let a = outer.path().join("a");
-    let b = outer.path().join("b");
-    qa::write_marker(&a).unwrap();
-    qa::write_marker(&b).unwrap();
+    let seeded = seed_dir(&outer);
+    let (production, _) = env_roots(&outer);
 
-    let a_state = AppState::open_mode(&a, true).unwrap();
-    let b_state = AppState::open_mode(&b, true).unwrap();
-    let a_layout = a_state.env.layout().clone();
-    let b_layout = b_state.env.layout().clone();
-    let a_active = a_state.env.active_generation().to_string();
-    let b_active = b_state.env.active_generation().to_string();
-    drop(a_state);
-    drop(b_state);
+    let prod_attach = production
+        .join("generations")
+        .join("gen-prod")
+        .join("attachments")
+        .join("originals");
+    fs::create_dir_all(&prod_attach).unwrap();
+    let sentinel = prod_attach.join("prod-only.png");
+    fs::write(&sentinel, b"production-bytes").unwrap();
 
-    // a 里造两个旧代际；按现有规则会保留最近的一个作为回退点，
-    // 所以这里期望"恰好回收一个"。
-    let stale_old = a_layout.generation_dir("gen-stale-0001");
-    let stale_mid = a_layout.generation_dir("gen-stale-0002");
-    for (dir, body) in [(&stale_old, "old"), (&stale_mid, "mid")] {
-        fs::create_dir_all(dir.join("attachments")).unwrap();
-        fs::write(dir.join("database.sqlite"), body).unwrap();
+    let state = AppState::open_qa(&seeded, Some(Scenario::Seeded)).unwrap();
+    let layout = state.env.layout().clone();
+    let generation = state.env.active_generation().to_string();
+    let mut conn = state.env.open_db().unwrap();
+    let report = attachments::run_cleanup(&mut conn, &layout, &generation).unwrap();
+    assert_eq!(report.refused, 0, "QA 清理不应拒绝（说明没有越界目标）");
+
+    assert!(sentinel.exists(), "正式附件被 QA 清理删除");
+    assert_eq!(fs::read(&sentinel).unwrap(), b"production-bytes");
+}
+
+#[test]
+fn both_environments_can_be_open_at_the_same_time() {
+    let outer = TempDir::new().unwrap();
+    let (production, base) = env_roots(&outer);
+    let seeded = qa::scenario_root(&base, Scenario::Seeded);
+    qa_dataset::seed_seeded(&seeded, &SeedOptions::default()).unwrap();
+
+    let prod = AppState::open(&production).unwrap();
+    let qa_state = AppState::open_qa(&seeded, Some(Scenario::Seeded)).unwrap();
+    assert!(prod.env.lock_verify().is_ok());
+    assert!(qa_state.env.lock_verify().is_ok());
+
+    // 同一个 QA 根再开一次必须被锁挡住（证明确实是两个独立的锁域）。
+    let second = AppState::open_qa(&seeded, Some(Scenario::Seeded));
+    assert!(second.is_err(), "同一个 QA 根不应允许两个进程同时写");
+}
+
+// ---------------------------------------------------------------- 预置数据
+
+#[test]
+fn seeding_twice_does_not_duplicate_orders() {
+    let outer = TempDir::new().unwrap();
+    let (_, base) = env_roots(&outer);
+    let dir = qa::scenario_root(&base, Scenario::Seeded);
+
+    let first = qa_dataset::seed_seeded(&dir, &SeedOptions::default()).unwrap();
+    let second = qa_dataset::seed_seeded(&dir, &SeedOptions::default()).unwrap();
+
+    assert!(!first.already_seeded);
+    assert!(second.already_seeded, "第二次必须是幂等的");
+    assert_eq!(first.orders, second.orders);
+    assert_eq!(first.attachments, second.attachments);
+}
+
+#[test]
+fn interrupted_seed_leaves_no_complete_looking_data_and_can_be_rerun() {
+    let outer = TempDir::new().unwrap();
+    let (_, base) = env_roots(&outer);
+    let dir = qa::scenario_root(&base, Scenario::Seeded);
+
+    let err = qa_dataset::seed_seeded(
+        &dir,
+        &SeedOptions {
+            rebuild: false,
+            fail_after: Some(2),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err.code, "DB");
+
+    assert!(
+        !dir.join("environment.json").exists(),
+        "失败后不应留下 environment.json"
+    );
+    assert!(!dir.join("generations").exists(), "失败后不应留下代际目录");
+    assert!(qa::has_marker(&dir), "QA 标记应保留，便于重新预置");
+
+    let report = qa_dataset::seed_seeded(&dir, &SeedOptions::default()).unwrap();
+    assert!(report.orders >= 12);
+}
+
+#[test]
+fn clean_scenario_bootstraps_to_an_empty_business_state() {
+    let outer = TempDir::new().unwrap();
+    let (_, base) = env_roots(&outer);
+    let dir = qa::scenario_root(&base, Scenario::Clean);
+
+    let report = qa_dataset::prepare_clean(&dir, false).unwrap();
+    assert_eq!(report.orders, 0);
+    assert!(!dir.join("environment.json").exists(), "clean 必须是真正的首次启动");
+    assert!(qa::has_marker(&dir));
+
+    let state = AppState::open_qa(&dir, Some(Scenario::Clean)).unwrap();
+    assert!(state.env.outcome().first_run, "应当是首次启动");
+    let conn = state.env.open_db().unwrap();
+    let orders: i64 = conn
+        .query_row("SELECT COUNT(*) FROM orders", [], |r| r.get(0))
+        .unwrap();
+    let events: i64 = conn
+        .query_row("SELECT COUNT(*) FROM order_events", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!((orders, events), (0, 0));
+}
+
+#[test]
+fn seeded_scenario_has_the_expected_events_amounts_and_deadlines() {
+    let outer = TempDir::new().unwrap();
+    let seeded = seed_dir(&outer);
+    let state = AppState::open_qa(&seeded, Some(Scenario::Seeded)).unwrap();
+    let conn = state.env.open_db().unwrap();
+
+    let completions: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM order_events e JOIN orders o ON o.id = e.order_id
+             WHERE o.title = '双完成演示稿' AND e.kind = 'completed'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(completions, 2);
+
+    let reopened: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM order_events e JOIN orders o ON o.id = e.order_id
+             WHERE o.title = '双完成演示稿' AND e.kind = 'reopened'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(reopened, 1);
+
+    let cross: (String, String) = conn
+        .query_row(
+            "SELECT o.created_at, e.occurred_at FROM orders o
+             JOIN order_events e ON e.order_id = o.id AND e.kind = 'completed'
+             WHERE o.title = '跨月完成稿'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert!(cross.0.starts_with("2026-09"), "创建时间应固定在 9 月：{}", cross.0);
+    assert!(cross.1.starts_with("2026-10"), "完成时间应固定在 10 月：{}", cross.1);
+
+    let unknown: i64 = conn
+        .query_row("SELECT COUNT(*) FROM orders WHERE amount_cents IS NULL", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let zero: i64 = conn
+        .query_row("SELECT COUNT(*) FROM orders WHERE amount_cents = 0", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert!(unknown >= 1, "应有未知金额订单");
+    assert!(zero >= 1, "应有 0 元订单");
+
+    let tz = settings::working_timezone(&conn).unwrap();
+    assert_eq!(tz.name(), "Asia/Shanghai");
+    use minidesk::domain::deadline::DeadlineState;
+    let list = orders::list(&conn).unwrap();
+    for expected in [
+        DeadlineState::Today,
+        DeadlineState::Overdue,
+        DeadlineState::Unscheduled,
+        DeadlineState::DueSoon,
+    ] {
+        assert!(
+            list.iter().any(|o| o.deadline_state == expected),
+            "缺少到期状态 {expected:?}"
+        );
     }
 
-    let plan = generation::plan_reclaim(&a_layout, &a_active).unwrap();
-    assert_eq!(
-        plan.reclaimable.len(),
-        1,
-        "两个旧代际中应恰好有一个可回收（另一个作为回退点保留）"
-    );
-    let removed = generation::apply_reclaim(&a_layout, &a_active).unwrap();
-    assert_eq!(removed.len(), 1);
-    assert_eq!(
-        generation::list_generations(&a_layout).unwrap().len(),
-        2,
-        "回收后应剩活动代 + 一个回退代"
-    );
+    let (total, distinct_names): (i64, i64) = conn
+        .query_row(
+            "SELECT COUNT(*), COUNT(DISTINCT display_name) FROM clients",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(total, 3);
+    assert_eq!(distinct_names, 2, "应有同名不同 ID 的客户");
 
-    // b 的活动代际完好。
-    assert!(
-        b_layout.generation_db(&b_active).exists(),
-        "b 的数据库不得被 a 的回收动作影响"
+    let (tpl_total, defaults): (i64, i64) = conn
+        .query_row(
+            "SELECT COUNT(*), SUM(is_default) FROM stage_templates",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert!(tpl_total >= 3, "默认 + 两套非默认");
+    assert_eq!(defaults, 1, "必须只有一个默认模板");
+}
+
+/// asset 协议 scope 必须覆盖 QA 场景下的附件路径，否则界面上图片显示不出来。
+#[test]
+fn qa_asset_scope_covers_scenario_attachment_paths() {
+    let config: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string("tauri.qa.conf.json").unwrap()).unwrap();
+    let scopes = config["app"]["security"]["assetProtocol"]["scope"]
+        .as_array()
+        .expect("QA 配置必须有 assetProtocol.scope");
+    let patterns: Vec<&str> = scopes.iter().filter_map(|v| v.as_str()).collect();
+
+    let home = std::env::var("HOME").unwrap();
+    let qa_appdata = format!("{home}/Library/Application Support/dev.artflow.minidesk.qa");
+    let expand = |p: &str| p.replace("$APPDATA", &qa_appdata);
+
+    for scenario in ["seeded", "clean"] {
+        let sample = format!(
+            "{qa_appdata}/{scenario}/generations/gen-abc/attachments/originals/x.png"
+        );
+        let covered = patterns.iter().any(|p| {
+            glob::Pattern::new(&expand(p))
+                .map(|pat| pat.matches(&sample))
+                .unwrap_or(false)
+        });
+        assert!(covered, "{scenario} 场景的附件路径未被 asset scope 覆盖");
+    }
+
+    // 正式目录的附件路径不能被 QA 构建读到。
+    let production_sample = format!(
+        "{home}/Library/Application Support/dev.artflow.minidesk/generations/gen-abc/attachments/originals/x.png"
     );
+    let covers_production = patterns.iter().any(|p| {
+        glob::Pattern::new(&expand(p))
+            .map(|pat| pat.matches(&production_sample))
+            .unwrap_or(false)
+    });
+    assert!(!covers_production, "QA 构建不应能读到正式附件");
+}
+
+#[test]
+fn dataset_report_matches_reality() {
+    let outer = TempDir::new().unwrap();
+    let seeded = seed_dir(&outer);
+    let state = AppState::open_qa(&seeded, Some(Scenario::Seeded)).unwrap();
+    let conn = state.env.open_db().unwrap();
+
+    let stored = settings::get(&conn, "qa.seed.version").unwrap();
+    assert_eq!(stored.as_deref(), Some(qa_dataset::DATASET_VERSION));
+
+    let orders: i64 = conn
+        .query_row("SELECT COUNT(*) FROM orders", [], |r| r.get(0))
+        .unwrap();
+    assert!(orders >= 12, "数据集应至少 12 张订单，实际 {orders}");
 }
