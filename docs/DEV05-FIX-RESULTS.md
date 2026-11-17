@@ -2,10 +2,11 @@
 
 - 日期：2026-11-17
 - 工程：`/Users/rinto/Documents/ChatGPT/ArtFlow-miniDesk`（分支 `master`，未推送）
-- 范围：DEV05-UI-01（完成事件下钻失败）、DEV05-UX-02（新建订单模板选择入口核对）
-- 结论：**两个问题都已定位到具体代码位置并修复，自动化验证通过。**
-  S3 需要你再次用真实鼠标点一次才能关闭——我没有辅助功能与录屏权限，
-  不能替你点击，也不会把"测试通过"当成"实机通过"。
+- 范围：DEV05-UI-01（完成事件下钻失败）、DEV05-UX-02（模板选择入口核对）、
+  以及新增的 QA 沙箱与分层实机验收机制
+- 结论：S3 **根因已定位并修复**，需要你在 QA 沙箱里点一次才能关闭；
+  模板选择判定为**证据不足，维持默认模板，未加入控件**；
+  QA 沙箱已落地并有 9 条隔离测试，本轮预置数据已生成。
 
 ---
 
@@ -25,14 +26,13 @@
 | C1 | Numbers 没有把 `=1+1` 算成数字 | **PASS** |
 | C2 | CSV 原始文本带安全前缀 | **PASS** |
 
-综合：基础 8/8 PASS + 专项 4/5 PASS。S3 是唯一未通过项，本报告只对它负责，
-另外核对了你提出的"新建订单没有模板选择入口"。
+综合：基础 8/8 PASS + 专项 4/5 PASS。S3 仍未关闭，本报告只对它负责。
 
 ---
 
 ## 2. DEV05-UI-01：S3 的实际根因
 
-### 2.1 完整链路（逐环节核对结果）
+### 2.1 完整链路（逐环节核对）
 
 | # | 环节 | 代码位置 | 结论 |
 |---|---|---|---|
@@ -40,14 +40,14 @@
 | 2 | 完成事件明细列表 | `StatsPage.tsx:255` | 正常，`focus=completed` 时才渲染 |
 | 3 | 事件行点击目标 | `StatsPage.tsx:272` | 正常，`<Link to={/orders?orderId=${event.orderId}}>` |
 | 4 | 事件携带的 order ID | `CompletedEventRow.orderId` | **正常**，值正确（不是缺字段） |
-| 5 | React Router 实际路由 | `main.tsx` HashRouter | 正常，路径确实变成了 `/orders?orderId=...` |
+| 5 | React Router 实际路由 | `main.tsx` HashRouter | 正常，路径确实变成 `/orders?orderId=...` |
 | 6 | 订单页的详情选择与加载 | `OrdersPage.tsx` 挂载 effect | **缺陷就在这一环** |
 | 7 | 搜索 / 状态筛选 / 当前选择 / 路由状态 | `visible` 只影响左栏列表 | 不是原因；详情与筛选无关 |
 | 8 | 事件数据可读但导航字段缺失 | — | **不存在**，`orderId` 一直有值 |
 
 ### 2.2 根因
 
-`OrdersPage` 挂载时无条件把列表第一张订单设为详情，紧接在读完列表之后：
+`OrdersPage` 挂载时无条件把列表第一张订单设为详情：
 
 ```tsx
 // 修复前
@@ -56,12 +56,9 @@ if (list.length > 0 && list[0]) {
 }
 ```
 
-于是发生了一次**静默覆盖**：链接把 `?orderId=order-b` 带进来，
-挂载 effect 却在同一个 async 流程里用 `list[0].id` 覆盖了它。
-URL 变了、页面也刷新了，看起来"跳转成功"，但详情区显示的是另一张订单（通常是队列第一张）。
-
-这也解释了你观察到的现象：**统计数字对、历史没丢、就是进不去那张单**。
-数据层完全正常，问题只在"选中哪一张"这一步。
+链接把 `?orderId=order-b` 带进来，挂载 effect 却在同一个 async 流程里用
+`list[0].id` 覆盖了它。URL 变了、页面也刷新了，看起来"跳转成功"，
+但详情区显示的是另一张订单。这也解释了你观察到的现象：**统计对、历史没丢、就是进不去那张单**。
 
 ### 2.3 修复
 
@@ -76,197 +73,267 @@ if (targetId) {
 }
 ```
 
-- 带 `orderId` → 打开那一张；不带 → 仍按旧行为选第一张（不影响日常使用）。
-- `getOrder` 不存在 → `selectOrder` 的 catch 走 `describeError` 显示明确错误，
+- 带 `orderId` → 打开那一张；不带 → 仍按旧行为选第一张。
+- 订单不存在 → `selectOrder` 的 catch 走 `describeError` 显示明确错误，
   **不会回退到第一张装作成功**。
-- 详情态与左栏筛选彻底解耦：目标订单即使被搜索/筛选挡住、不在列表里，也照常打开
-  （`selectOrder` 不读 `visible`）。
-- 没有新增第二套查询：仍然走 `api.getOrder` + `api.listOrderEvents` 原通路。
-- 事件标识保留：`CompletedEventRow.eventId` 原样保留，同订单两条事件在列表里仍是两行，
-  没有合并。
+- 详情态与左栏筛选解耦：目标订单即使被搜索/筛选挡住，也照常打开。
+- 没有第二套查询：仍走 `api.getOrder` + `api.listOrderEvents`。
+- 事件标识保留：同订单两条事件在列表里仍是两行，没有合并。
 
 ---
 
 ## 3. 导航修复的测试证据
 
-新增 `src/pages/StatsDrilldown.test.tsx`（4 个用例），使用**真实路由 + 真实详情加载**，
-不是断言 href 字符串：
+`src/pages/StatsDrilldown.test.tsx`（4 个用例，真实路由 + 真实详情加载，不是断言 href）：
 
 | 用例 | 断言 |
 |---|---|
-| 点击完成事件会真正打开该订单详情 | 点击后 `h1` 变成目标订单标题；`router.state.location.pathname` 为 `/orders`；`getOrder` 收到 `order-b` |
+| 点击完成事件会真正打开该订单详情 | 点击后 `h1` 变成目标订单标题；`pathname === "/orders"`；`getOrder` 收到 `order-b` |
 | 同一订单的两条完成事件都能打开同一张订单 | 点第 2 条链接同样落到 `order-b` |
 | 目标订单不在列表首项时也不会退回第一张 | 详情标题是 `被完成两次的订单`，且**不是** `第一张订单` |
 | 订单不存在时显示明确错误而不是假装打开 | `/orders?orderId=ghost` → 出现「订单不存在」 |
 
-第 1、3 条是关键：它们正是扫描"只改了 URL 但没换详情"的检测点。
+第 1、3 条是关键：专门检测"只改了 URL 但没换详情"。
 
 ---
 
-## 4. DEV05-UX-02：模板选择入口是否属于冻结规格
+## 4. DEV05-UX-02：模板选择入口 —— 证据不足，维持现状
 
 ### 4.1 结论
 
-**判定为 A：新建订单可以指定模板，未指定时回落到当前默认模板。**
-缺的是 UI 控件，不是后端能力。因此按 A 做了最小修复：**只加前端控件，后端零改动**。
+**判定为 B（不成立 A）：冻结规格没有条款要求新建订单必须能选择模板。**
+因此**没有加入模板选择控件**，新单继续使用当前默认模板；
+「按订单选择模板」登记为**待产品决策项**，不是缺陷。
 
-### 4.2 证据链
+### 4.2 证据
 
-| 证据 | 内容 | 倾向 |
+| 证据 | 内容 | 支持哪一边 |
 |---|---|---|
-| `docs/SPEC-INDEX.md` D-00-07 | 「仅标题必填；默认通用流程；创建时复制阶段」 | 单看摘要像 **B** |
-| `docs/SPEC-INDEX.md` D-00-14 | 「模板 1–20 阶段、名称唯一、**唯一默认模板**」 | 说明"默认"是模板的一种属性，而非唯一用法 |
-| `domain/orders.rs` `CreateOrderInput.template_id` | 自 `bb9e865`（DEV-03）起就在入参里，注明「未指定模板时使用数据库中标记为默认的那一个」 | **A** |
-| `tests/order_create.rs::invalid_template_is_reported_not_silently_defaulted` | 传入不存在的模板 → `NOT_FOUND`，**不静默回退默认** | **A**（若只允许 B，这个用例没有存在意义） |
-| `tests/order_create.rs:110` | 建单失败时新客户与订单必须回滚（用未知模板触发） | **A** |
+| `docs/SPEC-INDEX.md` D-00-07 | 「仅标题必填；**默认通用流程**；创建时复制阶段」 | **B**（写的是用默认流程） |
+| `docs/SPEC-INDEX.md` D-00-14 | 「模板 1–20 阶段、名称唯一、唯一默认模板」 | 只约束模板自身，不涉及建单选模板 |
+| 规格原文 | **不在仓库内**（我只有你给的摘要），无法引用"必须可选"的句子 | 无法支持 A |
+| `CreateOrderInput.template_id`（自 DEV-03） | 后端接受可选模板 ID | 只说明**数据模型允许**，不等于 UI 必须提供 |
+| `tests/order_create.rs::invalid_template_is_reported_not_silently_defaulted` | 传未知模板 → `NOT_FOUND`，不静默回落 | 同上：保证传值可信，不是要求传值 |
 
-**诚实的保留**：D-00-07 的一行摘要本身只写了"默认通用流程"，
-如果只看它，B 也说得通；规格原文不在仓库内，我无法引用更细的句子。
-判定 A 的依据是**已落地的契约与既有测试**，不是我对规格的推断。
+按你给的分支规则："若只能确证 B 或证据不足：不擅自加入新功能、保留现状"。
 
-如果产品最终认定只有 B，删掉这个下拉即可，后端行为完全不变（前端会传 `null`）。
+### 4.3 上一轮的处理与回退（如实记录）
 
-### 4.3 实现
+上一轮我按"已落地契约 + 既有测试"推断为 A，在 `753681c` 里加了「制作流程」下拉，
+并在当时的报告里写了保留意见。按本轮明确的口径（没有规格原文就不算确证），
+那属于**超出授权的新功能**，已在 `888200e` 回退：
 
-`CreateOrderPanel` 新增「制作流程」下拉：
+- 移除下单面板的下拉、`templates` 状态与 `templateApi.list()` 调用；
+- 删除配套的 5 个用例与 3 处只为它添加的 mock；
+- **后端未动**：`create_order` 的 `templateId` 参数是 DEV-03 既有能力，有独立测试，
+  不因回退而移除；界面不传值时后端一律回落到默认模板。
 
-- 选项来自 `templateApi.list()`，显示「名称（N 个阶段）」，默认项额外标 `· 默认`。
-- 初值 = `isDefault` 的那一个；没有默认则取第一个；列表为空则显示「（使用默认流程）」。
-- 提交时 `templateId: templateId === "" ? null : templateId` —— 空值交给后端回落默认。
-- 模板列表晚于面板挂载到达时会补齐默认值，避免"下拉显示 X、实际提交空"的错位。
-- **已创建订单的阶段快照不受影响**：只读模板表来建新单，任何编辑/删除模板的操作都不回写历史订单
-  （`templates.rs` 的 `usageCount` 只做统计）。
+回退后新单阶段仍是默认模板的 5 个阶段，与你第 7 节"确认新订单实际使用默认流程模板"一致。
 
-### 4.4 测试（`src/pages/OrdersPage.create.test.tsx`，5 个用例）
+### 4.4 待决策记录
 
-| 用例 | 断言 |
-|---|---|
-| 默认选中当前默认模板 | `select.value === "tpl-default"`，选项文本含「通用制作流程」与「默认」 |
-| 可以选择另一个模板，并把模板 ID 传给后端 | 选 `tpl-simple` → `createOrder` 入参 `templateId === "tpl-simple"` |
-| 不改动选择时沿用默认模板 | 不碰下拉 → 入参 `templateId === "tpl-default"` |
-| 模板列表为空时不传模板 ID | 列表为空 → 入参 `templateId === null`（交给后端默认） |
-| 说明文字提示会复制阶段成订单独立流程 | 提示文案存在 |
-
-> 过程记录：这组测试第一次跑是 1 通过 3 失败，原因有两个，都是我自己写错，不是产品缺陷：
-> ① 我把 `<p class="hint">` 放在 `<label>` 里面，提示文字被算进了 `select` 的可访问名称，
-> `getByLabelText("制作流程")` 自然找不到；现在提示移到 label 之外，并给 select 显式 `id`。
-> ② 测试里的 `getOrder` mock 复用了 `createOrder` 的 mock，创建后加载详情又调了一次，
-> 造成"期望 1 次实际 2 次"的假失败；现在两者各自独立。
+见 `docs/REMAINING-WORK.md` #20：若产品确认需要"按单选模板"，只需恢复前端控件
+（后端已就绪），不需要 schema 或接口变更。
 
 ---
 
-## 5. 变更文件与 Git 提交
+## 5. 本轮新增：QA 沙箱与分层实机验收
+
+完整设计、命令与操作步骤见 **[`docs/QA-SANDBOX.md`](QA-SANDBOX.md)**，这里只记要点与证据。
+
+### 5.1 先评估后新增
+
+现有代码只有 `app.path().app_data_dir()` 一个数据根，没有测试模式。
+但 `store/paths.rs` 的 `Layout` 本来就把 `state/`、`generations/`、`highwater.sqlite`、
+`attachments/`、`backups/`、`recovery/` 全部从单一 root 派生，`Environment::open_with`
+本就接受任意根。
+
+所以没有另造存储，只把 root 的来源改为"可配置 + 可验证"，其余机制原样复用。
+
+### 5.2 四条硬约束（`src-tauri/src/store/qa.rs`）
+
+| # | 约束 | 违反时 |
+|---|---|---|
+| 1 | 双钥匙 `AF_MINIDESK_QA=1` + `AF_MINIDESK_QA_ROOT=<绝对路径>` | 只设一个 → `ENV` 错误，**中止启动**，不回退正式目录 |
+| 2 | 目标目录必须含 `.qa-root` 标记且内容匹配 | 拒绝启动 |
+| 3 | QA 根与正式数据目录不得互相包含 | 拒绝启动 |
+| 4 | 正式模式启动时正式目录里出现 `.qa-root` | 拒绝启动 |
+
+界面标识：`environment_status` 返回 `qaMode`；外壳显示琥珀色横幅
+「QA 测试环境 · 数据目录与正式应用完全隔离」，侧栏副标题变「QA 测试环境」，
+「数据环境」页第一行显示「运行模式」。
+
+### 5.3 隔离证据（`src-tauri/tests/qa_isolation.rs`，9 用例全通过）
+
+关键是这两条：
+
+- `two_roots_stay_separate`：在 QA 根启动后，正式目录**文件数量不变**、
+  哨兵文件内容不变、不产生 `environment.json`。
+- `maintenance_of_one_root_does_not_touch_the_other`：对 A 根做代际回收，
+  B 根数据库完好；回收只看到 A 自己的旧代际。
+
+其余 7 条覆盖：单钥匙、缺标记、错标记、同目录、正向嵌套、反向嵌套、反向守卫。
+
+### 5.4 预置数据（`qa_seed`，全部经领域函数写入）
+
+本轮实际生成的 QA 根：`/Users/rinto/ArtFlow-miniDesk-QA`，
+代际 `gen-d9deacb28d364ab394f4ef5d35d78ab5`。
+
+| 编号 | 标题 | 状态 | 金额 | 交付日 | 用途 |
+|---|---|---|---|---|---|
+| AF-2026-0001 | 双完成演示稿 | 已完成（两次） | 880.00 | 前天 | **S3 靶子**：`completed`(id 7) → `reopened`(8) → `completed`(9) |
+| AF-2026-0002 | 制作中的加急稿 | 制作中 | 1500.00 | 今天 | 今天到期 |
+| AF-2026-0003 | 已逾期的线稿 | 排队中 | 300.00 | 3 天前 | 逾期 |
+| AF-2026-0004 | 未排期的草稿 | 排队中 | NULL | 无 | 未排期 + 未知金额 |
+| AF-2026-0005 | 零元友情稿 | 已完成 | 0.00 | 昨天 | 0 元 ≠ 未知 |
+| AF-2026-0006 | 已取消的企划 | 已取消 | 50.00 | 无 | 终态下钻 |
+| AF-2026-0007 | `=1+1 公式注入标题` | 排队中 | 123.45 | 无 | CSV 防注入 + 3 张附件 |
+
+客户 2 个（同名不同人「林小满」）、模板 2 个（默认 5 阶段 + 非默认 3 阶段）、
+附件 3 张（PNG/JPEG/WebP，`image` 库现场生成纯色块，非真实作品）。
+
+事件时间用真实 UTC 时间戳，没有伪造历史；所以"本月完成次数"当前为 **3**
+（AF-0001 两次 + AF-0005 一次）。
+
+### 5.5 QA 启动实测
+
+```text
+[minidesk] env ready mode=qa path=/Users/rinto/ArtFlow-miniDesk-QA
+           generation=gen-d9deacb28d364ab394f4ef5d35d78ab5 schema=v3 first_run=false tz=Asia/Shanghai
+```
+
+同时复核正式环境：`generation=gen-c00a879220964299af7adcef8b9fc1c5` 未变，
+`state/active.json` 的 mtime 仍是 15:16（我动手之前），订单 4 / 事件 23 / 完成 4 全部不变。
+
+> 踩坑记录：第一次 QA 启动失败，报 `Port 1420 is already in use`——上一次正式启动留下的
+> vite 进程没退干净。清理端口后重启成功。这条已写进 `QA-SANDBOX.md` 的排错段。
+
+---
+
+## 6. 变更文件与 Git 提交
 
 | 文件 | 变更 |
 |---|---|
-| `src/pages/OrdersPage.tsx` | S3 根因修复；新建面板接入模板下拉（+ 晚到补齐默认值） |
+| `src/pages/OrdersPage.tsx` | S3 根因修复（`?orderId=` 优先）；模板下拉已回退，回到默认模板 |
 | `src/pages/StatsDrilldown.test.tsx` | **新增** 4 个下钻集成用例 |
-| `src/pages/OrdersPage.create.test.tsx` | **新增** 5 个模板选择用例 |
-| `src/pages/OrdersPage.drag.test.tsx` | 补 `templateApi` mock（页面新增依赖） |
-| `src/pages/OrdersPage.export.test.tsx` | 同上 |
-| `src/pages/OrdersPage.guard.test.tsx` | 同上 |
+| `src/App.tsx` / `src/App.test.tsx` | QA 横幅与侧栏标识（3 个用例） |
+| `src/pages/StatusPage.tsx` | 「运行模式」行 |
+| `src/styles.css` | `.qa-banner` |
+| `src/bridge/commands.ts` | `EnvironmentStatus.qaMode` |
+| `src-tauri/src/store/qa.rs` | **新增** QA 根解析与守卫 |
+| `src-tauri/src/bin/qa_seed.rs` | **新增** 预置数据工具 |
+| `src-tauri/tests/qa_isolation.rs` | **新增** 9 个隔离用例 |
+| `src-tauri/src/{lib.rs, infra/state.rs, store/mod.rs, commands/status.rs}` | 接入 QA 根与标识 |
+| `docs/QA-SANDBOX.md` | **新增** 沙箱设计与操作手册 |
 | `docs/DEV05-FIX-RESULTS.md` | 本报告 |
-| `docs/DEV05-RESULTS.md` | 补记你的实机验收结论 |
-| `docs/REMAINING-WORK.md` | 登记待复测项与 DEV-06 计划内容 |
+| `docs/DEV05-RESULTS.md` / `docs/REMAINING-WORK.md` | 补记验收结论与待决策项 |
 
-提交：
+提交（本轮共 4 个）：
 
 ```text
 753681c fix(orders): open the linked order and let new orders choose a template
+3446b1a docs: DEV-05-FIX root cause, drill-down fix and template-selector ruling
+888200e revert(orders): drop the new-order template selector pending a product ruling
+b795dee feat(qa): isolated QA data root with seeded fictional scenarios
 ```
 
-后端、schema、命令、依赖 **零改动**。
+`753681c` 里同时含 S3 修复与后来被回退的模板下拉；`888200e` 只回退了控件本身，
+S3 修复保留。没有改写历史，因此这条界线在提交列表里看起来是"加了又删"。
+
+**schema 未变（v3），没有迁移，没有新命令（仍是 45 个）。**
 
 ---
 
-## 6. 自动化测试结果
+## 7. 自动化测试结果
 
 ```text
-cargo test                → 261 passed / 0 failed（27 个测试二进制 + doc-tests 0）
+cargo test                → 270 passed / 0 failed（29 个测试二进制 + doc-tests）
 cargo check --all-targets → 通过，0 warning
-npm run test              → 84 passed / 0 failed（12 个文件）
+npm run test              → 82 passed / 0 failed（12 个文件）
 npx tsc --noEmit          → 通过
-npm run build             → ✓ built in 89ms（dist/assets/index-BqXRnCPW.js 393.24 kB）
+npm run build             → ✓ built in 118ms（dist/assets/index-DnvW4JFi.js 392.85 kB）
 ```
 
-前端 75 → **84**（新增 4 + 5，另把 3 个既有测试文件的 mock 补齐以便页面新依赖可跑）。
+Rust 261 → **270**（新增 `qa_isolation` 9 条）。
+前端 75 → **82**：+4 下钻、+3 外壳 QA 标识，回退模板下拉时删掉 5 条。
 
-真实启动（`npm run tauri dev`）：
-
-```text
-[minidesk] env ready path=/Users/rinto/Library/Application Support/dev.artflow.minidesk
-           generation=gen-c00a879220964299af7adcef8b9fc1c5 schema=v3 first_run=false tz=Asia/Shanghai
-```
-
-进程存活、正式代际与 schema 未变、`state/.write.lock` 被该进程持有。
-
-**窗口是否真的画出来了、路由点击是否真的生效：NOT VERIFIED。**
-`osascript` 返回「不允许辅助访问 (-1728)」，`screencapture -l` 也无法取窗口，
-我只能证明进程启动成功并进入 setup 之后的正常状态，不能证明像素。
+真实启动：正式模式与 QA 模式各启动一次，均通过（日志见 5.5 与上轮报告）。
+**窗口像素与鼠标点击仍 NOT VERIFIED**：`osascript` 返回「不允许辅助访问 (-1728)」。
 
 ---
 
-## 7. 回归核对（本轮重点项）
+## 8. 回归核对
 
 | 项目 | 证据 |
 |---|---|
-| 本月完成次数仍按事件计数 | `stats.rs` 18 个用例全通过，未改口径代码 |
+| 本月完成次数仍按事件计数 | `stats.rs` 18 用例通过，口径代码未动 |
 | 同一订单重复完成计两次 | `event_counts_follow_events_not_status` 通过 |
-| 工作台与统计页区间一致 | 共用 `domain/timezone.rs` + `month_bounds_utc`，本轮未动 |
-| 订单筛选、拖拽排序仍正常 | `OrdersPage.drag.test.tsx` 6 用例通过 |
+| 工作台与统计页区间一致 | 共用 `month_bounds_utc`，未改 |
+| 订单筛选、拖拽排序 | `OrdersPage.drag.test.tsx` 6 用例通过 |
 | CSV 内容 / 隐私排除 / 防注入 | `export_csv.rs` 11 用例通过 |
-| DEV-04 图片查看器与模态栈 | 未触碰 `modalStack` / `ImageViewer`；`TemplatesPage.delete` 9 用例仍通过 |
-| 新订单默认模板逻辑 | 新增 5 个用例覆盖（含空列表回落 `null`） |
+| DEV-04 图片查看器与模态栈 | 未触碰 `modalStack` / `ImageViewer`；`TemplatesPage.delete` 9 用例通过 |
+| 新订单默认模板逻辑 | 后端 `create_order` 未改；`order_create.rs` 11 用例通过 |
+| 回退后下单面板 | 前端 82 用例全绿，`tsc` 通过 |
 
 ---
 
-## 8. 你的真实数据隔离结果
+## 9. 你的真实数据隔离结果
 
-做事前后各取一次指纹，**完全一致**：
+动手前后各取一次指纹，**完全一致**：
 
 | 项 | 修复前 | 修复后 |
 |---|---|---|
 | 活动代际 | `gen-c00a879220964299af7adcef8b9fc1c5` | 同 |
-| 代际数量 | 3 | 3 |
+| `state/active.json` mtime | 15:16 | 15:16（未被写入） |
 | schema | v3 | v3 |
-| 订单 | 4 | 4 |
-| 客户 | 1 | 1 |
-| 模板 | 2 | 2 |
-| 附件 | 2 | 2 |
-| 生命周期事件 | 23 | 23 |
-| 其中 `completed` 事件 | 4 | 4 |
+| 订单 / 客户 / 模板 / 附件 | 4 / 1 / 2 / 2 | 4 / 1 / 2 / 2 |
+| 生命周期事件（含 completed） | 23（4） | 23（4） |
+| 正式目录内 `.qa-root` | 无 | 无 |
 
-- 你为专项测试建的订单与两次完成事件 **原样保留**，我没有读取内容以外的任何写操作。
-- 本轮没有清空、重置、重建数据目录，没有新代际，没有 schema 迁移。
-- 旧 ArtFlowDesk Web 工程、TV-01/TV-03 实验工程与数据库：未触碰。
-- 所有新增测试运行在 `tempfile` 临时目录与 jsdom 中。
+- QA 数据全部在 `/Users/rinto/ArtFlow-miniDesk-QA`，可整体删除。
+- QA 启动期间正式目录未被打开（无锁占用、无新文件）。
+- 旧 ArtFlowDesk Web 工程、TV-01/TV-03 工程与数据库：未触碰。
+- 自动化测试全部在 `tempfile` 临时目录与 jsdom 中。
 
 ---
 
-## 9. 需要你实机复测的项目
+## 10. 需要你实机复测的项目
 
-| # | 项目 | 怎么验 | 期望 |
-|---|---|---|---|
-| 1 | **S3 下钻**（唯一未关闭项） | 工作台点「本月完成次数」→ 完成事件明细 → 点某条的「查看订单」 | 详情标题 = 该事件对应订单，不是队列第一张 |
-| 2 | S3 同订单第二次完成 | 同上，点同一订单的另一条事件 | 仍打开同一张订单 |
-| 3 | S3 反例 | 手动把地址改成 `.../orders?orderId=not-exist` | 显示「订单不存在」，不显示别的订单 |
-| 4 | 新建订单模板下拉 | 订单页点「新建」，**只看不提交**，然后「取消」 | 看到「制作流程」下拉，默认项带「· 默认」，不写任何数据 |
-| 5 | 模板切换生效（可选） | 若你愿意建一张试验单：选非默认模板创建 | 新订单的阶段数/阶段名与所选模板一致 |
+操作步骤在 **`docs/QA-SANDBOX.md` 第 5 节（启动）与第 7 节（步骤）**，这里只列判定点。
 
-第 4 项特意设计成"只看不提交"，因为订单永久删除要到 DEV-07-PRE 才有，
-我不想让你为了验证 UI 而多出一张删不掉的单。
+### A. 预置场景（QA 沙箱）
+
+| # | 项目 | 期望 |
+|---|---|---|
+| 1 | 工作台「本月完成次数」 | 显示 **3** |
+| 2 | 点进去看到完成事件明细 | **3 条**，其中两条属于「双完成演示稿」 |
+| 3 | 点第一条「查看订单」 | 详情标题 = **双完成演示稿** |
+| 4 | 点同订单另一条 | 仍打开 **双完成演示稿** |
+| 5 | 点「零元友情稿」那条 | 详情切到 **零元友情稿** |
+| 6 | 地址改成 `#/orders?orderId=not-exist` | 显示「订单不存在」，不显示别的订单 |
+
+第 3 条就是 S3 的复测点；通过后 S3 才从 FAIL 改判。
+
+### B. 从零流程（QA 沙箱）
+
+| # | 项目 | 期望 |
+|---|---|---|
+| 7 | 「订单」→「新建」，只填标题后创建 | 新建成功，编号 `AF-2026-0008` |
+| 8 | 打开该订单详情 | 阶段 = 默认模板 **5 个**（草稿/线稿/固有色/细化/最终调整） |
+| 9 | 下单面板 | **没有**「制作流程」下拉（本轮已回退） |
+
+### C. 正式环境
+
+| # | 项目 | 期望 |
+|---|---|---|
+| 10 | 正常启动（不带环境变量） | 顶部**没有** amber 横幅，「数据环境」显示「正式应用」 |
 
 ---
 
-## 10. DEV-06 边界（仅登记，本轮不实现）
+## 11. DEV-06 边界
 
-DEV-06 原计划内容已写入 `docs/REMAINING-WORK.md`，包括：
+DEV-06 原计划内容已登记在 `docs/REMAINING-WORK.md`：主题系统、轻量时间轴、
+窗口关闭草稿保护、快捷键与键盘操作、侧边栏折叠与视觉打磨、统计图表数值可读性。
 
-1. 主题系统（含对比度警告、恢复默认、主题损坏回退）。
-2. 轻量时间轴。
-3. 窗口关闭时的草稿保护。
-4. 快捷键与键盘操作。
-5. 侧边栏（含折叠）与视觉交互打磨。
-6. 统计图表数值可读性优化（当前柱子只有 `title` 提示，没有刻度与数值标签）。
-
-本轮**没有**实现其中任何一项，也没有顺手改样式。DEV-05-FIX 到此停止。
+本轮**没有实现其中任何一项**，也没有顺手改样式（`.qa-banner` 是 QA 标识所需）。
+DEV-05-FIX 到此停止。
