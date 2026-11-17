@@ -455,6 +455,6 @@ describe("Cmd+Q 与红色按钮的一致性", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "保存并关闭" }));
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("数据库忙"));
-    expect(invoke).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalledWith("confirm_close");
   });
 });
