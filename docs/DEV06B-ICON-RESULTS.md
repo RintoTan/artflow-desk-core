@@ -202,7 +202,9 @@ app_settings 里不存在 ui.icon_variant（本轮从未写入正式库）
 ## 7. 本地 Git 提交（未推送）
 
 ```text
-（见下方 git log；共 3 个提交：素材+生成脚本 / 后端+前端实现 / 文档）
+0cfcccc docs: DEV-06B icon report with Dock feasibility note and open items
+179b63a feat(ui): pick between three app icons, preview then save
+67c92de assets: three supplied SVG icons, rasterised PNGs and Orbit build icons
 ```
 
 ## 8. 下一轮最短实机验收流程
