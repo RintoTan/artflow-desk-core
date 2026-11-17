@@ -21,16 +21,27 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let root = app
+            let production_root = app
                 .path()
                 .app_data_dir()
                 .map_err(|e| format!("无法解析应用数据目录：{e}"))?;
 
+            // QA 沙箱：双钥匙 + 标记文件 + 互相包含检查，任一不满足都中止启动，
+            // 绝不回退到正式数据目录。
+            let qa_root = crate::store::qa::resolve_root(
+                &production_root,
+                std::env::var_os(crate::store::qa::QA_ROOT_ENV).as_deref(),
+                std::env::var_os(crate::store::qa::QA_FLAG_ENV).as_deref(),
+            )?;
+            let qa_mode = qa_root.is_some();
+            let root = qa_root.unwrap_or_else(|| production_root.clone());
+
             // 打开环境即取得跨进程独占锁；此后整个进程生命周期都持有它。
-            let state = AppState::open(&root)?;
+            let state = AppState::open_mode(&root, qa_mode)?;
             let outcome = state.env.outcome();
             println!(
-                "[minidesk] env ready path={} generation={} schema=v{} first_run={} tz={}",
+                "[minidesk] env ready mode={} path={} generation={} schema=v{} first_run={} tz={}",
+                if qa_mode { "qa" } else { "production" },
                 state.env.root().display(),
                 outcome.generation,
                 outcome.schema_version,

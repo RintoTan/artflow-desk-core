@@ -11,6 +11,8 @@ export type EnvironmentStatus = {
   schemaVersion: number;
   upgradedFrom: number | null;
   rootPath: string;
+  /** true = 当前进程跑在 QA 沙箱（后端总是返回；旧夹具可省略）。 */
+  qaMode?: boolean;
   sqliteVersion: string;
   journalMode: string;
   workingTimezone: string;

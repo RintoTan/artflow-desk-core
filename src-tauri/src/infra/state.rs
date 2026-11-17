@@ -9,10 +9,16 @@ use crate::store::highwater::HighWater;
 pub struct AppState {
     pub env: Environment,
     pub highwater: HighWater,
+    /// true = 本次进程跑在 QA 沙箱里。界面必须显示标识。
+    qa_mode: bool,
 }
 
 impl AppState {
     pub fn open(root: &Path) -> AppResult<Self> {
+        Self::open_mode(root, false)
+    }
+
+    pub fn open_mode(root: &Path, qa_mode: bool) -> AppResult<Self> {
         let env = Environment::open(root)?;
         let hw_path = env.layout().highwater_db();
         if !hw_path.exists() {
@@ -23,6 +29,14 @@ impl AppState {
             ));
         }
         let highwater = HighWater::open(&hw_path)?;
-        Ok(Self { env, highwater })
+        Ok(Self {
+            env,
+            highwater,
+            qa_mode,
+        })
+    }
+
+    pub fn qa_mode(&self) -> bool {
+        self.qa_mode
     }
 }

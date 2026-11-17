@@ -4,5 +4,6 @@ pub mod generation;
 pub mod highwater;
 pub mod migrations;
 pub mod paths;
+pub mod qa;
 pub mod settings;
 pub mod timezone;
