@@ -664,7 +664,12 @@ export default function OrdersPage() {
   }
 
   function attemptSelect(orderId: string) {
-    if (orderId === selectedId && !creating) return;
+    if (orderId === selectedId && !creating) {
+      // 看板/表格里点"已经选中的那张卡"也必须能把详情抽屉重新打开，
+      // 否则用户点了没反应（默认会预选第一张）。
+      if (viewMode !== "cards" && !drawerOpen) setDrawerOpen(true);
+      return;
+    }
     if (dirty) {
       setGuardError(null);
       setManualNav({ kind: "order", orderId });
@@ -778,14 +783,6 @@ export default function OrdersPage() {
           </div>
           <div className="orders-head-actions">
             <ViewSwitch value={viewMode} onChange={(next) => void changeView(next)} />
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => setExportOpen(true)}
-              disabled={orders.length === 0}
-            >
-              导出
-            </button>
             <button type="button" className="btn btn-primary btn-sm" onClick={attemptCreate}>
               新建
             </button>
@@ -836,6 +833,7 @@ export default function OrdersPage() {
               </button>
             ))}
           </div>
+          <span className="head-spacer" />
           {viewMode === "cards" && (
             <button
               type="button"
@@ -847,6 +845,14 @@ export default function OrdersPage() {
               {density === "compact" ? "紧凑" : "舒适"}
             </button>
           )}
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            onClick={() => setExportOpen(true)}
+            disabled={orders.length === 0}
+          >
+            导出
+          </button>
         </div>
 
         {viewPersistError && (
@@ -1019,20 +1025,33 @@ export default function OrdersPage() {
         aria-hidden={!detailVisible}
       >
         {viewMode !== "cards" && (
-          <button
-            type="button"
-            className="drawer-close"
-            onClick={() => {
-              // 有未保存修改时不静默关闭：草稿会留在内存里，用户以为已经"关掉"了。
-              if (dirty) {
-                setNotice("还有未保存的修改：请先「保存」或「撤销」，再关闭详情。");
-                return;
-              }
-              setDrawerOpen(false);
-            }}
-          >
-            关闭详情
-          </button>
+          <div className="drawer-bar">
+            <span className="drawer-bar-title">订单详情</span>
+            <button
+              type="button"
+              className="drawer-close"
+              aria-label="关闭订单详情"
+              title="关闭详情（Esc）"
+              onClick={() => {
+                // 有未保存修改时不静默关闭：草稿会留在内存里，用户以为已经"关掉"了。
+                if (dirty) {
+                  setNotice("还有未保存的修改：请先「保存」或「撤销」，再关闭详情。");
+                  return;
+                }
+                setDrawerOpen(false);
+              }}
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <path
+                  d="M6 6l12 12M18 6L6 18"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          </div>
         )}
         {error && (
           <div className="banner banner-error">
