@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useBlocker } from "react-router-dom";
 
+import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import {
   api,
   describeError,
@@ -126,7 +127,10 @@ type PendingAction = {
   run: () => Promise<void>;
 };
 
-type PendingSwitch = { orderId: string } | { create: true } | null;
+type PendingNav =
+  | { kind: "order"; orderId: string }
+  | { kind: "create" }
+  | { kind: "route" };
 
 // ---------------------------------------------------------------- 主页面
 
@@ -147,7 +151,9 @@ export default function OrdersPage() {
 
   const [creating, setCreating] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
-  const [pendingSwitch, setPendingSwitch] = useState<PendingSwitch>(null);
+  const [manualNav, setManualNav] = useState<PendingNav | null>(null);
+  const [guardBusy, setGuardBusy] = useState(false);
+  const [guardError, setGuardError] = useState<string | null>(null);
 
   const dirty = useMemo(() => {
     if (!detail || !draft) return false;
@@ -231,8 +237,8 @@ export default function OrdersPage() {
 
   // ---------------------------------------------------------------- 动作
 
-  async function saveDraft(): Promise<boolean> {
-    if (!detail || !draft) return false;
+  async function saveDraft(): Promise<string | null> {
+    if (!detail || !draft) return "当前没有可保存的订单";
     setBusy(true);
     setDraftError(null);
     try {
@@ -251,7 +257,7 @@ export default function OrdersPage() {
       const updated = await api.updateOrderDetails(input);
       await refresh(updated.id);
       setNotice("资料已保存");
-      return true;
+      return null;
     } catch (e) {
       if (isConflict(e)) {
         setDraftError(`${describeError(e)} 已重新载入最新数据，你的修改仍保留在表单中。`);
@@ -266,7 +272,7 @@ export default function OrdersPage() {
       } else {
         setDraftError(describeError(e));
       }
-      return false;
+      return `${describeError(e)} 草稿仍保留在表单中。`;
     } finally {
       setBusy(false);
     }
@@ -291,20 +297,7 @@ export default function OrdersPage() {
     }
   }
 
-  function attemptSelect(orderId: string) {
-    if (orderId === selectedId && !creating) return;
-    if (dirty) {
-      setPendingSwitch({ orderId });
-      return;
-    }
-    void selectOrder(orderId);
-  }
-
-  function attemptCreate() {
-    if (dirty) {
-      setPendingSwitch({ create: true });
-      return;
-    }
+  function openCreate() {
     setCreating(true);
     setSelectedId(null);
     setDetail(null);
@@ -314,37 +307,90 @@ export default function OrdersPage() {
     setNotice(null);
   }
 
-  async function resolveSwitchDiscard() {
-    const target = pendingSwitch;
-    setPendingSwitch(null);
-    setDraft(null);
-    if (!target) return;
-    if ("create" in target) {
-      setCreating(true);
-      setSelectedId(null);
-      setDetail(null);
-      setEvents([]);
-    } else {
-      await selectOrder(target.orderId);
+  function attemptSelect(orderId: string) {
+    if (orderId === selectedId && !creating) return;
+    if (dirty) {
+      setGuardError(null);
+      setManualNav({ kind: "order", orderId });
+      return;
+    }
+    void selectOrder(orderId);
+  }
+
+  function attemptCreate() {
+    if (dirty) {
+      setGuardError(null);
+      setManualNav({ kind: "create" });
+      return;
+    }
+    openCreate();
+  }
+
+  // 路由级离页与手动切换共用同一个对话框：
+  // 路由被 blocker 拦下时对话框"就是打开状态"，不额外维护一份状态，
+  // 避免 reset/proceed 与本地状态更新的时序竞争导致对话框重新弹出。
+  const routeBlocked = blocker.state === "blocked";
+  const dialogOpen = routeBlocked || manualNav !== null;
+  const pendingNav: PendingNav | null = manualNav ?? (routeBlocked ? { kind: "route" } : null);
+
+  function leaveTo(nav: PendingNav) {
+    if (nav.kind === "route") {
+      blocker.proceed?.();
+      return;
+    }
+    if (nav.kind === "create") {
+      openCreate();
+      return;
+    }
+    void selectOrder(nav.orderId);
+  }
+
+  function handleStay() {
+    setGuardError(null);
+    setManualNav(null);
+    if (routeBlocked) blocker.reset?.();
+  }
+
+  async function handleDiscard() {
+    if (guardBusy) return;
+    const nav = pendingNav;
+    if (!nav) return;
+    setGuardBusy(true);
+    try {
+      setGuardError(null);
+      if (nav.kind === "route") {
+        blocker.proceed?.();
+      } else {
+        setDraft(null);
+        setManualNav(null);
+        leaveTo(nav);
+      }
+    } finally {
+      setGuardBusy(false);
     }
   }
 
-  async function resolveSwitchSave() {
-    const target = pendingSwitch;
-    const ok = await saveDraft();
-    if (!ok) {
-      setPendingSwitch(null);
-      return;
-    }
-    setPendingSwitch(null);
-    if (!target) return;
-    if ("create" in target) {
-      setCreating(true);
-      setSelectedId(null);
-      setDetail(null);
-      setEvents([]);
-    } else {
-      await selectOrder(target.orderId);
+  async function handleSaveAndLeave() {
+    if (guardBusy) return;
+    const nav = pendingNav;
+    if (!nav) return;
+    setGuardBusy(true);
+    setGuardError(null);
+    try {
+      const failure = await saveDraft();
+      if (failure) {
+        // 保存失败：对话框保持打开，草稿不动。
+        setGuardError(failure);
+        return;
+      }
+      if (nav.kind === "route") {
+        blocker.proceed?.();
+      } else {
+        setManualNav(null);
+        leaveTo(nav);
+      }
+    } finally {
+      setGuardBusy(false);
     }
   }
 
@@ -506,19 +552,6 @@ export default function OrdersPage() {
               )}
             </section>
 
-            {dirty && blocker.state === "blocked" && (
-              <SwitchGuard
-                message="当前订单资料有未保存的修改。"
-                busy={busy}
-                onSave={async () => {
-                  const ok = await saveDraft();
-                  if (ok) blocker.proceed?.();
-                }}
-                onDiscard={() => blocker.proceed?.()}
-                onStay={() => blocker.reset?.()}
-              />
-            )}
-
             <section className="panel">
               <header className="panel-head compact">
                 <h2>资料</h2>
@@ -565,52 +598,28 @@ export default function OrdersPage() {
           </>
         )}
 
-        {pendingSwitch && (
-          <SwitchGuard
-            message="切换订单会丢失当前未保存的资料修改。"
-            busy={busy}
-            onSave={resolveSwitchSave}
-            onDiscard={resolveSwitchDiscard}
-            onStay={() => setPendingSwitch(null)}
-          />
-        )}
       </section>
+
+      <UnsavedChangesDialog
+        open={dialogOpen}
+        detail={
+          pendingNav?.kind === "create"
+            ? "新建订单会离开当前订单，尚未保存的资料修改将丢失。"
+            : pendingNav?.kind === "route"
+              ? "离开订单页面会丢失尚未保存的资料修改。"
+              : "切换订单会丢失当前尚未保存的资料修改。"
+        }
+        error={guardError}
+        busy={guardBusy || busy}
+        onSaveAndLeave={handleSaveAndLeave}
+        onDiscard={handleDiscard}
+        onStay={handleStay}
+      />
     </div>
   );
 }
 
 // ---------------------------------------------------------------- 子组件
-
-function SwitchGuard({
-  message,
-  busy,
-  onSave,
-  onDiscard,
-  onStay,
-}: {
-  message: string;
-  busy: boolean;
-  onSave: () => void | Promise<void>;
-  onDiscard: () => void | Promise<void>;
-  onStay: () => void;
-}) {
-  return (
-    <div className="guard">
-      <p>{message}</p>
-      <div className="guard-actions">
-        <button type="button" className="btn btn-primary" onClick={() => void onSave()} disabled={busy}>
-          保存并继续
-        </button>
-        <button type="button" className="btn btn-danger" onClick={() => void onDiscard()} disabled={busy}>
-          放弃修改
-        </button>
-        <button type="button" className="btn" onClick={onStay} disabled={busy}>
-          继续编辑
-        </button>
-      </div>
-    </div>
-  );
-}
 
 function ActionBar({
   order,
