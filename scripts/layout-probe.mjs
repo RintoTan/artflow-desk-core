@@ -301,7 +301,8 @@ await send("Runtime.enable");
 await send("Emulation.setDeviceMetricsOverride", {
   width,
   height,
-  deviceScaleFactor: 1,
+  // PROBE_DSF=2 / 3：高清截图用。几何读数不受影响（仍是 CSS 像素）。
+  deviceScaleFactor: Number(process.env.PROBE_DSF ?? 1),
   mobile: false,
 });
 await send("Page.addScriptToEvaluateOnNewDocument", { source: mockScript });
@@ -584,9 +585,17 @@ if (process.env.PROBE_TOOLTIP === "1") {
 
 // PROBE_SHOT=/path.png：把当前视口截下来，供人眼复核（Blink，不是 WKWebView）。
 if (process.env.PROBE_SHOT) {
+  // PROBE_CLIP=x,y,w,h（CSS 像素）：只截一块区域，便于放大审查侧栏等局部
+  const clip = (process.env.PROBE_CLIP ?? "")
+    .split(",")
+    .map(Number)
+    .filter((n) => Number.isFinite(n));
   const shot = await send("Page.captureScreenshot", {
     format: "png",
     captureBeyondViewport: false,
+    ...(clip.length === 4
+      ? { clip: { x: clip[0], y: clip[1], width: clip[2], height: clip[3], scale: 1 } }
+      : {}),
   });
   if (shot.result?.data) {
     const { writeFileSync } = await import("node:fs");
