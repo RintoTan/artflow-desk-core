@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
+import ConfirmDialog from "../components/ConfirmDialog";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import { describeError, isConflict, templateApi, type TemplateView } from "../bridge/commands";
 
@@ -34,6 +35,10 @@ export default function TemplatesPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pendingSwitch, setPendingSwitch] = useState<{ id: string } | { create: true } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TemplateView | null>(null);
+  const [deleteReplacement, setDeleteReplacement] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const selected = templates.find((t) => t.id === selectedId) ?? null;
   const dirty = selected !== null && draft !== null && !sameDraft(draft, draftFrom(selected));
@@ -138,30 +143,45 @@ export default function TemplatesPage() {
     }
   }
 
-  async function remove() {
+  const replacementCandidates = deleteTarget
+    ? templates.filter((t) => t.id !== deleteTarget.id)
+    : [];
+
+  function requestDelete() {
     if (!selected) return;
-    const isDefault = selected.isDefault;
-    const replacement = isDefault
-      ? templates.find((t) => t.id !== selected.id) ?? null
-      : null;
-    if (isDefault && !replacement) {
+    if (templates.length <= 1) {
       setError("至少需要保留一个模板，无法删除");
       return;
     }
-    const message = isDefault
-      ? `「${selected.name}」是默认模板，删除后默认模板将改为「${replacement?.name}」。继续？`
-      : `删除模板「${selected.name}」？已有订单不受影响。`;
-    if (!window.confirm(message)) return;
+    const others = templates.filter((t) => t.id !== selected.id);
+    setDeleteTarget(selected);
+    setDeleteReplacement(selected.isDefault ? (others[0]?.id ?? "") : "");
+    setDeleteError(null);
+  }
 
-    setBusy(true);
-    setError(null);
+  function cancelDelete() {
+    if (deleteBusy) return;
+    setDeleteTarget(null);
+    setDeleteError(null);
+  }
+
+  async function confirmDelete() {
+    const target = deleteTarget;
+    if (!target || deleteBusy) return;
+    if (target.isDefault && !deleteReplacement) {
+      setDeleteError("请先选择替代的默认模板");
+      return;
+    }
+    setDeleteBusy(true);
+    setDeleteError(null);
     try {
       const list = await templateApi.remove({
-        templateId: selected.id,
-        expectedRevision: selected.revision,
-        replacementDefaultId: replacement?.id ?? null,
+        templateId: target.id,
+        expectedRevision: target.revision,
+        replacementDefaultId: target.isDefault ? deleteReplacement : null,
       });
       setTemplates(list);
+      setDeleteTarget(null);
       if (list[0]) {
         setSelectedId(list[0].id);
         setDraft(draftFrom(list[0]));
@@ -169,11 +189,24 @@ export default function TemplatesPage() {
         setSelectedId(null);
         setDraft(null);
       }
-      setNotice("模板已删除");
+      setNotice(`模板「${target.name}」已删除`);
     } catch (e) {
-      setError(describeError(e));
+      // 失败保持对话框打开并说明原因，绝不假装成功。
+      setDeleteError(describeError(e));
+      if (isConflict(e)) {
+        try {
+          const list = await load();
+          const fresh = list.find((t) => t.id === target.id);
+          if (fresh) {
+            setDeleteTarget(fresh);
+            setDeleteReplacement(fresh.isDefault ? (list.find((t) => t.id !== fresh.id)?.id ?? "") : "");
+          }
+        } catch {
+          /* 保留原始错误 */
+        }
+      }
     } finally {
-      setBusy(false);
+      setDeleteBusy(false);
     }
   }
 
@@ -450,7 +483,7 @@ export default function TemplatesPage() {
               <button
                 type="button"
                 className="btn btn-danger"
-                onClick={() => void remove()}
+                onClick={requestDelete}
                 disabled={busy || templates.length <= 1}
               >
                 删除模板
@@ -462,6 +495,44 @@ export default function TemplatesPage() {
             </p>
           </section>
         )}
+
+        <ConfirmDialog
+          open={deleteTarget !== null}
+          title="确认删除流程模板？"
+          danger
+          confirmLabel="确认删除"
+          busy={deleteBusy}
+          error={deleteError}
+          confirmDisabled={deleteTarget !== null && deleteTarget.isDefault && deleteReplacement === ""}
+          onCancel={cancelDelete}
+          onConfirm={confirmDelete}
+        >
+          {deleteTarget && (
+            <>
+              <p>
+                即将删除模板 <strong>「{deleteTarget.name}」</strong>（{deleteTarget.stepCount} 个阶段）。
+              </p>
+              <p>删除模板不会改变已经创建订单的独立制作流程——订单在创建时就复制了当时的阶段。</p>
+              {deleteTarget.isDefault && (
+                <label className="field">
+                  <span>该模板是当前的默认模板，请先选择替代的默认模板 *</span>
+                  <select
+                    value={deleteReplacement}
+                    onChange={(e) => setDeleteReplacement(e.target.value)}
+                    disabled={deleteBusy}
+                  >
+                    <option value="">请选择</option>
+                    {replacementCandidates.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {candidate.name}（{candidate.stepCount} 个阶段）
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </>
+          )}
+        </ConfirmDialog>
 
         <UnsavedChangesDialog
           open={pendingSwitch !== null}
