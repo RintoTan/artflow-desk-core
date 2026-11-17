@@ -220,14 +220,15 @@ Dock 退出绕过整个确认流程）。这条与 DEV-06A 的结论一致，不
 
 ## 12. Git 提交
 
-见文末（分组提交后补）：
-
 ```text
-feat(theme): theme modes, tokens and controlled accent colour
-feat(settings): theme editor with preview, validation and draft guard
-feat(layout): collapsible sidebar with icon navigation
-test/docs: theme, sidebar and settings suites plus DEV-06B report
+96b8f99 feat(theme): theme modes, tokens and a controlled accent colour
+4a19545 feat(ui): theme editor and a collapsible sidebar
+f4494bb test(theme): cover modes, system following, persistence and the sidebar
+8f5bbcf docs: DEV-06A final archive and DEV-06B results
 ```
+
+主题与布局的代码写在同一批文件里（`App.tsx` 同时承载主题接线与侧边栏），
+所以按"基础/UI/测试/文档"分组，而不是强行拆成两次代码提交。
 
 ---
 
