@@ -23,6 +23,7 @@ function order(partial: Partial<OrderView> & { titles?: string[]; currentIndex?:
     clientId: null,
     clientName: null,
     commissionType: null,
+    stageTemplateId: "tpl-a",
     source: null,
     amountCents: null,
     note: null,

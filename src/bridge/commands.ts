@@ -67,6 +67,8 @@ export type OrderView = {
   clientId: string | null;
   clientName: string | null;
   commissionType: string | null;
+  /** 所属流程模板；阶段筛选按 (stageTemplateId, stageId) 匹配 */
+  stageTemplateId: string;
   /** 接稿渠道；NULL = 未设置（旧订单不会被回填） */
   source: string | null;
   amountCents: number | null;

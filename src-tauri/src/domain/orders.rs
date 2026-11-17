@@ -32,6 +32,8 @@ pub struct OrderView {
     pub client_id: Option<String>,
     pub client_name: Option<String>,
     pub commission_type: Option<String>,
+    /// 所属流程模板；阶段筛选必须按 (模板, 阶段) 匹配，不能只看阶段名。
+    pub stage_template_id: String,
     /// 接稿渠道；可空。旧订单为 NULL = 未设置，不回填虚构值。
     pub source: Option<String>,
     pub amount_cents: Option<i64>,
@@ -163,7 +165,7 @@ pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
                 o.amount_cents, o.note, o.status, o.current_stage_id, o.queue_position,
                 o.planned_start_date, o.planned_delivery_date,
                 o.started_at, o.completed_at, o.cancelled_at,
-                o.revision, o.created_at, o.updated_at, o.source
+                o.revision, o.created_at, o.updated_at, o.source, o.stage_template_id
          FROM orders o
          LEFT JOIN clients c ON c.id = o.client_id
          WHERE o.id = ?1",
@@ -190,6 +192,7 @@ pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
                 r.get::<_, String>(17)?,
                 r.get::<_, String>(18)?,
                 r.get::<_, Option<String>>(19)?,
+                r.get::<_, Option<String>>(20)?,
             ))
         },
     )?;
@@ -227,6 +230,7 @@ pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
         client_id: row.3,
         client_name: row.4,
         commission_type: row.5,
+        stage_template_id: row.20.unwrap_or_default(),
         source: row.19,
         amount_cents: row.6,
         note: row.7,

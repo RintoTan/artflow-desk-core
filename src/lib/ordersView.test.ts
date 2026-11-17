@@ -17,6 +17,7 @@ function order(partial: Partial<OrderView> & { id: string }): OrderView {
     clientId: null,
     clientName: null,
     commissionType: null,
+    stageTemplateId: "tpl-a",
     source: null,
     amountCents: null,
     note: null,

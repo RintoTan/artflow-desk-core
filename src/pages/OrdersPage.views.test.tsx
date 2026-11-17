@@ -21,6 +21,7 @@ const ORDER: OrderView = {
   clientId: "c1",
   clientName: "林小满",
   commissionType: null,
+  stageTemplateId: "tpl-a",
   source: "米画师",
   amountCents: 88000,
   note: null,

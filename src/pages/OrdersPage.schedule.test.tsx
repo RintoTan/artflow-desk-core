@@ -12,6 +12,7 @@ function makeOrder(over: Partial<OrderView>): OrderView {
     clientId: null,
     clientName: "林小满",
     commissionType: null,
+    stageTemplateId: "tpl-a",
     source: null,
     amountCents: null,
     note: null,

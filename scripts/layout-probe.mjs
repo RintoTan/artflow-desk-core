@@ -713,7 +713,8 @@ if (process.env.PROBE_VIEW) {
 
   const geom = await run(`(() => {
     const root = document.documentElement;
-    const board = document.querySelector(".board");
+    const flatGrid = document.querySelector(".board-grid");
+    const board = document.querySelector(".board") || flatGrid;
     const cols = board ? Array.from(board.querySelectorAll(".board-col")) : [];
     const widths = cols.map((c) => Math.round(c.getBoundingClientRect().width));
     const table = document.querySelector(".table-wrap");
@@ -752,6 +753,27 @@ if (process.env.PROBE_VIEW) {
           }
         : { exists: false },
       writeCalls,
+      flat: (() => {
+        const grid = document.querySelector(".board-grid");
+        if (!grid) return null;
+        const main = document.querySelector(".main");
+        const restore = main ? main.scrollTop : 0;
+        if (main) main.scrollTop = main.scrollHeight;
+        const cards = grid.querySelectorAll(".flat-card");
+        const last = cards[cards.length - 1];
+        const result = {
+          cards: cards.length,
+          cols: getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length,
+          scrollW: grid.scrollWidth,
+          clientW: grid.clientWidth,
+          bottomGap: last
+            ? Math.round(main.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom)
+            : null,
+        };
+        // 量完立刻还原滚动位置，否则后续"页头位置"测量会读到滚走的布局。
+        if (main) main.scrollTop = restore;
+        return result;
+      })(),
       headBox: (() => {
         const head = document.querySelector(".orders-head");
         if (!head) return null;
@@ -779,6 +801,7 @@ if (process.env.PROBE_VIEW) {
       })(),
       bottomGap: (() => {
         const map = [
+          [".board-grid", "board"],
           [".order-rows", "rows"],
           [".board-cards", "board"],
           [".table-wrap", "table"],
@@ -787,7 +810,7 @@ if (process.env.PROBE_VIEW) {
           const box = document.querySelector(sel);
           if (!box) continue;
           box.scrollTop = box.scrollHeight;
-          const items = box.querySelectorAll(".order-row, .board-card, tbody tr");
+          const items = box.querySelectorAll(".order-row, .board-card, .flat-card, tbody tr");
           const last = items[items.length - 1];
           if (!last) continue;
           const b = box.getBoundingClientRect();
@@ -820,6 +843,25 @@ if (process.env.PROBE_VIEW) {
           h: Math.round(c.height),
           offsetTop: Math.round(c.top - p.top),
           inside: c.left >= p.left - 1 && c.right <= p.right + 1,
+        };
+      })(),
+      stageFilter: (() => {
+        const select = document.querySelector('select[aria-label="按阶段筛选（按流程分组）"]');
+        if (!select) return null;
+        return {
+          groups: select.querySelectorAll("optgroup").length,
+          options: select.querySelectorAll("option").length - 1,
+        };
+      })(),
+      flat: (() => {
+        const grid = document.querySelector(".board-grid");
+        if (!grid) return null;
+        const cols = getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length;
+        return {
+          cards: grid.querySelectorAll(".flat-card").length,
+          cols,
+          scrollW: grid.scrollWidth,
+          clientW: grid.clientWidth,
         };
       })(),
       overflow: (() => {

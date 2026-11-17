@@ -3,7 +3,9 @@ import { useBlocker, useSearchParams } from "react-router-dom";
 import { save } from "@tauri-apps/plugin-dialog";
 
 import AttachmentPanel from "../components/AttachmentPanel";
-import OrderBoard, { type BoardMode } from "../components/OrderBoard";
+import OrderBoard from "../components/OrderBoard";
+import { planStageMove } from "../lib/board";
+import FilterMenu from "../components/FilterMenu";
 import OrderTable from "../components/OrderTable";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { ScheduleOverview } from "../components/ScheduleOverview";
@@ -115,6 +117,13 @@ function useTimeFormatter(timezone: string | null) {
 
 type ViewMode = "cards" | "board" | "table";
 
+const STATUS_TEXT: Record<string, string> = {
+  all: "全部",
+  active: "活动",
+  complete: "已完成",
+  cancelled: "已取消",
+};
+
 /** 与 Rust `settings::KEY_ORDERS_VIEW_MODE` 必须逐字一致。 */
 const KEY_ORDERS_VIEW = "orders_view_mode";
 const KEY_LIST_DENSITY = "list_density";
@@ -200,7 +209,10 @@ export default function OrdersPage() {
   const [viewPersistError, setViewPersistError] = useState<string | null>(null);
   /** 看板/表格模式下详情以右侧抽屉呈现；卡片模式永远并排显示。 */
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [boardMode, setBoardMode] = useState<BoardMode>("overview");
+  const [filterOpen, setFilterOpen] = useState(false);
+  /** 详情里的「调整阶段」：一次选择 + 一次确认，不再叠第二层对话框。 */
+  const [stageAdjust, setStageAdjust] = useState<string | null>(null);
+  const filterBtnRef = useRef<HTMLButtonElement | null>(null);
   const detailVisible = viewMode === "cards" || drawerOpen;
   /** 从客户页跳进来时的稳定 ID 过滤；null = 不按客户过滤 */
   const [clientFilter, setClientFilter] = useState<string | null>(null);
@@ -354,7 +366,7 @@ export default function OrdersPage() {
     let alive = true;
     (async () => {
       try {
-        const [list, clientList, templateList, status, queue, viewValue, densityValue, boardValue] =
+        const [list, clientList, templateList, status, queue, viewValue, densityValue] =
           await Promise.all([
           api.listOrders(),
           api.listClients(),
@@ -365,7 +377,6 @@ export default function OrdersPage() {
           // 读不到就退回默认卡片视图，并把原因留给需要它的人（见 changeView 的提示）。
           readPreference(KEY_ORDERS_VIEW),
           readPreference(KEY_LIST_DENSITY),
-          readPreference("board_mode"),
         ]);
         if (!alive) return;
         setOrders(list);
@@ -373,9 +384,6 @@ export default function OrdersPage() {
         setTemplates(templateList);
         setTimezone(status.workingTimezone);
         setQueueRev(queue.revision);
-        if (boardValue === "overview" || boardValue === "focus") {
-          setBoardMode(boardValue);
-        }
         if (densityValue === "compact" || densityValue === "comfortable") {
           setDensity(densityValue);
         }
@@ -819,41 +827,17 @@ export default function OrdersPage() {
               </button>
             )}
           </div>
-          <select
-            className="select-inline"
-            value={sourceFilter}
-            onChange={(e) => setSourceFilter(e.target.value)}
-            aria-label="按来源筛选"
+          <button
+            type="button"
+            ref={filterBtnRef}
+            className={`btn btn-sm${sourceFilter !== "all" || statusFilter !== "all" ? " btn-active" : ""}`}
+            aria-haspopup="dialog"
+            aria-expanded={filterOpen}
+            onClick={() => setFilterOpen((open) => !open)}
           >
-            <option value="all">所有来源</option>
-            <option value="">未设置</option>
-            {sourceOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-          {/* 状态用胶囊而不是下拉：当前生效的条件要一眼看得见。 */}
-          <div className="filter-row" role="group" aria-label="按状态筛选">
-            {(
-              [
-                ["all", "全部"],
-                ["active", "活动"],
-                ["complete", "已完成"],
-                ["cancelled", "已取消"],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                className={`filter-chip${statusFilter === value ? " filter-chip-active" : ""}`}
-                aria-pressed={statusFilter === value}
-                onClick={() => setStatusFilter(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+            筛选
+            {(sourceFilter !== "all" || statusFilter !== "all") && <span className="btn-dot" />}
+          </button>
           <span className="head-spacer" />
           {viewMode === "cards" && (
             <button
@@ -881,6 +865,54 @@ export default function OrdersPage() {
             {viewPersistError}
           </p>
         )}
+        {(sourceFilter !== "all" || statusFilter !== "all" || clientFilter) && (
+          <div className="cond-row">
+            <span className="muted">生效：</span>
+            {sourceFilter !== "all" && (
+              <span className="cond-chip">
+                来源 {sourceFilter === "" ? "未设置" : sourceFilter}
+                <button
+                  type="button"
+                  aria-label="清除来源筛选"
+                  onClick={() => setSourceFilter("all")}
+                >
+                  ×
+                </button>
+              </span>
+            )}
+            {statusFilter !== "all" && (
+              <span className="cond-chip">
+                状态 {STATUS_TEXT[statusFilter]}
+                <button
+                  type="button"
+                  aria-label="清除状态筛选"
+                  onClick={() => setStatusFilter("all")}
+                >
+                  ×
+                </button>
+              </span>
+            )}
+            {clientFilter && (
+              <span className="cond-chip">
+                客户 {clientFilterName ?? "（未知）"}
+                <button type="button" aria-label="清除客户筛选" onClick={() => setClientFilter(null)}>
+                  ×
+                </button>
+              </span>
+            )}
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() => {
+                setSourceFilter("all");
+                setStatusFilter("all");
+                setClientFilter(null);
+              }}
+            >
+              清除全部
+            </button>
+          </div>
+        )}
         {clientFilter && (
           <p className="filter-note">
             只显示客户「{clientFilterName ?? "（未知）"}」的订单
@@ -890,6 +922,25 @@ export default function OrdersPage() {
           </p>
         )}
       </header>
+
+      <FilterMenu
+        open={filterOpen}
+        anchor={filterBtnRef.current}
+        onClose={() => setFilterOpen(false)}
+        sources={[
+          { value: "all", label: "所有来源" },
+          { value: "", label: "未设置" },
+          ...sourceOptions.map((name) => ({ value: name, label: name })),
+        ]}
+        source={sourceFilter}
+        status={statusFilter}
+        onSource={setSourceFilter}
+        onStatus={(value) => setStatusFilter(value as StatusFilter)}
+        onClear={() => {
+          setSourceFilter("all");
+          setStatusFilter("all");
+        }}
+      />
 
       <div className="orders-layout">
       {viewMode === "cards" ? (
@@ -1018,19 +1069,12 @@ export default function OrdersPage() {
 
         {viewMode === "board" ? (
           <OrderBoard
-            mode={boardMode}
-            onModeChange={(next) => {
-              setBoardMode(next);
-              // 只记住"上次用哪种看板"，与全局视图偏好分开，避免覆盖 orders_view_mode。
-              void preferenceApi.set("board_mode", next).catch(() => {});
-            }}
             orders={visible}
-            busy={busy}
+            templates={templates}
             onOpen={(orderId) => void attemptSelect(orderId)}
-            onApply={applyStageMove}
             formatMoney={formatMoney}
+            // planned 日期本身就是 YYYY-MM-DD，不要再走带时间的格式化
             formatDate={(value) => (value ? value : "未排期")}
-            onError={setError}
           />
         ) : (
           <OrderTable
@@ -1152,6 +1196,7 @@ export default function OrdersPage() {
                 onRequest={setPendingAction}
                 onRun={runLifecycle}
                 onDirtyGuard={() => dirty}
+                onAdjustStage={() => setStageAdjust("")}
               />
 
               {pendingAction && (
@@ -1297,6 +1342,67 @@ export default function OrdersPage() {
         </label>
       </ConfirmDialog>
 
+      <ConfirmDialog
+        open={stageAdjust !== null}
+        title="调整制作阶段"
+        confirmLabel="确认调整"
+        confirmDisabled={!stageAdjust}
+        onCancel={() => setStageAdjust(null)}
+        onConfirm={() => {
+          if (!stageAdjust || !detail) return;
+          const plan = planStageMove(detail, stageAdjust);
+          setStageAdjust(null);
+          if (plan.kind === "advance" || plan.kind === "rework") {
+            void applyStageMove(
+              detail,
+              plan as Extract<StageMovePlan, { kind: "advance" | "rework" }>,
+            );
+          } else if (plan.kind === "blocked") {
+            setError(plan.reason);
+          }
+        }}
+      >
+        {detail && (
+          <div className="stage-adjust">
+            <p className="muted">
+              当前阶段：<strong>{detail.currentStageTitle ?? "—"}</strong> · 该流程共{" "}
+              {detail.stages.length} 个阶段
+            </p>
+            <div className="stage-adjust-list" role="radiogroup" aria-label="目标阶段">
+              {detail.stages
+                .filter((stage) => stage.id !== detail.currentStageId)
+                .map((stage) => {
+                  const plan = planStageMove(detail, stage.title);
+                  const usable = plan.kind === "advance" || plan.kind === "rework";
+                  const reason =
+                    plan.kind === "blocked"
+                      ? plan.reason
+                      : usable
+                        ? null
+                        : "请用「推进阶段」逐级推进";
+                  return (
+                    <label key={stage.id} className={`stage-adjust-row${usable ? "" : " is-off"}`}>
+                      <input
+                        type="radio"
+                        name="adjust-stage"
+                        value={stage.title}
+                        disabled={!usable}
+                        checked={stageAdjust === stage.title}
+                        onChange={() => setStageAdjust(stage.title)}
+                      />
+                      <span className="stage-adjust-name">{stage.title}</span>
+                      <span className="stage-adjust-note">
+                        {reason ?? (plan.kind === "rework" ? "返工" : "推进")}
+                      </span>
+                    </label>
+                  );
+                })}
+            </div>
+            <p className="muted">确认后只写入一次合法领域动作；取消不改动任何数据。跨阶段跳转暂不支持。</p>
+          </div>
+        )}
+      </ConfirmDialog>
+
       <UnsavedChangesDialog
         open={dialogOpen}
         detail={
@@ -1353,12 +1459,14 @@ function ActionBar({
   onRequest,
   onRun,
   onDirtyGuard,
+  onAdjustStage,
 }: {
   order: OrderView;
   busy: boolean;
   onRequest: (action: PendingAction) => void;
   onRun: (label: string, call: (order: OrderView) => Promise<OrderView>) => Promise<void>;
   onDirtyGuard: () => boolean;
+  onAdjustStage: () => void;
 }) {
   const caps = order.capabilities;
 
@@ -1434,6 +1542,16 @@ function ActionBar({
         }
       >
         返工一步
+      </button>
+
+      <button
+        type="button"
+        className="btn"
+        disabled={busy || order.status !== "active"}
+        title={order.status === "active" ? "选择该订单流程内的其它阶段" : "终态订单不能改阶段"}
+        onClick={onAdjustStage}
+      >
+        调整阶段…
       </button>
 
       <button

@@ -2,274 +2,162 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { OrderView, StageView } from "../bridge/commands";
+import type { OrderView, TemplateView } from "../bridge/commands";
 import OrderBoard from "./OrderBoard";
 
-function stages(titles: string[], current: number): StageView[] {
-  return titles.map((title, i) => ({
-    id: `s-${title}`,
-    title,
-    position: i,
-    isCurrent: i === current,
-  }));
+function template(id: string, name: string, stages: [string, string][]): TemplateView {
+  const steps = stages.map(([stepId, title], index) => ({ stepId, title, position: index }));
+  return {
+    id,
+    name,
+    isDefault: false,
+    revision: 1,
+    steps,
+    stepCount: steps.length,
+    usageCount: 1,
+    createdAt: "2026-10-01T00:00:00.000Z",
+    updatedAt: "2026-10-01T00:00:00.000Z",
+  } as unknown as TemplateView;
 }
 
-function order(partial: Partial<OrderView> = {}): OrderView {
-  const titles = ["草稿", "线稿", "上色"];
+function order(partial: Partial<OrderView>): OrderView {
   return {
-    id: "o1",
+    id: "o",
     code: "AF-2026-0001",
-    title: "双人插画",
+    title: "示例订单",
     clientId: "c1",
     clientName: "林小满",
     commissionType: null,
-    source: "米画师",
+    source: null,
+    stageTemplateId: "tpl-a",
     amountCents: 88000,
     note: null,
     status: "active",
-    workState: "inProgress",
-    currentStageId: "s-线稿",
-    currentStageTitle: "线稿",
-    currentStageIndex: 1,
-    stageCount: 3,
-    stages: stages(titles, 1),
-    queuePosition: 0,
+    currentStageId: "a1",
+    currentStageTitle: "草稿",
+    currentStageIndex: 0,
+    stages: [],
+    queuePosition: 1,
     plannedStartDate: null,
     plannedDeliveryDate: "2026-11-20",
-    deadlineState: "scheduled",
-    startedAt: "2026-11-01T00:00:00Z",
+    startedAt: null,
     completedAt: null,
     cancelledAt: null,
-    revision: 2,
-    createdAt: "2026-11-01T00:00:00Z",
-    updatedAt: "2026-11-01T00:00:00Z",
-    capabilities: {
-      canStartWork: false,
-      canUndoStartWork: false,
-      undoBlockedReason: null,
-      canAdvance: true,
-      canRework: true,
-      canComplete: false,
-      canCancel: true,
-      canReopen: false,
-      canEditWorkflow: true,
-    },
+    deadlineState: "scheduled",
+    workState: "queued",
+    capabilities: {} as OrderView["capabilities"],
+    revision: 1,
+    createdAt: "2026-11-01T00:00:00.000Z",
+    updatedAt: "2026-11-01T00:00:00.000Z",
     ...partial,
-  };
+  } as OrderView;
 }
 
-/** 三列都要有订单：空列不会被渲染，否则没法把卡片拖到"没人"的阶段。 */
-function threeOrders() {
-  return [
-    order({ id: "o1", currentStageId: "s-草稿", currentStageTitle: "草稿", currentStageIndex: 0, stages: stages(["草稿", "线稿", "上色"], 0) }),
-    order({ id: "o2", code: "AF-2026-0002", currentStageId: "s-线稿", currentStageTitle: "线稿", currentStageIndex: 1 }),
-    order({ id: "o3", code: "AF-2026-0003", currentStageId: "s-上色", currentStageTitle: "上色", currentStageIndex: 2, stages: stages(["草稿", "线稿", "上色"], 2) }),
-  ];
-}
+const TPL_A = template("tpl-a", "插画 A", [
+  ["a1", "草稿"],
+  ["a2", "线稿"],
+  ["a3", "固有色"],
+]);
+const TPL_B = template("tpl-b", "插画 B", [
+  ["b1", "构思"],
+  ["b2", "定稿"],
+]);
 
-function baseProps(overrides: Partial<Parameters<typeof OrderBoard>[0]> = {}) {
+function props(overrides: Partial<Parameters<typeof OrderBoard>[0]> = {}) {
   return {
-    orders: threeOrders(),
-    busy: false,
-    mode: "overview" as const,
-    onModeChange: vi.fn(),
+    orders: [] as OrderView[],
+    templates: [TPL_A, TPL_B],
     onOpen: vi.fn(),
-    onApply: vi.fn(async () => {}),
     formatMoney: (cents: number | null) => (cents === null ? "未知" : `¥${cents / 100}`),
     formatDate: (value: string | null) => value ?? "未排期",
-    onError: vi.fn(),
     ...overrides,
   };
 }
 
-/** 阶段名现在同时出现在导航 chip 与列头，取列必须按列头定位。 */
-function columnEl(title: string): HTMLElement {
-  const cols = Array.from(document.querySelectorAll<HTMLElement>(".board-col"));
-  const hit = cols.find(
-    (col) => col.querySelector(".board-col-title")?.textContent?.trim() === title,
-  );
-  if (!hit) throw new Error(`找不到阶段列：${title}`);
-  return hit;
-}
-
-
-describe("OrderBoard 真实交互", () => {
-  it("按阶段名分列，列头显示数量与已知金额合计", () => {
-    render(<OrderBoard {...baseProps()} />);
-    expect(columnEl("草稿")).toBeTruthy();
-    expect(columnEl("线稿")).toBeTruthy();
-    expect(screen.getAllByText(/1 · ¥880/)).toHaveLength(3);
+describe("OrderBoard（扁平总览）", () => {
+  it("不再有总览/聚焦子模式，也不再有阶段列", () => {
+    render(<OrderBoard {...props({ orders: [order({})] })} />);
+    expect(document.querySelector(".board-mode")).toBeNull();
+    expect(document.querySelector(".board-nav")).toBeNull();
+    expect(document.querySelector(".board-col")).toBeNull();
   });
 
-  it("拖到下一阶段后先出确认框，取消则零写入", async () => {
-    const user = userEvent.setup();
-    const onApply = vi.fn(async () => {});
-    render(<OrderBoard {...baseProps({ onApply })} />);
-
-    // 拖拽已在 UI-04 移除（QA-02 实机 FAIL），改走显式「→ 下一阶段」按钮。
-    await user.click(screen.getAllByRole("button", { name: /^→ / })[0]!);
-    const dialog = await screen.findByRole("alertdialog");
-    expect(dialog).toHaveTextContent("推进阶段");
-    expect(dialog).toHaveTextContent("线稿");
-
-    await user.click(screen.getByRole("button", { name: "取消" }));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(onApply).not.toHaveBeenCalled();
-  });
-
-  it("确认后只提交一次候选动作，并带上解析出的目标阶段 ID", async () => {
-    const user = userEvent.setup();
-    const onApply = vi.fn(async () => {});
-    render(<OrderBoard {...baseProps({ onApply })} />);
-
-    // 拖拽已在 UI-04 移除（QA-02 实机 FAIL），改走显式「→ 下一阶段」按钮。
-    await user.click(screen.getAllByRole("button", { name: /^→ / })[0]!);
-    await user.click(screen.getByRole("button", { name: "确认变更" }));
-
-    expect(onApply).toHaveBeenCalledTimes(1);
-    const [submittedOrder, plan] = onApply.mock.calls[0] as unknown as [
-      OrderView,
-      { kind: string; targetStageId: string },
+  it("展示全部订单，包含已结束订单且排在活动订单之后", () => {
+    const list = [
+      order({ id: "done", code: "AF-0003", status: "complete" }),
+      order({ id: "live", code: "AF-0001" }),
     ];
-    expect(submittedOrder.id).toBe("o1");
-    expect(plan).toMatchObject({ kind: "advance", targetStageId: "s-线稿" });
+    render(<OrderBoard {...props({ orders: list })} />);
+    const cards = Array.from(document.querySelectorAll(".flat-card code, .flat-card-code"));
+    expect(cards.map((n) => n.textContent)).toEqual(["AF-0001", "AF-0003"]);
   });
 
-  it("阶段菜单里的每一项要么是合法单步动作，要么禁用并说明原因", async () => {
+  it("按流程模板筛选后只留该模板订单，并列出该模板自己的阶段", async () => {
     const user = userEvent.setup();
-    const onApply = vi.fn(async () => {});
-    const onError = vi.fn();
-    const atDraft = order({
-      id: "o1",
-      currentStageId: "s-草稿",
-      currentStageTitle: "草稿",
-      stages: stages(["草稿", "线稿", "上色"], 0),
-    });
-    render(<OrderBoard {...baseProps({ orders: [atDraft], onApply, onError })} />);
-
-    await user.click(screen.getAllByRole("button", { name: /阶段操作/ })[0]!);
-    const dialog = await screen.findByRole("alertdialog");
-    const radios = within(dialog).getAllByRole("radio") as HTMLInputElement[];
-    expect(radios.length).toBe(3);
-
-    // 不可用的目标必须禁用且写明原因，不能让用户猜
-    for (const radio of radios) {
-      if (radio.disabled) {
-        const row = radio.closest("label")!;
-        expect(row.textContent ?? "").toMatch(/无法通过单个合法动作|当前阶段/);
-      }
-    }
-    const enabled = radios.filter((radio) => !radio.disabled);
-    expect(enabled.length).toBeGreaterThan(0);
-    await user.click(enabled[0]!);
-    // 选完目标再点确认 → 进入二次确认，仍未写入
-    await user.click(within(dialog).getByRole("button", { name: "确认调整" }));
-    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
-    expect(onApply).not.toHaveBeenCalled();
-  });
-
-  it("终态订单不进阶段列，而是单独列出", () => {
     render(
       <OrderBoard
-        {...baseProps({
-          orders: [order({ status: "complete", workState: "completed" })],
-        })}
-      />,
-    );
-    expect(screen.getByText(/已结束（1）/)).toBeInTheDocument();
-    // 终态用独立分区承载，不能混进阶段列（所以先排除 finished 分区再数）
-    expect(document.querySelectorAll(".board-col:not(.board-col-finished)")).toHaveLength(0);
-  });
-
-  it("金额未知的订单计入数量但不计入合计", () => {
-    render(
-      <OrderBoard
-        {...baseProps({
+        {...props({
           orders: [
-            order({ id: "o1", amountCents: 10000 }),
-            order({ id: "o2", code: "AF-2026-0002", amountCents: null }),
-            order({ id: "o3", code: "AF-2026-0003", amountCents: null }),
-            order({ id: "o4", code: "AF-2026-0004", amountCents: null }),
+            order({ id: "a", stageTemplateId: "tpl-a", currentStageId: "a1" }),
+            order({ id: "b", stageTemplateId: "tpl-b", currentStageId: "b1", currentStageTitle: "构思" }),
           ],
         })}
       />,
     );
-    // 四张单都在"线稿"列：数量 4，已知合计只有 100，未知 3 张单独标注。
-    expect(screen.getByText(/4 · ¥100/)).toBeInTheDocument();
-    expect(screen.getByText(/\+3 未知/)).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("按流程模板筛选"), "tpl-b");
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    const chips = Array.from(document.querySelectorAll(".stage-chip")).map((n) => n.textContent);
+    expect(chips[0]).toBe("全部阶段");
+    expect(chips.slice(1).map((t) => t?.replace(/\d+$/, ""))).toEqual(["构思", "定稿"]);
   });
 
-  it("空阶段也能作为放置目标：列存在但没有卡片", () => {
-    render(<OrderBoard {...baseProps({ orders: [order()] })} />);
-    // 只有一张单，但它自己的后续阶段都作为空列出现，可以拖过去。
-    const titles = Array.from(document.querySelectorAll(".board-col-title")).map(
-      (n) => n.textContent,
+  it("阶段筛选按 (模板, 阶段) 匹配，同名阶段不会互相命中", async () => {
+    const user = userEvent.setup();
+    // 两个模板都有「草稿」，ID 不同
+    const tplC = template("tpl-c", "插画 C", [["c1", "草稿"]]);
+    render(
+      <OrderBoard
+        {...props({
+          templates: [TPL_A, tplC],
+          orders: [
+            order({ id: "a", stageTemplateId: "tpl-a", currentStageId: "a1", currentStageTitle: "草稿" }),
+            order({ id: "c", stageTemplateId: "tpl-c", currentStageId: "c1", currentStageTitle: "草稿" }),
+          ],
+        })}
+      />,
     );
-    expect(titles).toEqual(["草稿", "线稿", "上色"]);
-    expect(document.querySelectorAll(".board-empty")).toHaveLength(2);
+    await user.selectOptions(screen.getByLabelText("按阶段筛选（按流程分组）"), "tpl-c:c1");
+    const items = screen.getAllByRole("listitem");
+    expect(items).toHaveLength(1);
+    expect(within(items[0]!).getByText("AF-2026-0001")).toBeInTheDocument();
   });
 
-  it("键盘可达：卡片上的「→ 下一阶段」按钮能打开同一个确认框", async () => {
+  it("切换模板会清掉与新模板不兼容的阶段条件", async () => {
     const user = userEvent.setup();
-    const onApply = vi.fn(async () => {});
-    render(<OrderBoard {...baseProps({ onApply })} />);
-
-    // o1 在草稿列，下一阶段是线稿。
-    await user.click(screen.getAllByRole("button", { name: "→ 线稿" })[0]!);
-    const dialog = await screen.findByRole("alertdialog");
-    expect(dialog).toHaveTextContent("线稿");
-
-    await user.click(screen.getByRole("button", { name: "确认变更" }));
-    expect(onApply).toHaveBeenCalledTimes(1);
+    render(<OrderBoard {...props({ orders: [order({})] })} />);
+    await user.selectOptions(screen.getByLabelText("按阶段筛选（按流程分组）"), "tpl-a:a1");
+    expect(document.querySelector(".board-count")?.textContent).toContain("1 / 1");
+    await user.selectOptions(screen.getByLabelText("按流程模板筛选"), "tpl-b");
+    expect(document.querySelector(".board-count")?.textContent).toContain("/ 1");
+    expect((screen.getByLabelText("按流程模板筛选") as HTMLSelectElement).value).toBe("tpl-b");
   });
 
-  it("Esc 取消确认框且零写入", async () => {
+  it("卡片只有打开详情，没有阶段操作按钮", () => {
+    render(<OrderBoard {...props({ orders: [order({})] })} />);
+    expect(screen.queryByRole("button", { name: /阶段操作/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /→/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /打开 AF-2026-0001/ })).toBeInTheDocument();
+  });
+
+  it("无结果时给出空状态与清除入口", async () => {
     const user = userEvent.setup();
-    const onApply = vi.fn(async () => {});
-    render(<OrderBoard {...baseProps({ onApply })} />);
-
-    // 拖拽已在 UI-04 移除（QA-02 实机 FAIL），改走显式「→ 下一阶段」按钮。
-    await user.click(screen.getAllByRole("button", { name: /^→ / })[0]!);
-    await screen.findByRole("alertdialog");
-    await user.keyboard("{Escape}");
-
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(onApply).not.toHaveBeenCalled();
-  });
-
-  it("阶段导航可以双向切换（QA-02 P1-02 回归）", async () => {
-    const user = userEvent.setup();
-    // 必须阶段数 > 一次可见列数，才真正触发切片（否则测不出回退失败）。
-    const five = stages(["草稿", "线稿", "固有色", "细化", "最终调整"], 0);
-    const orders = [
-      order({ id: "o1", currentStageId: "s-草稿", currentStageTitle: "草稿", stages: five }),
-      ...threeOrders().slice(1),
-    ];
-    render(<OrderBoard {...baseProps({ orders, mode: "focus" })} />);
-
-    const navChips = () => Array.from(document.querySelectorAll(".board-nav-chip"));
-    // 先跳到最后一个阶段
-    await user.click(navChips()[navChips().length - 1]!);
-    expect(navChips().at(-1)?.getAttribute("aria-current")).toBe("true");
-    // 再点回第一个：切片里原本没有它，旧实现会静默失败
-    await user.click(navChips()[0]!);
-    expect(navChips()[0]?.getAttribute("aria-current")).toBe("true");
-    expect(columnEl("草稿")).toBeTruthy();
-  });
-
-  it("拖拽柄已移除：不再提供无效的拖放暗示", () => {
-    render(<OrderBoard {...baseProps()} />);
-    expect(document.querySelector(".board-card-grip")).toBeNull();
-    expect(document.querySelector("[draggable='true']")).toBeNull();
-  });
-
-  it("阶段操作菜单只列该订单模板里的合法目标", async () => {
-    const user = userEvent.setup();
-    render(<OrderBoard {...baseProps({ orders: [order()] })} />);
-    await user.click(screen.getAllByRole("button", { name: /阶段操作/ })[0]!);
-    const dialog = await screen.findByRole("alertdialog");
-    const radios = within(dialog).getAllByRole("radio") as HTMLInputElement[];
-    // 只列该订单模板的阶段；跨模板阶段不会出现
-    expect(radios.map((r) => r.value)).toEqual(["草稿", "线稿", "上色"]);
+    render(
+      <OrderBoard
+        {...props({ orders: [order({ currentStageId: "a1" })] })}
+      />,
+    );
+    await user.selectOptions(screen.getByLabelText("按阶段筛选（按流程分组）"), "tpl-a:a3");
+    expect(document.querySelector(".board-empty-state")).not.toBeNull();
+    expect(screen.getAllByRole("button", { name: "清除看板筛选" }).length).toBeGreaterThan(0);
   });
 });

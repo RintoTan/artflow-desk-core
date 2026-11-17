@@ -13,6 +13,7 @@ function order(id: string, code: string, title: string, queuePosition: number): 
     clientId: null,
     clientName: null,
     commissionType: null,
+    stageTemplateId: "tpl-a",
     source: null,
     amountCents: null,
     note: null,
@@ -209,7 +210,9 @@ describe("订单队列拖拽", () => {
   it("筛选到终态时不给拖拽手柄，并说明原因", async () => {
     const user = userEvent.setup();
     await setup();
-    await user.click(screen.getByRole("button", { name: "已完成" }));
+    // 状态筛选已从常驻胶囊收进统一「筛选」面板
+    await user.click(screen.getByRole("button", { name: /筛选/ }));
+    await user.selectOptions(screen.getByLabelText("按状态筛选"), "complete");
 
     expect(screen.queryByRole("button", { name: /拖动 AF-2026-0001/ })).not.toBeInTheDocument();
     expect(screen.getByText(/当前筛选下不显示活动队列/)).toBeInTheDocument();

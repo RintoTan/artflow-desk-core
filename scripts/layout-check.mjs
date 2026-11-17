@@ -267,20 +267,26 @@ for (const [view, widths] of [
         if (!g.board.exists) problems.push("看板没有渲染");
         else {
           // 可见列数随宽度变化（1–3），夹具是否正常改用"总阶段数"判断。
-          if (g.board.totalCols < 2) problems.push(`夹具只有 ${g.board.totalCols} 个阶段（失效）`);
-          if (g.board.cols < 1) problems.push("看板没有可见列");
-          if (g.board.minColW < 180) problems.push(`列宽 ${g.board.minColW}px < 180px`);
+          if (!g.flat || g.flat.cards < 1) problems.push("扁平总览没有卡片（夹具失效）");
+
+          // 扁平总览没有"列"，改为约束卡片最小可读宽度
+          if (g.flat && g.flat.cols > 0) {
+            const cardW = Math.round((g.flat.clientW - (g.flat.cols - 1) * 10) / g.flat.cols);
+            if (cardW < 240) problems.push(`卡片宽度 ${cardW}px < 240px`);
+          }
           const shouldScroll = g.board.scrollW > g.board.clientW;
           if (g.board.scrollsInside !== shouldScroll) problems.push("看板滚动状态异常");
           // 设计变更（DEV-06D-1-UI-03）：看板改为聚焦式，窄窗只放当前+相邻阶段，
           // 因此不再要求"必须在面板内横向滚动"；改为要求可见列 ≤3 且不产生页面溢出。
           // UX-04：总览 = 全部阶段纵向浏览；聚焦 = ≤3 列 + 阶段导航（分两条断言覆盖）。
-          if (g.board.mode === "总览") {
-            if (g.board.scrollW > g.board.clientW + 2) {
-              problems.push("总览出现横向滚动，应改为纵向浏览");
-            }
-          } else if (g.board.cols > 3) {
-            problems.push(`聚焦模式展示 ${g.board.cols} 列，应 ≤3`);
+          // UX-05：看板是扁平总览，没有阶段列，也不允许横向滚动
+          if (!g.flat) problems.push("看板没有渲染扁平总览");
+          else {
+            if (g.flat.scrollW > g.flat.clientW + 1) problems.push("扁平总览出现横向滚动");
+            if (g.flat.cards < 1) problems.push("扁平总览没有卡片");
+            // 900px 的可用内容宽约 524px，放不下 2×260；宁可 1 列可读也不压缩信息。
+            if (width >= 1100 && g.flat.cols < 2) problems.push(`${width}px 只有 ${g.flat.cols} 列，应 ≥2`);
+            if (width < 700 && g.flat.cols > 1) problems.push(`窄窗 ${g.flat.cols} 列，应退化为 1 列`);
           }
           if (width <= 900 && g.board.scrollW > g.board.clientW + 2) {
             problems.push("窄窗下看板仍需横向滚动，聚焦式布局未生效");
@@ -388,16 +394,19 @@ for (const [view, widths] of [
   const line = raw.slice(raw.indexOf("VIEW "));
   const g = JSON.parse(line.slice(line.indexOf("{"))).geom;
   const problems = [];
-  if (!g.boardNav) problems.push("聚焦模式没有阶段导航");
+  // 聚焦模式已删除，改为校验「按阶段筛选」按模板分组可用
+  const stageSelect = g.stageFilter;
+  if (!stageSelect) problems.push("看板没有阶段筛选入口");
+  else if (stageSelect.groups < 2) problems.push(`阶段筛选只覆盖 ${stageSelect.groups} 个模板`);
   else if (g.boardNav.chips < g.board.cols || g.boardNav.chips === 0) {
     problems.push(`导航 ${g.boardNav.chips} 个阶段，少于可见列 ${g.board.cols} 个`);
   } else if (g.board.cols > 3) {
     problems.push(`可见列 ${g.board.cols} 个，聚焦式看板应 ≤3`);
   }
   record(
-    "orders: 看板阶段导航覆盖全部阶段",
+    "orders: 看板阶段筛选按模板分组覆盖全部阶段",
     problems,
-    g.boardNav ? `${g.boardNav.chips} 个导航项：${g.boardNav.labels.join(" / ")}` : "无",
+    g.stageFilter ? `${g.stageFilter.groups} 个模板分组，${g.stageFilter.options} 个阶段` : "无",
   );
 }
 
@@ -418,13 +427,13 @@ for (const [view, widths] of [
     );
     const line = raw.slice(raw.indexOf("VIEW "));
     const g = JSON.parse(line.slice(line.indexOf("{"))).geom;
-    const gap = g.bottomGap;
-    if (!gap || gap.key !== key) {
+    const gap = key === "board" ? (g.flat?.bottomGap ?? null) : (g.bottomGap?.gap ?? null);
+    if (gap === null) {
       problems.push(`${label}没有测到真实底部距离`);
       continue;
     }
-    seen.push(`${label}=${gap.gap}px`);
-    if (gap.gap < 16) problems.push(`${label}滚到底只剩 ${gap.gap}px，应 ≥16px`);
+    seen.push(`${label}=${gap}px`);
+    if (gap < 16) problems.push(`${label}滚到底只剩 ${gap}px，应 ≥16px`);
   }
   record("orders: 滚动到底保留真实安全距离", problems, seen.join(" / "));
 }
