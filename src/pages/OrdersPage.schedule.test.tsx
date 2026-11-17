@@ -1,5 +1,5 @@
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { OrderView } from "../bridge/commands";
@@ -102,38 +102,71 @@ async function setup(orders: OrderView[]) {
   await screen.findAllByRole("button", { name: /AF-2026-/ });
 }
 
-function bar() {
-  return document.querySelector(".sched");
+function listItems() {
+  return document.querySelectorAll(".order-row");
 }
 
-describe("订单行排期轨道", () => {
-  it("有计划日期时渲染轨道，且轨道里没有任何可交互元素", async () => {
+describe("订单列表：不携带排期轨道", () => {
+  it("有日期的订单也不会在列表里画轨道", async () => {
     await setup([
       makeOrder({ plannedStartDate: "2026-11-10", plannedDeliveryDate: "2026-11-20" }),
     ]);
-    const node = bar()!;
-    expect(node).not.toBeNull();
-    expect(node.querySelector("button, a, input, [tabindex]")).toBeNull();
-    // 纯装饰：可访问性由行文字与详情承担
-    expect(node.getAttribute("aria-hidden")).toBe("true");
-    expect(node.querySelector(".sched-band")).not.toBeNull();
-    expect(node.querySelectorAll(".sched-mark").length).toBeGreaterThan(0);
+    expect(listItems().length).toBeGreaterThan(0);
+    expect(document.querySelector(".order-list .schedule-track")).toBeNull();
+    expect(document.querySelector(".sched")).toBeNull();
+    // 元信息回到 DEV-06B 的层级：没有额外包裹层
+    expect(document.querySelector(".order-row-meta-text")).toBeNull();
+  });
+});
+
+describe("订单详情：排期概览", () => {
+  it("双日期：文字给出两端，轨道给出区间", async () => {
+    await setup([
+      makeOrder({ plannedStartDate: "2026-11-10", plannedDeliveryDate: "2026-11-20" }),
+    ]);
+    const panel = screen.getByRole("region", { name: "排期概览" });
+    expect(within(panel).getByText("2026-11-10")).toBeInTheDocument();
+    expect(within(panel).getByText("2026-11-20")).toBeInTheDocument();
+    expect(panel.querySelector(".schedule-band")).not.toBeNull();
+    expect(panel.querySelector(".schedule-today")).not.toBeNull();
   });
 
-  it("完全没有日期时不画轨道，也不留空壳", async () => {
+  it("没有计划日期：中性空态，不画空轨道", async () => {
     await setup([makeOrder({})]);
-    expect(bar()).toBeNull();
-    expect(document.querySelector(".sched-text")).toBeNull();
+    const panel = screen.getByRole("region", { name: "排期概览" });
+    expect(within(panel).getByText(/尚未设置计划排期/)).toBeInTheDocument();
+    expect(panel.querySelector(".schedule-track")).toBeNull();
   });
 
-  it("只有交付日：画点不画区间，并给出窄屏文字", async () => {
+  it("只有交付日：开始写未设置，不虚构另一端", async () => {
     await setup([makeOrder({ plannedDeliveryDate: "2026-11-20" })]);
-    expect(bar()!.querySelector(".sched-band")).toBeNull();
-    expect(bar()!.querySelector('[data-kind="delivery"]')).not.toBeNull();
-    expect(document.querySelector(".sched-text")?.textContent).toBe("交付 11-20");
+    const panel = screen.getByRole("region", { name: "排期概览" });
+    expect(within(panel).getByText("未设置")).toBeInTheDocument();
+    expect(panel.querySelector(".schedule-band")).toBeNull();
+    expect(panel.querySelector('[data-kind="delivery"]')).not.toBeNull();
   });
 
-  it("终态订单的交付标记是中性的，不沿用逾期色", async () => {
+  it("只有计划开始：没有交付标记", async () => {
+    await setup([makeOrder({ plannedStartDate: "2026-11-10" })]);
+    const panel = screen.getByRole("region", { name: "排期概览" });
+    expect(panel.querySelector('[data-kind="planStart"]')).not.toBeNull();
+    expect(panel.querySelector('[data-kind="delivery"]')).toBeNull();
+  });
+
+  it("实际开工与计划开始形状不同，两者并存", async () => {
+    await setup([
+      makeOrder({
+        plannedStartDate: "2026-11-05",
+        plannedDeliveryDate: "2026-11-25",
+        startedAt: "2026-11-09T02:00:00.000Z",
+      }),
+    ]);
+    const panel = screen.getByRole("region", { name: "排期概览" });
+    expect(panel.querySelector('[data-kind="started"]')).not.toBeNull();
+    expect(within(panel).getByText("实际开工", { selector: "dt" })).toBeInTheDocument();
+  });
+
+  it("终态订单：交付标记中性 + 显示完成日期", async () => {
     await setup([
       makeOrder({
         status: "complete",
@@ -142,24 +175,27 @@ describe("订单行排期轨道", () => {
         completedAt: "2026-11-18T02:00:00.000Z",
       }),
     ]);
-    const delivery = bar()!.querySelector('[data-kind="delivery"]')!;
-    expect(delivery.getAttribute("data-tone")).toBe("neutral");
-    expect(bar()!.querySelector('[data-kind="completed"]')).not.toBeNull();
+    const panel = screen.getByRole("region", { name: "排期概览" });
+    expect(panel.querySelector('[data-kind="delivery"]')!.getAttribute("data-tone")).toBe("neutral");
+    expect(panel.querySelector('[data-kind="completed"]')).not.toBeNull();
+    expect(within(panel).getByText(/完成于/)).toBeInTheDocument();
   });
 
-  it("风险色直接来自后端 deadlineState", async () => {
+  it("风险提示直接引用后端 deadlineState", async () => {
     await setup([
       makeOrder({ plannedDeliveryDate: "2026-11-10", deadlineState: "overdue" }),
     ]);
-    expect(bar()!.querySelector('[data-kind="delivery"]')!.getAttribute("data-tone")).toBe(
-      "overdue",
-    );
+    const panel = screen.getByRole("region", { name: "排期概览" });
+    expect(within(panel).getByText("已逾期")).toBeInTheDocument();
+    expect(panel.querySelector('[data-kind="delivery"]')!.getAttribute("data-tone")).toBe("overdue");
   });
 
-  it("越界日期带方向标记", async () => {
-    await setup([makeOrder({ plannedDeliveryDate: "2025-01-01" })]);
-    expect(
-      bar()!.querySelector('[data-kind="delivery"]')!.getAttribute("data-overflow"),
-    ).toBe("left");
+  it("轨道是纯装饰，精确日期在文字里", async () => {
+    await setup([
+      makeOrder({ plannedStartDate: "2026-11-10", plannedDeliveryDate: "2026-11-20" }),
+    ]);
+    const track = document.querySelector(".schedule-track")!;
+    expect(track.getAttribute("aria-hidden")).toBe("true");
+    expect(track.querySelector("button, a, [tabindex]")).toBeNull();
   });
 });

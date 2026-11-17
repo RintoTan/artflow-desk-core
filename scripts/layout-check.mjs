@@ -99,48 +99,52 @@ for (const route of ROUTES) {
   }
 }
 
-// 订单页排期轨道：不涨行高、窄屏降级成文字
-{
-  const wide = runProbe({ width: 900, route: "/orders" }).data;
+// 排期：列表必须没有轨道，详情里的轨道要按真实日期比例铺满
+for (const width of [1400, 900, 530]) {
+  const { data } = runProbe({ width, route: "/orders" });
+  const sched = data.sched;
   const problems = [];
-  if (wide.sched?.rowH !== 78) problems.push(`行高 ${wide.sched?.rowH} ≠ 78`);
-  if (!wide.sched?.bar || wide.sched.bar.w < 90) problems.push(`轨道宽 ${wide.sched?.bar?.w}`);
-  if (wide.sched?.barDisplay === "none") problems.push("900px 下轨道被隐藏了");
-  if ((wide.rowsBox?.visibleRows ?? 0) < 3) {
-    problems.push(`900px 一屏只有 ${wide.rowsBox?.visibleRows} 条完整订单`);
+  if (sched?.listTrack) problems.push("列表里仍然有排期轨道");
+  if (sched?.rowH !== 78) problems.push(`列表行高 ${sched?.rowH} ≠ 78`);
+  if (width <= 900 && (data.rowsBox?.visibleRows ?? 0) < 3) {
+    problems.push(`一屏只有 ${data.rowsBox?.visibleRows} 条完整订单`);
   }
-  if (wide.overlapArea > 0) problems.push(`重叠 ${wide.overlapArea}px²`);
+  if (data.overlapArea > 0) problems.push(`列表与详情重叠 ${data.overlapArea}px²`);
+  if (!sched?.track) problems.push("详情里没有排期轨道");
+  else {
+    if (sched.track.w < 300) problems.push(`轨道只有 ${sched.track.w}px 宽`);
+    if (!sched.band) problems.push("有多端日期时没有画区间");
+    if (sched.todayPct === null || sched.todayPct < 0 || sched.todayPct > 100) {
+      problems.push(`今天位置异常 ${sched.todayPct}%`);
+    }
+    if ((sched.dates ?? []).length < 2) problems.push("日期文字缺失");
+  }
   record(
-    "orders schedule @900",
+    `orders schedule @${width}`,
     problems,
-    `行高 ${wide.sched?.rowH}，轨道 ${wide.sched?.bar?.w}×${wide.sched?.bar?.h}，可见 ${wide.rowsBox?.visibleRows} 条`,
-  );
-
-  const narrow = runProbe({ width: 530, route: "/orders" }).data;
-  const narrowProblems = [];
-  if (narrow.sched?.barDisplay !== "none") narrowProblems.push("530px 下轨道没有隐藏");
-  if (narrow.sched?.textDisplay === "none") narrowProblems.push("530px 下没有降级文字");
-  if (narrow.sched?.rowH !== 78) narrowProblems.push(`行高 ${narrow.sched?.rowH} ≠ 78`);
-  if ((narrow.rowsBox?.visibleRows ?? 0) < 3) {
-    narrowProblems.push(`530px 一屏只有 ${narrow.rowsBox?.visibleRows} 条`);
-  }
-  record(
-    "orders schedule @530",
-    narrowProblems,
-    `轨道隐藏、文字「${narrow.sched?.text}」，行高 ${narrow.sched?.rowH}`,
+    `行高 ${sched?.rowH}，列表无轨道，详情轨道 ${sched?.track?.w}px，今天 ${sched?.todayPct}%`,
   );
 }
 
-// 统计图：轴固定、刻度可读、零值不画成柱子
-for (const width of [1400, 900, 530]) {
+// 统计图：宽屏单排、窄屏两排、两排刻度一致、都不横向滚动
+for (const [width, expectedMode] of [
+  [1400, "single"],
+  [900, "split"],
+  [530, "split"],
+]) {
   const { data } = runProbe({ width, route: "/stats" });
   const c = data.chart;
   const problems = [];
   if (!c) problems.push("没有找到图表");
   else {
+    if (c.mode !== expectedMode) problems.push(`模式 ${c.mode} ≠ ${expectedMode}`);
+    if (c.months !== 12) problems.push(`只有 ${c.months} 个月，数据被截断`);
+    if (c.rows !== (expectedMode === "single" ? 1 : 2)) problems.push(`排数 ${c.rows} 不对`);
+    if (c.scrollable) problems.push("仍需横向滚动才能看全月份");
+    if (c.overflowX) problems.push("整页出现横向溢出");
     if (c.axisMoved) problems.push("横向滚动时 Y 轴动了");
+    if (new Set(c.rowTicks).size !== 1) problems.push(`两排刻度不一致：${c.rowTicks.join(" | ")}`);
     const ticks = c.ticks.map(Number);
-    if (!ticks.length) problems.push("没有刻度");
     if (ticks.some((n, i) => !Number.isInteger(n) || n < 0 || (i > 0 && n <= ticks[i - 1]))) {
       problems.push(`刻度不是递增非负整数：${c.ticks.join(",")}`);
     }
@@ -151,7 +155,9 @@ for (const width of [1400, 900, 530]) {
   record(
     `stats chart @${width}`,
     problems,
-    c ? `刻度 ${c.ticks.join("/")}，${c.months} 个月，${c.labels.length} 个标签，零值 ${c.zeroBarHeight}px，滚动 ${c.scrollable ? "是" : "否"}` : "-",
+    c
+      ? `${c.mode}（${c.rows} 排 ${c.months} 月），刻度 ${c.ticks.join("/")}，标签 ${c.labels.length}，滚动 ${c.scrollable ? "是" : "否"}`
+      : "-",
   );
 }
 

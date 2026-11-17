@@ -4,9 +4,9 @@ import { save } from "@tauri-apps/plugin-dialog";
 
 import AttachmentPanel from "../components/AttachmentPanel";
 import ConfirmDialog from "../components/ConfirmDialog";
-import { OrderScheduleBar } from "../components/OrderScheduleBar";
+import { ScheduleOverview } from "../components/ScheduleOverview";
 import { TruncatedTitle } from "../components/TitleTooltip";
-import { buildWindow, localDayIndex } from "../lib/scheduleBar";
+import { localDayIndex } from "../lib/scheduleBar";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import {
   densityClass,
@@ -339,13 +339,12 @@ export default function OrdersPage() {
     };
   }, [selectOrder]);
 
-  // 排期轨道的窗口：今天前后各 45 天，所有订单共用。
-  // 用工作时区的日历日，避免"UTC 今天"和"本地今天"差一天。
+  // 详情页排期概览用的"今天"：按工作时区取日历日，
+  // 避免把 UTC 的今天当成本地今天（差一天时"今天到期"会标错）。
   const scheduleToday = useMemo(() => {
     const now = localDayIndex(new Date().toISOString(), timezone);
     return now ?? 0;
   }, [timezone]);
-  const scheduleWindow = useMemo(() => buildWindow(scheduleToday), [scheduleToday]);
 
   const visible = useMemo(
     () =>
@@ -748,17 +747,9 @@ export default function OrdersPage() {
                     </TruncatedTitle>
                     <span className="order-row-meta">
                       <span className={`dot dot-${order.workState}`} />
-                      <span className="order-row-meta-text">
-                        {WORK_LABEL[order.workState]}
-                        {order.currentStageTitle ? ` · ${order.currentStageTitle}` : ""}
-                        {order.clientName ? ` · ${order.clientName}` : ""}
-                      </span>
-                      <OrderScheduleBar
-                        order={order}
-                        window={scheduleWindow}
-                        today={scheduleToday}
-                        timeZone={timezone}
-                      />
+                      {WORK_LABEL[order.workState]}
+                      {order.currentStageTitle ? ` · ${order.currentStageTitle}` : ""}
+                      {order.clientName ? ` · ${order.clientName}` : ""}
                     </span>
                   </button>
                   {canReorder && activeQueue.length > 1 && (
@@ -869,8 +860,6 @@ export default function OrdersPage() {
 
               <div className="facts">
                 <span>{formatMoney(detail.amountCents)}</span>
-                <span>开始 {detail.plannedStartDate ?? "未排"}</span>
-                <span>交付 {detail.plannedDeliveryDate ?? "未排"}</span>
                 <span>版本 {detail.revision}</span>
               </div>
 
@@ -913,6 +902,8 @@ export default function OrdersPage() {
                 </div>
               )}
             </section>
+
+            <ScheduleOverview order={detail} today={scheduleToday} timeZone={timezone} />
 
             <section className="panel">
               <header className="panel-head compact">

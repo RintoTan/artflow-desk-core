@@ -493,70 +493,97 @@ const expression = `(() => {
         gapToBottom: br && sr ? Math.round(sr.bottom - br.bottom) : null,
       };
     })(),
-    // 图表：轴是否固定、标签密度、零值是否伪装成柱子
+    // 图表：单排/两排模式、轴是否固定、标签密度、零值是否伪装成柱子
     chart: (() => {
-      const axis = document.querySelector(".chart-axis");
-      const scroll = document.querySelector(".chart-scroll");
-      const chart = document.querySelector(".chart");
-      if (!axis || !scroll || !chart) return null;
+      const frame = document.querySelector(".chart-frame");
+      if (!frame) return null;
+      const axis = frame.querySelector(".chart-axis");
+      const scroll = frame.querySelector(".chart-scroll");
+      const rows = frame.querySelectorAll(".chart-row");
+      const cols = frame.querySelectorAll(".chart-col");
       const rect = (n) => {
         const r = n.getBoundingClientRect();
         return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
       };
       const axisBefore = rect(axis);
-      const overflowBefore = scroll.scrollWidth > scroll.clientWidth;
-      const previous = scroll.scrollLeft;
-      scroll.scrollLeft = 240;
-      const axisAfter = rect(axis);
-      scroll.scrollLeft = previous;
-      const zeroBars = chart.querySelectorAll(".bar-zero").length;
-      const realBars = chart.querySelectorAll(".bar:not(.bar-zero)").length;
-      const labels = Array.from(chart.querySelectorAll(".bar-value")).map((n) => n.textContent);
+      let axisMoved = false;
+      let scrollable = false;
+      if (scroll) {
+        const before = scroll.scrollLeft;
+        scrollable = scroll.scrollWidth > scroll.clientWidth;
+        scroll.scrollLeft = 240;
+        axisMoved = rect(axis).x !== axisBefore.x;
+        scroll.scrollLeft = before;
+      }
+      const labelNodes = Array.from(frame.querySelectorAll(".bar-value"));
       return {
+        mode: frame.dataset.mode,
+        rows: rows.length,
+        axisCount: frame.querySelectorAll(".chart-axis").length,
         axis: axisBefore,
-        axisAfter,
-        axisMoved: axisBefore.x !== axisAfter.x,
+        axisMoved,
         axisHeight: axisBefore.h,
-        plotHeight: Math.round(chart.querySelector(".chart-bars")?.getBoundingClientRect().height ?? 0),
+        plotHeight: Math.round(frame.querySelector(".chart-bars")?.getBoundingClientRect().height ?? 0),
         ticks: Array.from(axis.querySelectorAll(".chart-tick")).map((n) => n.textContent),
-        months: chart.querySelectorAll(".chart-col").length,
-        labels,
-        zeroBars,
+        months: cols.length,
+        // 每排的刻度必须完全一致，否则两排柱高不可比
+        rowTicks: Array.from(frame.querySelectorAll(".chart-axis")).map((a) =>
+          Array.from(a.querySelectorAll(".chart-tick")).map((n) => n.textContent).join("/"),
+        ),
+        labels: labelNodes.map((n) => n.textContent),
+        labelsPerRow: Array.from(rows).map((r) => r.querySelectorAll(".bar-value").length),
+        zeroBars: frame.querySelectorAll(".bar-zero").length,
         zeroBarHeight: Math.round(
-          Array.from(chart.querySelectorAll(".bar-zero")).reduce(
+          Array.from(frame.querySelectorAll(".bar-zero")).reduce(
             (max, n) => Math.max(max, n.getBoundingClientRect().height),
             0,
           ),
         ),
-        realBars,
-        scrollable: overflowBefore,
-        scrollW: scroll.scrollWidth,
-        clientW: scroll.clientWidth,
-        focusable: chart.querySelectorAll('.chart-col[tabindex="0"]').length,
-        firstAria: chart.querySelector(".chart-col")?.getAttribute("aria-label") ?? null,
+        realBars: frame.querySelectorAll(".bar:not(.bar-zero)").length,
+        scrollable,
+        scrollW: scroll ? scroll.scrollWidth : null,
+        clientW: scroll ? scroll.clientWidth : null,
+        frameW: Math.round(frame.getBoundingClientRect().width),
+        focusable: frame.querySelectorAll('.chart-col[tabindex="0"]').length,
+        firstAria: cols[0]?.getAttribute("aria-label") ?? null,
+        lastAria: cols[cols.length - 1]?.getAttribute("aria-label") ?? null,
+        overflowX: document.documentElement.scrollWidth > window.innerWidth,
       };
     })(),
 
-    // 排期轨道：行高是否被撑大、轨道是否真的渲染、窄屏是否降级成文字
+    // 排期：列表里不应有轨道；详情里的轨道要量出真实比例
     sched: (() => {
-      const bar = document.querySelector(".order-row-meta .sched");
       const row = document.querySelector(".order-row");
-      const text = document.querySelector(".order-row-meta .sched-text");
-      const band = bar?.querySelector(".sched-band");
+      const inList = document.querySelector(".order-list .schedule-track");
+      const track = document.querySelector(".detail .schedule-track, .orders-detail .schedule-track");
+      const band = track?.querySelector(".schedule-band");
+      const today = track?.querySelector(".schedule-today");
       const rr = (n) => {
         if (!n) return null;
         const r = n.getBoundingClientRect();
-        return { x: Math.round(r.x), w: Math.round(r.width), h: Math.round(r.height) };
+        return {
+          x: Math.round(r.x),
+          w: Math.round(r.width),
+          h: Math.round(r.height),
+          leftPct: track ? Math.round(((r.x - track.getBoundingClientRect().x) / track.getBoundingClientRect().width) * 100) : null,
+        };
       };
       return {
         rowH: row ? Math.round(row.getBoundingClientRect().height) : null,
-        bar: rr(bar),
+        listTrack: Boolean(inList),
+        track: rr(track),
         band: rr(band),
-        barDisplay: bar ? getComputedStyle(bar).display : null,
-        textDisplay: text ? getComputedStyle(text).display : null,
-        text: text ? text.textContent : null,
-        marks: bar ? bar.querySelectorAll(".sched-mark").length : 0,
-        overflowMarks: bar ? bar.querySelectorAll('[data-overflow]').length : 0,
+        todayPct: today
+          ? Math.round(
+              ((today.getBoundingClientRect().x - track.getBoundingClientRect().x) /
+                track.getBoundingClientRect().width) *
+                100,
+            )
+          : null,
+        marks: track ? track.querySelectorAll(".schedule-mark").length : 0,
+        overflowMarks: track ? track.querySelectorAll("[data-overflow]").length : 0,
+        dates: Array.from(document.querySelectorAll(".schedule-dates dd")).map((n) => n.textContent),
+        empty: Boolean(document.querySelector(".empty-inline")),
       };
     })(),
     navBox: (() => {

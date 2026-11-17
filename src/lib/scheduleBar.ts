@@ -114,6 +114,51 @@ export function buildWindow(today: DayIndex, half = WINDOW_HALF_DAYS): {
 }
 
 /** planStart 是"计划开始"，started 是"实际开工"，两者形状与含义都不同。 */
+/**
+ * 详情页用的自适应窗口：把这张订单的全部日期与"今天"包进去，
+ * 两侧留 8% 余量。跨度超过 `maxSpan`（默认两年）时以今天为中心截断，
+ * 超出的日期仍会以越界箭头标出，不会被悄悄挪到边界上冒充当天。
+ */
+export function scheduleWindowFor(
+  order: Pick<
+    OrderView,
+    | "status"
+    | "plannedStartDate"
+    | "plannedDeliveryDate"
+    | "startedAt"
+    | "completedAt"
+    | "cancelledAt"
+  >,
+  today: DayIndex,
+  timeZone: string | null | undefined,
+  maxSpan = 730,
+): { from: DayIndex; to: DayIndex } | null {
+  const days = [
+    parseDayKey(order.plannedStartDate),
+    parseDayKey(order.plannedDeliveryDate),
+    localDayIndex(order.startedAt, timeZone),
+    order.status === "complete" ? localDayIndex(order.completedAt, timeZone) : null,
+    order.status === "cancelled" ? localDayIndex(order.cancelledAt, timeZone) : null,
+  ].filter((day): day is DayIndex => day !== null);
+
+  if (!days.length) return null;
+
+  const withToday = [...days, today];
+  let min = Math.min(...withToday);
+  let max = Math.max(...withToday);
+  const span = max - min;
+  const pad = Math.max(2, Math.round(span * 0.08));
+  min -= pad;
+  max += pad;
+
+  if (max - min > maxSpan) {
+    const half = Math.floor(maxSpan / 2);
+    min = today - half;
+    max = today + half;
+  }
+  return { from: min, to: max };
+}
+
 export type MarkerKind = "planStart" | "delivery" | "started" | "completed" | "cancelled";
 
 export type BarMarker = {
