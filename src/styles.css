@@ -167,8 +167,27 @@ body {
 
 .nav-icon {
   flex: 0 0 auto;
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
+}
+
+/* 命中区域：折叠后只剩图标，必须仍然够大（>=44×44） */
+.nav-item {
+  min-height: 44px;
+}
+
+.shell-sidebar-collapsed .nav-item {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.shell-sidebar-collapsed .sidebar-collapse {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.sidebar-collapse {
+  min-height: 40px;
 }
 
 /* ------------------------------------------------------------ 侧边栏 */
@@ -252,6 +271,10 @@ nav {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* 双栏要不要拆，取决于"主内容区还剩多少宽"，不取决于窗口宽——
+     侧栏折叠后内容区变宽，窗口没变，用媒体查询会判断错。 */
+  container-type: inline-size;
+  container-name: workspace;
 }
 
 .panel {
@@ -562,6 +585,48 @@ code.mono {
   flex-direction: column;
   gap: 14px;
   min-width: 0;
+}
+
+/* 内容区不够放两栏时改成上下堆叠：列表在上（限高可滚），详情在下。
+   不用 absolute、不裁切、不强制横向滚动，也不改变任何页面状态。 */
+@container workspace (max-width: 780px) {
+  .orders-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .orders-list {
+    position: static;
+    max-height: 42vh;
+  }
+
+  .orders-detail {
+    min-width: 0;
+  }
+}
+
+/* 极窄：进一步压缩列表高度，保证详情和按钮仍可操作 */
+@container workspace (max-width: 560px) {
+  .orders-list {
+    max-height: 34vh;
+  }
+
+  .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 不支持容器查询的旧 WebView 退化为按窗口宽度判断，至少不会重叠 */
+@supports not (container-type: inline-size) {
+  @media (max-width: 1120px) {
+    .orders-layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .orders-list {
+      position: static;
+      max-height: 320px;
+    }
+  }
 }
 
 .order-rows {
