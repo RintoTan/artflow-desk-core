@@ -71,6 +71,8 @@ function baseProps(overrides: Partial<Parameters<typeof OrderBoard>[0]> = {}) {
   return {
     orders: threeOrders(),
     busy: false,
+    mode: "overview" as const,
+    onModeChange: vi.fn(),
     onOpen: vi.fn(),
     onApply: vi.fn(async () => {}),
     formatMoney: (cents: number | null) => (cents === null ? "未知" : `¥${cents / 100}`),
@@ -175,7 +177,8 @@ describe("OrderBoard 真实交互", () => {
       />,
     );
     expect(screen.getByText(/已结束（1）/)).toBeInTheDocument();
-    expect(document.querySelectorAll(".board-col")).toHaveLength(0);
+    // 终态用独立分区承载，不能混进阶段列（所以先排除 finished 分区再数）
+    expect(document.querySelectorAll(".board-col:not(.board-col-finished)")).toHaveLength(0);
   });
 
   it("金额未知的订单计入数量但不计入合计", () => {
@@ -242,7 +245,7 @@ describe("OrderBoard 真实交互", () => {
       order({ id: "o1", currentStageId: "s-草稿", currentStageTitle: "草稿", stages: five }),
       ...threeOrders().slice(1),
     ];
-    render(<OrderBoard {...baseProps({ orders })} />);
+    render(<OrderBoard {...baseProps({ orders, mode: "focus" })} />);
 
     const navChips = () => Array.from(document.querySelectorAll(".board-nav-chip"));
     // 先跳到最后一个阶段

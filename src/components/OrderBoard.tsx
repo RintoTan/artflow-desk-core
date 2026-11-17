@@ -1,37 +1,43 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { useElementWidth } from "../lib/useElementWidth";
-
 import type { OrderView } from "../bridge/commands";
 import { advanceBlockedReason, buildBoard, planStageMove, type StageMovePlan } from "../lib/board";
-import ConfirmDialog from "./ConfirmDialog";
 import { riskBadge } from "../lib/ordersView";
+import { useElementWidth } from "../lib/useElementWidth";
+import ConfirmDialog from "./ConfirmDialog";
 import { TruncatedTitle } from "./TitleTooltip";
+
+export type BoardMode = "overview" | "focus";
 
 type Props = {
   orders: OrderView[];
   busy: boolean;
+  /** 总览 = 全部阶段全部订单；聚焦 = 当前阶段 + 相邻阶段 */
+  mode: BoardMode;
+  onModeChange: (mode: BoardMode) => void;
   onOpen: (orderId: string) => void;
-  /** 用户确认后执行；父组件负责调后端与刷新 */
   onApply: (order: OrderView, plan: StageMovePlan) => Promise<void>;
   formatMoney: (cents: number | null) => string;
   formatDate: (value: string | null) => string;
   onError: (message: string) => void;
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  active: "活动",
-  complete: "已完成",
-  cancelled: "已取消",
-};
+const FOCUS_COL_PITCH = 212;
 
 /**
- * 看板：按当前制作阶段分列，拖动只产生**候选操作**，
- * 松手后必须在确认框里看到具体动作才会写库。
+ * 看板。两种模式共用同一份分组结果与同一套阶段操作：
+ * - 总览：全部阶段、全部（筛选后）订单，纵向滚动即可看完，不做切片。
+ *   窄容器 = 每阶段一整行、卡片在行内按可用宽度排列；宽容器 = 阶段网格（保最小列宽）。
+ * - 聚焦：只渲染当前阶段 + 相邻阶段，靠阶段导航切换。
+ *
+ * 阶段变更只有一条路径：卡片 → 阶段操作 → 合法目标 → 二次确认 → 领域命令。
+ * 不做 HTML5 拖拽：WKWebView 实机不可靠，留着只会误导。
  */
 export default function OrderBoard({
   orders,
-  busy,
+  busy: _busy,
+  mode,
+  onModeChange,
   onOpen,
   onApply,
   formatMoney,
@@ -39,47 +45,36 @@ export default function OrderBoard({
   onError,
 }: Props) {
   const model = useMemo(() => buildBoard(orders), [orders]);
-  /** 显式阶段操作：哪张卡片的合法目标列表被展开 */
+  const columns = model.columns;
+
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [pending, setPending] = useState<{
     order: OrderView;
     plan: Extract<StageMovePlan, { kind: "advance" | "rework" }>;
   } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const columns = model.columns;
-  const columnCount = columns.length;
   const boardRef = useRef<HTMLDivElement | null>(null);
   const [wrapRef, wrapWidth] = useElementWidth<HTMLDivElement>();
   const [currentKey, setCurrentKey] = useState<string | null>(null);
 
-  /**
-   * 聚焦式看板（方案 B）：一次只展示当前阶段 + 相邻阶段。
-   * 880–900px 下 2 列，宽屏 3 列 —— 不再要求用户长距离横向拖动。
-   */
-  // 按实测宽度决定一次看几列：窄到放不下两列时就只放一列，
-  // 这样 530px 这类极窄窗口也不会逼出横向滚动。
-  const COL_PITCH = 212; // 200px 列宽 + 12px 间距
-  // 宽度还没测到（首帧 / 测试环境）时先按 3 列渲染，测量完成后立刻收敛。
-  const perView =
-    wrapWidth === 0 ? 3 : Math.max(1, Math.min(3, Math.floor((wrapWidth + 12) / COL_PITCH)));
+  const measured = wrapWidth > 0 ? wrapWidth : 0;
+  const focusPerView =
+    measured === 0
+      ? 1
+      : Math.max(1, Math.min(3, Math.floor((measured + 12) / FOCUS_COL_PITCH)));
+  const currentIndex = columns.findIndex((column) => column.key === currentKey);
+  const focusStart =
+    columns.length <= focusPerView
+      ? 0
+      : Math.min(Math.max(0, currentIndex), columns.length - focusPerView);
+  const visibleColumns = columns.slice(focusStart, focusStart + focusPerView);
 
-  const startIndex = Math.max(
-    0,
-    Math.min(
-      (currentKey ? columns.findIndex((c) => c.key === currentKey) : 0) < 0
-        ? 0
-        : columns.findIndex((c) => c.key === currentKey),
-      Math.max(0, columns.length - perView),
-    ),
-  );
-  const visibleColumns = columns.slice(startIndex, startIndex + perView);
-
-  /** 把某个阶段列滚到视野内，并把它标成"当前位置"。 */
   /**
    * 跳转阶段。
-   * QA-02 P1-02 的根因：旧实现先 `querySelector` 找目标列，找不到就 return，
-   * 才轮到 setCurrentKey。而聚焦到靠后阶段时，草稿/线稿根本不在渲染切片里，
-   * 于是"往前点"永远无事发生。必须先改状态让切片重算，再由 effect 滚动。
+   * QA-02 P1-02 根因：旧实现先 querySelector 找目标列、找不到就 return，才 setCurrentKey。
+   * 聚焦到靠后阶段时前面的阶段不在切片里、没有 DOM，于是"往前点"永远无效。
+   * 现在只改状态，滚动交给 effect，等切片重算后再执行。
    */
   function goToColumn(key: string) {
     setCurrentKey(key);
@@ -87,7 +82,7 @@ export default function OrderBoard({
 
   useEffect(() => {
     const board = boardRef.current;
-    if (!board || !currentKey) return;
+    if (!board || !currentKey || mode !== "focus") return;
     const target = board.querySelector<HTMLElement>(`[data-col="${currentKey}"]`);
     if (target && typeof board.scrollTo === "function") {
       board.scrollTo({
@@ -95,23 +90,15 @@ export default function OrderBoard({
         behavior: "smooth",
       });
     }
-  }, [currentKey, startIndex]);
+  }, [currentKey, focusStart, mode]);
 
-  function step(direction: -1 | 1) {
-    const index = columns.findIndex((column) => column.key === currentKey);
-    const next = columns[Math.min(columns.length - 1, Math.max(0, (index < 0 ? 0 : index) + direction))];
-    if (next) goToColumn(next.key);
-  }
-
-  /** 该订单自己的下一个阶段名（用于键盘可达的"推进"按钮）。 */
-  function nextStageTitle(order: OrderView): string | null {
-    if (advanceBlockedReason(order)) return null;
-    const next = order.stages[(order.currentStageIndex ?? 0) + 1];
-    return next ? next.title : null;
+  function nextStageOf(order: OrderView): string | null {
+    const index = order.stages.findIndex((stage) => stage.id === order.currentStageId);
+    return index >= 0 ? (order.stages[index + 1]?.title ?? null) : null;
   }
 
   function requestNext(order: OrderView) {
-    const title = nextStageTitle(order);
+    const title = nextStageOf(order);
     if (!title) return;
     const plan = planStageMove(order, title);
     if (plan.kind === "advance" || plan.kind === "rework") {
@@ -121,17 +108,148 @@ export default function OrderBoard({
     }
   }
 
+  function card(order: OrderView) {
+    const next = nextStageOf(order);
+    const blocked = advanceBlockedReason(order);
+    return (
+      <article key={order.id} className="board-card">
+        <button
+          type="button"
+          className="board-card-open"
+          onClick={() => onOpen(order.id)}
+          aria-label={`打开 ${order.code} ${order.title}`}
+        >
+          <TruncatedTitle className="board-card-title" text={order.title}>
+            {order.title}
+          </TruncatedTitle>
+          <span className="board-card-meta">
+            <span className="board-card-client">{order.clientName ?? "未分配客户"}</span>
+            <span className="board-card-amount">{formatMoney(order.amountCents)}</span>
+          </span>
+          <span className="board-card-foot">
+            <span className="board-card-date">{formatDate(order.plannedDeliveryDate)}</span>
+            <span className="board-card-tags">
+              {order.workState === "queued" && <span className="chip chip-active">未开工</span>}
+              {riskBadge(order) && (
+                <span className={`risk-chip risk-${order.deadlineState}`}>{riskBadge(order)}</span>
+              )}
+            </span>
+          </span>
+        </button>
+        {order.status === "active" && (
+          <div className="board-card-actions">
+            <button
+              type="button"
+              className="board-card-move"
+              disabled={!next || Boolean(blocked)}
+              title={blocked ?? (next ? `推进到「${next}」` : "已经是最后一个阶段")}
+              onClick={() => requestNext(order)}
+            >
+              {next ? `→ ${next}` : "最后阶段"}
+            </button>
+            <button
+              type="button"
+              className="board-card-more"
+              aria-expanded={menuFor === order.id}
+              aria-haspopup="menu"
+              title="选择阶段操作"
+              onClick={() => setMenuFor(menuFor === order.id ? null : order.id)}
+            >
+              阶段操作
+            </button>
+            {menuFor === order.id && (
+              <ul className="stage-menu" role="menu" aria-label={`${order.code} 的阶段操作`}>
+                {order.stages
+                  .filter((stage) => stage.id !== order.currentStageId)
+                  .map((stage) => {
+                    const plan = planStageMove(order, stage.title);
+                    const usable = plan.kind === "advance" || plan.kind === "rework";
+                    // 禁用项必须给原因：blocked 用领域理由，其余给一句人话。
+                    const reason =
+                      plan.kind === "blocked"
+                        ? plan.reason
+                        : usable
+                          ? null
+                          : "无法通过单个合法动作到达该阶段";
+                    return (
+                      <li key={stage.id} role="none">
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="stage-menu-item"
+                          disabled={!usable}
+                          title={reason ?? undefined}
+                          onClick={() => {
+                            setMenuFor(null);
+                            if (plan.kind === "advance" || plan.kind === "rework") {
+                              setPending({ order, plan });
+                            }
+                          }}
+                        >
+                          {plan.kind === "rework" ? "返工到" : "推进到"}「{stage.title}」
+                          {reason && <span className="stage-menu-reason">{reason}</span>}
+                        </button>
+                      </li>
+                    );
+                  })}
+              </ul>
+            )}
+          </div>
+        )}
+      </article>
+    );
+  }
 
+  function stageHead(column: (typeof columns)[number]) {
+    return (
+      <header className="board-col-head">
+        <span className="board-col-title" title={column.title}>
+          {column.title}
+        </span>
+        <span className="board-col-stat">
+          {column.orders.length} · {formatMoney(column.knownAmountCents)}
+          {column.unknownAmountCount > 0 && (
+            <em className="board-unknown" title="这些订单金额未知，未计入合计">
+              {" "}
+              +{column.unknownAmountCount} 未知
+            </em>
+          )}
+        </span>
+      </header>
+    );
+  }
 
   return (
     <div className="board-wrap" ref={wrapRef}>
-      {columns.length > 1 && (
+      <div className="board-modes" role="group" aria-label="看板显示方式">
+        <button
+          type="button"
+          className={`board-mode${mode === "overview" ? " is-on" : ""}`}
+          aria-pressed={mode === "overview"}
+          onClick={() => onModeChange("overview")}
+        >
+          总览<span className="board-mode-hint">全部阶段</span>
+        </button>
+        <button
+          type="button"
+          className={`board-mode${mode === "focus" ? " is-on" : ""}`}
+          aria-pressed={mode === "focus"}
+          onClick={() => onModeChange("focus")}
+        >
+          聚焦<span className="board-mode-hint">当前阶段</span>
+        </button>
+      </div>
+
+      {mode === "focus" && columns.length > 1 && (
         <div className="board-nav" aria-label="阶段导航">
           <button
             type="button"
             className="board-nav-step"
-            aria-label="上一组阶段"
-            onClick={() => step(-1)}
+            aria-label="上一个阶段"
+            onClick={() => {
+              const index = currentIndex < 0 ? 0 : currentIndex;
+              goToColumn(columns[Math.max(0, index - 1)]!.key);
+            }}
           >
             ‹
           </button>
@@ -153,8 +271,11 @@ export default function OrderBoard({
           <button
             type="button"
             className="board-nav-step"
-            aria-label="下一组阶段"
-            onClick={() => step(1)}
+            aria-label="下一个阶段"
+            onClick={() => {
+              const index = currentIndex < 0 ? 0 : currentIndex;
+              goToColumn(columns[Math.min(columns.length - 1, index + 1)]!.key);
+            }}
           >
             ›
           </button>
@@ -162,226 +283,80 @@ export default function OrderBoard({
       )}
 
       <div
-        className="board"
-        role="list"
-        aria-label="按制作阶段分列的看板"
+        className={`board${mode === "overview" ? " board-overview" : ""}${
+          mode === "overview" && measured >= 1000 ? " board-overview-wide" : ""
+        }`}
         ref={boardRef}
-        onScroll={(event) => {
-          const board = event.currentTarget;
-          // 滚动后把"当前位置"同步到最靠近左边缘的那一列。
-          let bestKey: string | null = null;
-          let bestDist = Number.POSITIVE_INFINITY;
-          board.querySelectorAll<HTMLElement>("[data-col]").forEach((node) => {
-            const dist = Math.abs(node.offsetLeft - board.offsetLeft - board.scrollLeft);
-            if (dist < bestDist) {
-              bestDist = dist;
-              bestKey = node.dataset.col ?? null;
-            }
-          });
-          if (bestKey) setCurrentKey(bestKey);
-        }}
+        role="list"
+        aria-label={mode === "overview" ? "全部阶段的订单" : "当前与相邻阶段的订单"}
       >
-        {visibleColumns.map((column) => (
-          <section
-            key={column.key}
-            role="listitem"
-            data-col={column.key}
-            className="board-col"
-          >
-            <header className="board-col-head">
-              <span className="board-col-title" title={column.title}>
-                {column.title}
-              </span>
-              <span className="board-col-stat">
-                {column.orders.length} · {formatMoney(column.knownAmountCents)}
-                {column.unknownAmountCount > 0 && (
-                  <em className="board-unknown" title="这些订单金额未知，未计入合计">
-                    {" "}
-                    +{column.unknownAmountCount} 未知
-                  </em>
-                )}
-              </span>
-            </header>
-
+        {(mode === "overview" ? columns : visibleColumns).map((column) => (
+          <section key={column.key} role="listitem" data-col={column.key} className="board-col">
+            {stageHead(column)}
             <div className="board-cards">
-              {column.orders.map((order) => (
-                <article
-                  key={order.id}
-                  className="board-card"
-                >
-                  <button
-                    type="button"
-                    className="board-card-open"
-                    onClick={() => onOpen(order.id)}
-                    aria-label={`打开 ${order.code} ${order.title}`}
-                  >
-                    <TruncatedTitle className="board-card-title" text={order.title}>
-                      {order.title}
-                    </TruncatedTitle>
-                    <span className="board-card-meta">
-                      <span>{order.clientName ?? "未分配客户"}</span>
-                      <span className="board-card-amount">{formatMoney(order.amountCents)}</span>
-                    </span>
-                    <span className="board-card-foot">
-                      <span className="muted">{formatDate(order.plannedDeliveryDate)}</span>
-                      <span className="board-card-tags">
-                        {order.workState === "queued" && (
-                          <span className="chip chip-active">未开工</span>
-                        )}
-                        {riskBadge(order) && (
-                          <span className={`risk-chip risk-${order.deadlineState}`}>
-                            {riskBadge(order)}
-                          </span>
-                        )}
-                      </span>
-                    </span>
-                  </button>
-                  {order.status === "active" && (
-                    <div className="board-card-actions">
-                      {nextStageTitle(order) && (
-                        <button
-                          type="button"
-                          className="board-card-move"
-                          title={`推进到「${nextStageTitle(order)}」`}
-                          onClick={() => requestNext(order)}
-                        >
-                          → {nextStageTitle(order)}
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="board-card-more"
-                        aria-expanded={menuFor === order.id}
-                        aria-haspopup="menu"
-                        title="选择阶段操作"
-                        onClick={() => setMenuFor(menuFor === order.id ? null : order.id)}
-                      >
-                        阶段操作
-                      </button>
-                      {menuFor === order.id && (
-                        <ul className="stage-menu" role="menu" aria-label={`${order.code} 的阶段操作`}>
-                          {order.stages
-                            .filter((stage) => stage.id !== order.currentStageId)
-                            .map((stage) => {
-                              const plan = planStageMove(order, stage.title);
-                              const usable = plan.kind === "advance" || plan.kind === "rework";
-                              // 禁用项必须有原因：blocked 用领域给的理由，
-                              // 其余（noop 等）也要给一句人话，不能让按钮"灰着不说话"。
-                              const reason =
-                                plan.kind === "blocked"
-                                  ? plan.reason
-                                  : usable
-                                    ? null
-                                    : "无法通过单个合法动作到达该阶段";
-                              return (
-                                <li key={stage.id} role="none">
-                                  <button
-                                    type="button"
-                                    role="menuitem"
-                                    className="stage-menu-item"
-                                    disabled={!usable}
-                                    title={reason ?? undefined}
-                                    onClick={() => {
-                                      setMenuFor(null);
-                                      if (plan.kind === "advance" || plan.kind === "rework") {
-                                        setPending({ order, plan });
-                                      }
-                                    }}
-                                  >
-                                    {plan.kind === "rework" ? "返工到" : "推进到"}「{stage.title}」
-                                    {reason && <span className="stage-menu-reason">{reason}</span>}
-                                  </button>
-                                </li>
-                              );
-                            })}
-                        </ul>
-                      )}
-                    </div>
-                  )}
-                </article>
-              ))}
-              {column.orders.length === 0 && <p className="board-empty muted">拖到这里</p>}
+              {column.orders.length === 0 ? (
+                <p className="board-empty muted">暂无订单</p>
+              ) : (
+                column.orders.map((order) => card(order))
+              )}
             </div>
           </section>
         ))}
+
+        {model.finished.length > 0 && (
+          <section className="board-col board-col-finished" role="listitem" data-finished="1">
+            <header className="board-col-head">
+              <span className="board-col-title">已结束（{model.finished.length}）</span>
+              <span className="board-col-stat">不参与阶段推进</span>
+            </header>
+            <div className="board-cards">{model.finished.map((order) => card(order))}</div>
+          </section>
+        )}
       </div>
 
-      {model.unassigned.length > 0 && (
-        <div className="board-strip">
-          <h3>没有当前阶段</h3>
-          <ul className="board-strip-list">
-            {model.unassigned.map((order) => (
-              <li key={order.id}>
-                <button type="button" className="link-btn" onClick={() => onOpen(order.id)}>
-                  {order.code} {order.title}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {model.finished.length > 0 && (
-        <div className="board-strip board-strip-finished">
-          <h3>已结束（{model.finished.length}）</h3>
-          <p className="muted">
-            已完成与已取消的订单不进入阶段列，也不参与拖拽；需要改阶段请先用「重新打开」。
-          </p>
-          <ul className="board-strip-list">
-            {model.finished.map((order) => (
-              <li key={order.id}>
-                <button type="button" className="link-btn" onClick={() => onOpen(order.id)}>
-                  {order.code} {order.title}
-                </button>
-                <span className={`chip chip-${order.status}`}>{STATUS_LABEL[order.status]}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+      {columns.length === 0 && model.finished.length === 0 && (
+        <p className="muted">当前筛选下没有订单。</p>
       )}
 
       <ConfirmDialog
         open={pending !== null}
-        title={pending?.plan.kind === "rework" ? "返工到更早阶段" : "推进阶段"}
+        title="确认阶段变更"
         confirmLabel="确认变更"
-        busy={busy}
-        onCancel={() => setPending(null)}
-        onConfirm={async () => {
-          const current = pending;
-          if (!current) return;
-          setPending(null);
-          await onApply(current.order, current.plan);
+        busy={submitting}
+        onCancel={() => {
+          if (!submitting) setPending(null);
+        }}
+        onConfirm={() => {
+          if (!pending || submitting) return;
+          setSubmitting(true);
+          void onApply(pending.order, pending.plan).finally(() => {
+            setSubmitting(false);
+            setPending(null);
+          });
         }}
       >
         {pending && (
-          <>
-            <p>
-              <strong>{pending.order.code}</strong> {pending.order.title}
-            </p>
-            <p>
-              将执行{pending.plan.kind === "advance" ? "「推进阶段」" : "「返工」"}：从「
-              {pending.order.currentStageTitle}」到「<strong>{pending.plan.targetStageTitle}</strong>」
-              {pending.plan.kind === "rework" && pending.plan.steps > 1
-                ? `（一次退回 ${pending.plan.steps} 个阶段）`
-                : ""}
-              。
-            </p>
-            <p className="muted">
-              按现有业务流程记录一条阶段变更；不改开工、完成、取消，也不改排队顺序。
-            </p>
-          </>
+            <div className="board-confirm">
+              <p>
+                <strong>{pending.order.code}</strong> {pending.order.title}
+              </p>
+              <dl>
+                <div>
+                  <dt>将执行</dt>
+                  <dd>{pending.plan.kind === "advance" ? "推进阶段" : "返工"}</dd>
+                </div>
+                <div>
+                  <dt>目标阶段</dt>
+                  <dd>{pending.plan.targetStageTitle}</dd>
+                </div>
+              </dl>
+              <ul>
+                <li>只影响制作阶段，不改订单状态、队列位置与金额。</li>
+                <li>若数据已被别处修改，会因版本冲突中止，不会部分写入。</li>
+              </ul>
+            </div>
         )}
       </ConfirmDialog>
-
-      {columns.length === 0 && model.finished.length === 0 && (
-        <div className="empty">
-          <p>没有符合筛选条件的订单。</p>
-        </div>
-      )}
-      <p className="board-hint muted">
-        拖动卡片到目标阶段列 → 确认后才会写入。同一阶段名在不同模板里是不同阶段，不能互相搬运。
-        {columnCount > 0 && ` 共 ${columnCount} 列，按阶段顺序排列。`}
-      </p>
     </div>
   );
 }

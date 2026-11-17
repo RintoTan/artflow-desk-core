@@ -12,7 +12,11 @@ use crate::store::timezone;
 ///
 /// 注意：这里曾经漏掉 `orders_view_mode`，导致订单页一进入就报
 /// 「不允许读取的偏好项」——读被拒、写也被拒。新增键时先加这里再加值域校验。
-const ALLOWED_KEYS: &[&str] = &[settings::KEY_LIST_DENSITY, settings::KEY_ORDERS_VIEW_MODE];
+const ALLOWED_KEYS: &[&str] = &[
+    settings::KEY_LIST_DENSITY,
+    settings::KEY_ORDERS_VIEW_MODE,
+    settings::KEY_BOARD_MODE,
+];
 
 /// 订单页视图模式的合法取值。与前端 `ViewMode` 一致。
 const VIEW_MODES: &[&str] = &["cards", "board", "table"];

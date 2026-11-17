@@ -274,7 +274,14 @@ for (const [view, widths] of [
           if (g.board.scrollsInside !== shouldScroll) problems.push("看板滚动状态异常");
           // 设计变更（DEV-06D-1-UI-03）：看板改为聚焦式，窄窗只放当前+相邻阶段，
           // 因此不再要求"必须在面板内横向滚动"；改为要求可见列 ≤3 且不产生页面溢出。
-          if (g.board.cols > 3) problems.push(`窄窗下看板同时展示 ${g.board.cols} 列，应 ≤3`);
+          // UX-04：总览 = 全部阶段纵向浏览；聚焦 = ≤3 列 + 阶段导航（分两条断言覆盖）。
+          if (g.board.mode === "总览") {
+            if (g.board.scrollW > g.board.clientW + 2) {
+              problems.push("总览出现横向滚动，应改为纵向浏览");
+            }
+          } else if (g.board.cols > 3) {
+            problems.push(`聚焦模式展示 ${g.board.cols} 列，应 ≤3`);
+          }
           if (width <= 900 && g.board.scrollW > g.board.clientW + 2) {
             problems.push("窄窗下看板仍需横向滚动，聚焦式布局未生效");
           }
@@ -373,12 +380,15 @@ for (const [view, widths] of [
   const raw = execFileSync(
     process.execPath,
     ["scripts/layout-probe.mjs", URL, "900", "/orders"],
-    { encoding: "utf8", env: { ...process.env, PROBE_SLOT: "1", PROBE_VIEW: "board" } },
+    {
+      encoding: "utf8",
+      env: { ...process.env, PROBE_SLOT: "1", PROBE_VIEW: "board", PROBE_BOARD_MODE: "focus" },
+    },
   );
   const line = raw.slice(raw.indexOf("VIEW "));
   const g = JSON.parse(line.slice(line.indexOf("{"))).geom;
   const problems = [];
-  if (!g.boardNav) problems.push("看板没有阶段导航");
+  if (!g.boardNav) problems.push("聚焦模式没有阶段导航");
   else if (g.boardNav.chips < g.board.cols || g.boardNav.chips === 0) {
     problems.push(`导航 ${g.boardNav.chips} 个阶段，少于可见列 ${g.board.cols} 个`);
   } else if (g.board.cols > 3) {

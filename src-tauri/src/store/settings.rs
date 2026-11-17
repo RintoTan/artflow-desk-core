@@ -11,6 +11,8 @@ pub const KEY_WORKING_TIMEZONE: &str = "working_timezone";
 pub const KEY_LIST_DENSITY: &str = "list_density";
 /// 订单页视图模式：cards / board / table。存的是"用户上次选的视图"。
 pub const KEY_ORDERS_VIEW_MODE: &str = "orders_view_mode";
+/// 看板子模式：overview / focus。与全局视图模式分开存，互不覆盖。
+pub const KEY_BOARD_MODE: &str = "board_mode";
 /// 主题模式：arctic / dark / system。存的是"用户选择"，不是"当前外观"。
 pub const KEY_THEME_MODE: &str = "ui.theme_mode";
 /// 自定义强调色（#rrggbb）；空表示用主题自带强调色。

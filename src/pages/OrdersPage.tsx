@@ -3,7 +3,7 @@ import { useBlocker, useSearchParams } from "react-router-dom";
 import { save } from "@tauri-apps/plugin-dialog";
 
 import AttachmentPanel from "../components/AttachmentPanel";
-import OrderBoard from "../components/OrderBoard";
+import OrderBoard, { type BoardMode } from "../components/OrderBoard";
 import OrderTable from "../components/OrderTable";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { ScheduleOverview } from "../components/ScheduleOverview";
@@ -200,6 +200,7 @@ export default function OrdersPage() {
   const [viewPersistError, setViewPersistError] = useState<string | null>(null);
   /** 看板/表格模式下详情以右侧抽屉呈现；卡片模式永远并排显示。 */
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [boardMode, setBoardMode] = useState<BoardMode>("overview");
   const detailVisible = viewMode === "cards" || drawerOpen;
   /** 从客户页跳进来时的稳定 ID 过滤；null = 不按客户过滤 */
   const [clientFilter, setClientFilter] = useState<string | null>(null);
@@ -353,7 +354,7 @@ export default function OrdersPage() {
     let alive = true;
     (async () => {
       try {
-        const [list, clientList, templateList, status, queue, viewValue, densityValue] =
+        const [list, clientList, templateList, status, queue, viewValue, densityValue, boardValue] =
           await Promise.all([
           api.listOrders(),
           api.listClients(),
@@ -364,6 +365,7 @@ export default function OrdersPage() {
           // 读不到就退回默认卡片视图，并把原因留给需要它的人（见 changeView 的提示）。
           readPreference(KEY_ORDERS_VIEW),
           readPreference(KEY_LIST_DENSITY),
+          readPreference("board_mode"),
         ]);
         if (!alive) return;
         setOrders(list);
@@ -371,6 +373,9 @@ export default function OrdersPage() {
         setTemplates(templateList);
         setTimezone(status.workingTimezone);
         setQueueRev(queue.revision);
+        if (boardValue === "overview" || boardValue === "focus") {
+          setBoardMode(boardValue);
+        }
         if (densityValue === "compact" || densityValue === "comfortable") {
           setDensity(densityValue);
         }
@@ -997,6 +1002,12 @@ export default function OrdersPage() {
 
         {viewMode === "board" ? (
           <OrderBoard
+            mode={boardMode}
+            onModeChange={(next) => {
+              setBoardMode(next);
+              // 只记住"上次用哪种看板"，与全局视图偏好分开，避免覆盖 orders_view_mode。
+              void preferenceApi.set("board_mode", next).catch(() => {});
+            }}
             orders={visible}
             busy={busy}
             onOpen={(orderId) => void attemptSelect(orderId)}

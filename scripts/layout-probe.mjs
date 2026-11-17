@@ -700,6 +700,17 @@ if (process.env.PROBE_VIEW) {
     await new Promise((r) => setTimeout(r, 700));
   }
 
+  if (process.env.PROBE_BOARD_MODE) {
+    const label = process.env.PROBE_BOARD_MODE === "focus" ? "聚焦" : "总览";
+    await run(`(() => {
+      const btn = Array.from(document.querySelectorAll(".board-mode"))
+        .find((b) => (b.textContent || "").trim().startsWith(${JSON.stringify(label)}));
+      if (btn) btn.click();
+      return true;
+    })()`);
+    await new Promise((r) => setTimeout(r, 300));
+  }
+
   const geom = await run(`(() => {
     const root = document.documentElement;
     const board = document.querySelector(".board");
@@ -720,7 +731,11 @@ if (process.env.PROBE_VIEW) {
         ? {
             exists: true,
             cols: cols.length,
-            totalCols: document.querySelectorAll(".board-nav-chip").length,
+            mode: document.querySelector(".board-mode.is-on")?.textContent?.slice(0, 2) ?? null,
+            totalCols: Math.max(
+              document.querySelectorAll("[data-col]").length,
+              document.querySelectorAll(".board-nav-chip").length,
+            ),
             minColW: widths.length ? Math.min(...widths) : 0,
             scrollW: Math.round(board.scrollWidth),
             clientW: Math.round(board.clientWidth),
