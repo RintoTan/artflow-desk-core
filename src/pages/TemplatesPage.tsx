@@ -48,6 +48,7 @@ export default function TemplatesPage() {
 
   useUnsavedGuard({
     id: "templates",
+    label: dirty ? "流程模板" : "新建模板",
     dirty: dirty || creatingDirty,
     save: async () => {
       if (dirty) return save();

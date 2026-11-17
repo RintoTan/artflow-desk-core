@@ -201,6 +201,7 @@ export default function OrdersPage() {
   // 关窗保护复用页面自己的 dirty 与保存逻辑，不另建一套状态。
   useUnsavedGuard({
     id: "orders-detail",
+    label: "订单资料",
     dirty,
     save: () => saveDraft(),
     discard: () => {
@@ -1582,6 +1583,7 @@ function CreateOrderPanel({
   // 新建面板自己也能被关窗保护：内层 guard 优先于外层的详情 guard。
   useUnsavedGuard({
     id: "orders-create",
+    label: "新建订单",
     dirty: creatingDirty,
     save: () => submit(),
     discard: () => onCancel(),

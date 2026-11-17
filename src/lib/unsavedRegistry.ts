@@ -12,6 +12,8 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
  */
 export type UnsavedGuard = {
   id: string;
+  /** 给用户看的名字（出现在关窗确认与错误里） */
+  label: string;
   isDirty: () => boolean;
   /** 保存当前草稿。返回 null 表示成功；返回字符串表示失败原因（窗口必须保持打开）。 */
   save: () => Promise<string | null>;
@@ -41,13 +43,23 @@ export function registerUnsavedGuard(guard: UnsavedGuard): () => void {
   };
 }
 
-/** 当前需要保护的那一个（最后登记且 dirty）。 */
-export function activeGuard(): UnsavedGuard | null {
+/**
+ * 全部仍有草稿的 guard，**内层优先**（后登记的先返回）。
+ *
+ * 关闭窗口时必须逐个处理：只保存"最后一个"会让外层页面的草稿被内层表单遮住后静默丢掉。
+ */
+export function dirtyGuards(): UnsavedGuard[] {
+  const out: UnsavedGuard[] = [];
   for (let i = entries.length - 1; i >= 0; i -= 1) {
     const entry = entries[i];
-    if (entry && entry.guard.isDirty()) return entry.guard;
+    if (entry && entry.guard.isDirty()) out.push(entry.guard);
   }
-  return null;
+  return out;
+}
+
+/** 当前需要保护的那一个（最后登记且 dirty）。 */
+export function activeGuard(): UnsavedGuard | null {
+  return dirtyGuards()[0] ?? null;
 }
 
 export function hasUnsavedDraft(): boolean {
@@ -82,6 +94,7 @@ export function resetUnsavedGuards(): void {
  */
 export function useUnsavedGuard(guard: {
   id: string;
+  label: string;
   dirty: boolean;
   save: () => Promise<string | null>;
   discard: () => void;
@@ -90,15 +103,18 @@ export function useUnsavedGuard(guard: {
   const saveRef = useRef(guard.save);
   const discardRef = useRef(guard.discard);
   const idRef = useRef(guard.id);
+  const labelRef = useRef(guard.label);
 
   dirtyRef.current = guard.dirty;
   saveRef.current = guard.save;
   discardRef.current = guard.discard;
   idRef.current = guard.id;
+  labelRef.current = guard.label;
 
   useEffect(() => {
     const unregister = registerUnsavedGuard({
       id: idRef.current,
+      label: labelRef.current,
       isDirty: () => dirtyRef.current,
       save: () => saveRef.current(),
       discard: () => discardRef.current(),

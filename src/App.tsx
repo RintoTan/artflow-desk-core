@@ -4,7 +4,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { api, describeError } from "./bridge/commands";
 import UnsavedChangesDialog from "./components/UnsavedChangesDialog";
 import { subscribeModalStack, topModal } from "./lib/modalStack";
-import { activeGuard, useHasUnsavedDraft } from "./lib/unsavedRegistry";
+import { activeGuard, dirtyGuards, useHasUnsavedDraft } from "./lib/unsavedRegistry";
 
 const NAV = [
   { to: "/", label: "工作台", end: true },
@@ -31,6 +31,8 @@ export default function App() {
   const [closeBusy, setCloseBusy] = useState(false);
 
   const hasDraft = useHasUnsavedDraft();
+  // 打开确认框时快照一次草稿名单，用于提示"有几处、分别是什么"。
+  const [dirtyLabels, setDirtyLabels] = useState<string[]>([]);
   const closingRef = useRef(false);
   const closeInFlight = useRef(false);
   const pendingCloseRef = useRef<CloseKind | null>(null);
@@ -77,6 +79,7 @@ export default function App() {
         return;
       }
       setCloseError(null);
+      setDirtyLabels(dirtyGuards().map((guard) => guard.label));
       setCloseKind(kind);
     },
     [finishClose],
@@ -163,20 +166,20 @@ export default function App() {
     const kind = closeKindRef.current;
     if (!kind) return;
     if (closeInFlight.current) return;
-    const guard = activeGuard();
-    if (!guard) {
-      await finishClose(kind);
-      return;
-    }
     closeInFlight.current = true;
     setCloseBusy(true);
     setCloseError(null);
     try {
-      const error = await guard.save();
-      if (error) {
-        // 保存失败：窗口保持打开，输入全部保留。
-        setCloseError(error);
-        return;
+      // 逐个保存全部草稿（内层优先）。契约：save() 返回 null 表示已落库，
+      // 因此只有**每一份**都成功才允许关闭；任一份失败就停下，其余草稿继续受保护。
+      for (const guard of dirtyGuards()) {
+        // 上一份保存可能让这一份随组件一起卸载（例如新建面板创建后自动关闭）。
+        if (!dirtyGuards().some((item) => item.id === guard.id)) continue;
+        const error = await guard.save();
+        if (error) {
+          setCloseError(`${guard.label}：${error}`);
+          return;
+        }
       }
       await finishClose(kind);
     } catch (e) {
@@ -193,7 +196,8 @@ export default function App() {
     if (closeInFlight.current) return;
     closeInFlight.current = true;
     try {
-      activeGuard()?.discard();
+      // 明确选择"放弃"是对**全部**草稿的处置，逐个清空，避免外层草稿残留。
+      for (const guard of dirtyGuards()) guard.discard();
       await finishClose(kind);
     } finally {
       closeInFlight.current = false;
@@ -249,9 +253,11 @@ export default function App() {
         open={closeKind !== null}
         title={closeKind === "quit" ? "退出前有未保存的修改" : "关闭窗口前有未保存的修改"}
         detail={
-          closeKind === "quit"
-            ? "退出 ArtFlow miniDesk 会丢失尚未保存的修改。"
-            : "关闭这个窗口会丢失尚未保存的修改。"
+          dirtyLabels.length > 1
+            ? `${closeKind === "quit" ? "退出应用" : "关闭窗口"}会丢失 ${dirtyLabels.length} 处未保存的修改：${dirtyLabels.join("、")}。`
+            : closeKind === "quit"
+              ? "退出 ArtFlow miniDesk 会丢失尚未保存的修改。"
+              : "关闭这个窗口会丢失尚未保存的修改。"
         }
         saveLabel="保存并关闭"
         discardLabel="放弃修改并关闭"

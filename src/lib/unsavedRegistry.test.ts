@@ -15,6 +15,7 @@ describe("未保存草稿登记表", () => {
   it("只有 dirty 的登记项参与保护", () => {
     registerUnsavedGuard({
       id: "clean",
+      label: "干净表单",
       isDirty: () => false,
       save: async () => null,
       discard: () => {},
@@ -23,6 +24,7 @@ describe("未保存草稿登记表", () => {
 
     registerUnsavedGuard({
       id: "dirty",
+      label: "脏表单",
       isDirty: () => true,
       save: async () => null,
       discard: () => {},
@@ -34,12 +36,14 @@ describe("未保存草稿登记表", () => {
   it("内层（后登记）的草稿优先，注销后回落到外层", () => {
     registerUnsavedGuard({
       id: "page",
+      label: "页面",
       isDirty: () => true,
       save: async () => null,
       discard: () => {},
     });
     const unregisterInner = registerUnsavedGuard({
       id: "create-panel",
+      label: "新建面板",
       isDirty: () => true,
       save: async () => null,
       discard: () => {},
@@ -53,6 +57,7 @@ describe("未保存草稿登记表", () => {
   it("注销后不再被保护", () => {
     const unregister = registerUnsavedGuard({
       id: "only",
+      label: "唯一",
       isDirty: () => true,
       save: async () => null,
       discard: () => {},
@@ -65,6 +70,7 @@ describe("未保存草稿登记表", () => {
     let dirty = false;
     registerUnsavedGuard({
       id: "live",
+      label: "实时",
       isDirty: () => dirty,
       save: async () => null,
       discard: () => {},
@@ -78,6 +84,7 @@ describe("未保存草稿登记表", () => {
     const save = vi.fn(async () => "revision 冲突");
     registerUnsavedGuard({
       id: "failing",
+      label: "会失败",
       isDirty: () => true,
       save,
       discard: () => {},

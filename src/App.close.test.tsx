@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EnvironmentStatus } from "./bridge/commands";
 import { popModal, pushModal, resetModalStack } from "./lib/modalStack";
-import { registerUnsavedGuard, resetUnsavedGuards } from "./lib/unsavedRegistry";
+import {
+  dirtyGuards,
+  registerUnsavedGuard,
+  resetUnsavedGuards,
+} from "./lib/unsavedRegistry";
 
 type CloseEvent = { preventDefault: () => void };
 
@@ -71,6 +75,7 @@ function guard(overrides: Partial<Parameters<typeof registerUnsavedGuard>[0]> = 
   const discard = vi.fn();
   registerUnsavedGuard({
     id: "test-guard",
+    label: "测试表单",
     isDirty: () => true,
     save,
     discard,
@@ -237,5 +242,219 @@ describe("窗口关闭保护", () => {
     );
     expect(destroy).not.toHaveBeenCalled();
     expect(await screen.findByText("页面内容")).toBeInTheDocument();
+  });
+});
+
+describe("多份草稿同时存在（SAFE-01）", () => {
+  beforeEach(() => {
+    destroy.mockClear();
+    invoke.mockClear();
+    closeHandler = null;
+    exitHandler = null;
+    resetUnsavedGuards();
+    resetModalStack();
+  });
+
+  afterEach(() => {
+    resetUnsavedGuards();
+    resetModalStack();
+  });
+
+  function twoGuards(options: {
+    outerSave?: () => Promise<string | null>;
+    innerSave?: () => Promise<string | null>;
+  } = {}) {
+    const outer = {
+      id: "orders-detail",
+      label: "订单资料",
+      isDirty: () => true,
+      save: vi.fn(options.outerSave ?? (async () => null)),
+      discard: vi.fn(),
+    };
+    const inner = {
+      id: "orders-create",
+      label: "新建订单",
+      isDirty: () => true,
+      save: vi.fn(options.innerSave ?? (async () => null)),
+      discard: vi.fn(),
+    };
+    registerUnsavedGuard(outer);
+    registerUnsavedGuard(inner);
+    return { outer, inner };
+  }
+
+  it("两份都被保存，内层先存，全部成功才关闭", async () => {
+    const order: string[] = [];
+    const { outer, inner } = twoGuards({
+      innerSave: async () => {
+        order.push("内层");
+        return null;
+      },
+      outerSave: async () => {
+        order.push("外层");
+        return null;
+      },
+    });
+
+    await renderShell();
+    await fireClose();
+    await screen.findByRole("alertdialog");
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("2 处未保存的修改");
+
+    await userEvent.click(screen.getByRole("button", { name: "保存并关闭" }));
+    await waitFor(() => expect(destroy).toHaveBeenCalledTimes(1));
+
+    expect(order).toEqual(["内层", "外层"]);
+    expect(inner.save).toHaveBeenCalledTimes(1);
+    expect(outer.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("一份保存失败就停止，不关闭，另一份也不被放弃", async () => {
+    const { outer, inner } = twoGuards({
+      innerSave: async () => null,
+      outerSave: async () => "revision 冲突",
+    });
+
+    await renderShell();
+    await fireClose();
+    await userEvent.click(await screen.findByRole("button", { name: "保存并关闭" }));
+
+    await waitFor(() => expect(outer.save).toHaveBeenCalledTimes(1));
+    expect(destroy).not.toHaveBeenCalled();
+    expect(await screen.findByRole("alert")).toHaveTextContent("订单资料：revision 冲突");
+    // 内层已保存，外层仍是草稿：两份都还在登记表里受保护
+    expect(dirtyGuards()).toHaveLength(2);
+    expect(inner.discard).not.toHaveBeenCalled();
+    expect(outer.discard).not.toHaveBeenCalled();
+  });
+
+  it("放弃会清空全部草稿，不只当前那一份", async () => {
+    const { outer, inner } = twoGuards();
+    await renderShell();
+    await fireClose();
+    await userEvent.click(await screen.findByRole("button", { name: "放弃修改并关闭" }));
+
+    await waitFor(() => expect(destroy).toHaveBeenCalledTimes(1));
+    expect(inner.discard).toHaveBeenCalledTimes(1);
+    expect(outer.discard).toHaveBeenCalledTimes(1);
+    expect(inner.save).not.toHaveBeenCalled();
+    expect(outer.save).not.toHaveBeenCalled();
+  });
+
+  it("取消后两份草稿都还在，再次关闭仍会拦", async () => {
+    const { outer, inner } = twoGuards();
+    await renderShell();
+    await fireClose();
+    await userEvent.click(await screen.findByRole("button", { name: "取消，继续编辑" }));
+
+    expect(dirtyGuards()).toHaveLength(2);
+
+    await fireClose();
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+    expect(inner.save).not.toHaveBeenCalled();
+    expect(outer.save).not.toHaveBeenCalled();
+    expect(destroy).not.toHaveBeenCalled();
+  });
+
+  it("内层保存后已卸载时不会重复保存，外层照常保存", async () => {
+    const outer = {
+      id: "orders-detail",
+      label: "订单资料",
+      isDirty: () => true,
+      save: vi.fn(async () => null),
+      discard: vi.fn(),
+    };
+    let unregisterInner = () => {};
+    const inner = {
+      id: "orders-create",
+      label: "新建订单",
+      isDirty: () => true,
+      save: vi.fn(async () => {
+        // 模拟"创建成功后面板自动关闭"
+        unregisterInner();
+        return null;
+      }),
+      discard: vi.fn(),
+    };
+    registerUnsavedGuard(outer);
+    unregisterInner = registerUnsavedGuard(inner);
+
+    await renderShell();
+    await fireClose();
+    await userEvent.click(await screen.findByRole("button", { name: "保存并关闭" }));
+
+    await waitFor(() => expect(destroy).toHaveBeenCalledTimes(1));
+    expect(inner.save).toHaveBeenCalledTimes(1);
+    expect(outer.save).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Cmd+Q 与红色按钮的一致性", () => {
+  beforeEach(() => {
+    destroy.mockClear();
+    invoke.mockClear();
+    closeHandler = null;
+    exitHandler = null;
+    resetUnsavedGuards();
+    resetModalStack();
+  });
+
+  it("无草稿时 Cmd+Q 直接退出，不弹框", async () => {
+    guard({ isDirty: () => false });
+    await renderShell();
+    await waitFor(() => expect(exitHandler).not.toBeNull());
+
+    await act(async () => {
+      exitHandler?.();
+    });
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("confirm_close"));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("Cmd+Q 时两份草稿都会被保存", async () => {
+    const outer = {
+      id: "outer",
+      label: "订单资料",
+      isDirty: () => true,
+      save: vi.fn(async () => null),
+      discard: vi.fn(),
+    };
+    const inner = {
+      id: "inner",
+      label: "新建订单",
+      isDirty: () => true,
+      save: vi.fn(async () => null),
+      discard: vi.fn(),
+    };
+    registerUnsavedGuard(outer);
+    registerUnsavedGuard(inner);
+
+    await renderShell();
+    await waitFor(() => expect(exitHandler).not.toBeNull());
+    await act(async () => {
+      exitHandler?.();
+    });
+
+    expect(await screen.findByRole("alertdialog")).toHaveTextContent("退出前有未保存的修改");
+    await userEvent.click(screen.getByRole("button", { name: "保存并关闭" }));
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("confirm_close"));
+    expect(inner.save).toHaveBeenCalledTimes(1);
+    expect(outer.save).toHaveBeenCalledTimes(1);
+    expect(destroy).not.toHaveBeenCalled();
+  });
+
+  it("Cmd+Q 保存失败时不退出", async () => {
+    guard({ save: vi.fn(async () => "数据库忙") });
+    await renderShell();
+    await waitFor(() => expect(exitHandler).not.toBeNull());
+    await act(async () => {
+      exitHandler?.();
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "保存并关闭" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("数据库忙"));
+    expect(invoke).not.toHaveBeenCalled();
   });
 });

@@ -48,6 +48,7 @@ export default function ClientsPage() {
 
   useUnsavedGuard({
     id: "clients",
+    label: dirty ? "客户资料" : "新建客户",
     dirty: dirty || creatingDirty,
     save: async () => {
       if (dirty) return save();

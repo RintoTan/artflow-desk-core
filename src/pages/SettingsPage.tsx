@@ -54,6 +54,7 @@ export default function SettingsPage() {
 
   useUnsavedGuard({
     id: "settings",
+    label: "工作时区",
     dirty,
     save: () => apply(),
     discard: () => {
