@@ -21,6 +21,9 @@ use infra::state::AppState;
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .on_menu_event(|handle, event| {
+            crate::infra::menu::handle_menu_event(handle, event.id().as_ref());
+        })
         .setup(|app| {
             // 数据根只由"构建标识"决定：
             // - 正式标识 → 正式目录，任何环境变量都不参与；
@@ -100,6 +103,11 @@ pub fn run() {
 
             app.manage(state);
             app.manage(infra::close::ExitGate::new());
+
+            // macOS：默认菜单的 Quit 绑定 NSApplication terminate:，会绕过所有 Rust 事件，
+            // 必须换成自定义菜单项才能拦下 Cmd+Q。
+            #[cfg(target_os = "macos")]
+            infra::menu::install(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
