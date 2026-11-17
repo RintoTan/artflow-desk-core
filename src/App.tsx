@@ -288,7 +288,7 @@ export default function App() {
             size={26}
           />
           <div className="brand-text">
-            <strong>ArtFlow miniDesk</strong>
+            <strong>ArtFlow Desk Core</strong>
             <small>{qa ? "QA 测试环境" : "本地委托台账"}</small>
           </div>
         </div>
@@ -349,7 +349,7 @@ export default function App() {
       <main className="main">
         {qa && (
           <p className="qa-banner" role="status">
-            QA 测试环境（{qa.scenario === "clean" ? "空白场景" : "预置场景"}）·
+            ArtFlow Desk Core — QA 测试环境（{qa.scenario === "clean" ? "空白场景" : "预置场景"}）·
             数据目录与正式应用完全隔离，这里的订单不会出现在正式台账里
           </p>
         )}
@@ -363,7 +363,7 @@ export default function App() {
           dirtyLabels.length > 1
             ? `${closeKind === "quit" ? "退出应用" : "关闭窗口"}会丢失 ${dirtyLabels.length} 处未保存的修改：${dirtyLabels.join("、")}。`
             : closeKind === "quit"
-              ? "退出 ArtFlow miniDesk 会丢失尚未保存的修改。"
+              ? "退出 ArtFlow Desk Core 会丢失尚未保存的修改。"
               : "关闭这个窗口会丢失尚未保存的修改。"
         }
         saveLabel="保存并关闭"

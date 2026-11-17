@@ -61,7 +61,7 @@ export default function StatusPage() {
             label="运行模式"
             value={
               status.qaMode
-                ? `QA 测试环境 · ${status.qaScenario === "clean" ? "空白场景" : "预置场景"}（与正式数据隔离）`
+                ? `ArtFlow Desk Core — QA 测试环境 · ${status.qaScenario === "clean" ? "空白场景" : "预置场景"}（与正式数据隔离）`
                 : "正式应用"
             }
           />

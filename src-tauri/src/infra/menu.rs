@@ -27,11 +27,11 @@ pub const QUIT_MENU_ID: &str = "quit";
 
 /// 安装应用菜单。只在 macOS 上调用。
 pub fn install(app: &mut App) -> tauri::Result<()> {
-    let quit = MenuItemBuilder::with_id(QUIT_MENU_ID, "退出 ArtFlow miniDesk")
+    let quit = MenuItemBuilder::with_id(QUIT_MENU_ID, "退出 ArtFlow Desk Core")
         .accelerator("CmdOrCtrl+Q")
         .build(app)?;
 
-    let app_menu = SubmenuBuilder::new(app, "ArtFlow miniDesk")
+    let app_menu = SubmenuBuilder::new(app, "ArtFlow Desk Core")
         .item(&PredefinedMenuItem::about(app, None, None)?)
         .separator()
         .item(&PredefinedMenuItem::hide(app, None)?)

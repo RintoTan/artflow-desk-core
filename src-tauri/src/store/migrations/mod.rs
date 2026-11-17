@@ -53,7 +53,7 @@ pub fn migrate_to(conn: &mut Connection, list: &[Migration], target: i64) -> App
     let current = schema_version(conn)?;
     if current > target {
         return Err(AppError::schema(format!(
-            "数据库结构版本 {current} 高于本程序支持的 {target}：请使用较新版本的 ArtFlow miniDesk"
+            "数据库结构版本 {current} 高于本程序支持的 {target}：请使用较新版本的 ArtFlow Desk Core"
         )));
     }
     for step in 1..=target {

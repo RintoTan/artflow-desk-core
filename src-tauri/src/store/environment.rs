@@ -172,7 +172,7 @@ impl Environment {
         if current > target_version {
             return Err(AppError::schema(format!(
                 "数据库结构版本 {current} 高于本程序支持的 {target_version}：\
-                 请使用较新版本的 ArtFlow miniDesk，旧版本不会写入新结构。"
+                 请使用较新版本的 ArtFlow Desk Core，旧版本不会写入新结构。"
             )));
         }
 

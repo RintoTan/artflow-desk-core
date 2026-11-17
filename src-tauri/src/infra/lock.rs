@@ -41,7 +41,7 @@ impl DirLock {
                 identity,
             }),
             Err(_) => Err(AppError::busy(
-                "另一个 ArtFlow miniDesk 进程正在使用这个数据目录",
+                "另一个 ArtFlow Desk Core 进程正在使用这个数据目录",
             )),
         }
     }

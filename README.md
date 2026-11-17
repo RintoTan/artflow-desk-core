@@ -1,6 +1,9 @@
-# ArtFlow miniDesk
+# ArtFlow Desk Core
 
 面向单画师的本地优先桌面委托管理工具。数据完全保存在本机，不依赖云同步、在线账号或客户网页。
+
+> 产品名：**ArtFlow Desk Core**（2026-11-17 由 ArtFlow miniDesk 更名）。
+> 应用标识仍为 `dev.artflow.minidesk`，数据目录、数据库与编号规则均未改变。
 
 - 桌面外壳：Tauri 2（macOS / Windows）
 - 前端：React 19 + TypeScript + Vite

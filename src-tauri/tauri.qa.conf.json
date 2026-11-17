@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ArtFlow miniDesk QA",
+  "productName": "ArtFlow Desk Core QA",
   "identifier": "dev.artflow.minidesk.qa",
   "build": {
     "beforeDevCommand": "npm run dev -- --port 1421 --strictPort",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "ArtFlow miniDesk — QA 测试环境",
+        "title": "ArtFlow Desk Core — QA 测试环境",
         "width": 1120,
         "height": 760,
         "minWidth": 880,
@@ -23,7 +23,10 @@
       "csp": "default-src 'self'; img-src 'self' blob: data: asset: http://asset.localhost; style-src 'self' 'unsafe-inline'",
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPDATA/seeded/generations/*/attachments/**", "$APPDATA/clean/generations/*/attachments/**"]
+        "scope": [
+          "$APPDATA/seeded/generations/*/attachments/**",
+          "$APPDATA/clean/generations/*/attachments/**"
+        ]
       }
     }
   }

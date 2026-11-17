@@ -204,7 +204,7 @@ pub fn inspect(path: &Path) -> AppResult<Inspection> {
     };
 
     if manifest.format != FORMAT_NAME {
-        return Err(AppError::zip("不是 ArtFlow miniDesk 的备份包"));
+        return Err(AppError::zip("不是 ArtFlow Desk Core 的备份包"));
     }
     if manifest.format_version > FORMAT_VERSION {
         return Err(AppError::zip(format!(

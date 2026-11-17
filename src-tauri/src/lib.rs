@@ -1,4 +1,4 @@
-//! ArtFlow miniDesk —— 本地优先的单画师委托管理桌面应用。
+//! ArtFlow Desk Core —— 本地优先的单画师委托管理桌面应用。
 //!
 //! 分层：`commands`（薄壳） → `domain`（业务规则） → `store`（持久化与代际）
 //! 以及 `media`（附件路径与限制）、`backup`（备份包校验）、`infra`（锁与状态）。
@@ -163,7 +163,7 @@ pub fn run() {
             commands::app_icon::ui_icon_set
         ])
         .build(tauri::generate_context!())
-        .expect("ArtFlow miniDesk 启动失败");
+        .expect("ArtFlow Desk Core 启动失败");
 
     // Cmd+Q 与应用退出走这里：没被授权就拦下，交给界面问用户。
     app.run(|handle, event| {

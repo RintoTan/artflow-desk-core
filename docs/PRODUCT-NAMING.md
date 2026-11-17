@@ -1,8 +1,8 @@
 # 产品命名决策与改名清单
 
 - 决策日期：2026-11-17
-- 状态：**命名已确认；工程展示名称尚未更新**（按 §5 排到"下一次低风险界面维护"）
-- 本轮动作：只归档决策 + 把改名清单落到文件:行，**没有改任何代码或配置**
+- 状态：**命名已确认；用户可见展示名称已于 DEV-06C-UX-FIX 实施**（见 §8 实施记录）
+- 首次归档：只盘点与冻结项，未改代码；实施记录见文末 §8
 
 ---
 
@@ -84,7 +84,7 @@ DEV-06C 刚收尾，命名属于"展示文案"而非功能。§5 已明确把它
 
 ## 5. 四项需要你裁定的边界
 
-### 5.1 CSV 表头要不要跟着改
+### 5.1 CSV 表头要不要跟着改（本轮已裁定：暂不改）
 
 `domain/export.rs` 的汇总表头写的是 `ArtFlow miniDesk 统计汇总`。这是**导出文件的内容**，
 DEV-06C 刚把"CSV 字段、编码、转义、防注入"冻结为不可变契约。
@@ -94,7 +94,9 @@ DEV-06C 刚把"CSV 字段、编码、转义、防注入"冻结为不可变契约
 - **A. 不改**：导出文件的列结构不变，只留一个已经过时的品牌串在表头里；
 - **B. 改**：更像"完成标准"，但属于**契约变更**，需要你明确授权，并接受"新旧导出文件的表头不同"。
 
-我倾向 B，但必须由你点头 —— 我不会在"改名"的名义下偷偷改导出内容。
+**2026-11-17 裁定：本轮不改，标为「待单独裁定：CSV 品牌表头更新」。**
+`domain/export.rs` 里的 `ArtFlow miniDesk 统计汇总` 与 `ArtFlow miniDesk 订单明细` 保持原样，
+不视为遗漏或修改失败；将来若要改，需单独授权并补 CSV 兼容测试。
 
 ### 5.2 `package.json` / `Cargo.toml` 的包名要不要改
 
@@ -141,3 +143,27 @@ DEV-06C 刚把"CSV 字段、编码、转义、防注入"冻结为不可变契约
 | 下一次低风险界面维护 | 第一批（10 处纯展示）+ 第二批（`export.rs` 视 §5.1 裁定） |
 | DEV-08（Mac 打包） | 核对 `.app` 名、Finder 显示名、`CFBundleName`、数据目录兼容 |
 | DEV-09（Windows） | 沿用统一品牌名，单独验证平台安装身份与卸载行为 |
+
+## 8. 实施记录（DEV-06C-UX-FIX，2026-11-17）
+
+已替换的用户可见名称：
+
+| 位置 | 现值 |
+|---|---|
+| `src/App.tsx` 侧栏品牌 | `ArtFlow Desk Core` |
+| `src/App.tsx` 退出确认文案 | `退出 ArtFlow Desk Core 会丢失尚未保存的修改。` |
+| `src/App.tsx` QA 横幅 | `ArtFlow Desk Core — QA 测试环境（…）` |
+| `index.html` 标题 | `ArtFlow Desk Core` |
+| `src/pages/StatusPage.tsx` 运行模式 | `ArtFlow Desk Core — QA 测试环境 · …` |
+| `src-tauri/tauri.conf.json` | `productName` 与窗口标题均为 `ArtFlow Desk Core` |
+| `src-tauri/tauri.qa.conf.json` | `ArtFlow Desk Core QA` / `ArtFlow Desk Core — QA 测试环境` |
+| `src-tauri/src/infra/menu.rs` | 应用菜单与「退出 …」 |
+| `environment.rs` / `migrations/mod.rs` / `lock.rs` / `zip_read.rs` / `lib.rs` | 错误与启动提示里的品牌名 |
+| `src-tauri/Cargo.toml` `description` | `ArtFlow Desk Core — …` |
+| `README.md` | 标题与首段 |
+
+**未改**（按 §3 冻结）：identifier、数据目录、schema、npm/cargo 包名、Rust lib 名、
+probe 二进制名、仓库目录名、六份图标 SVG 的 `<title>`、CSV 表头。
+
+侧栏品牌下方那行仍显示 `QA 测试环境`（短标签）；完整名称在 QA 横幅与窗口标题里，
+避免同一个名字在 26px 的高度里出现两次。

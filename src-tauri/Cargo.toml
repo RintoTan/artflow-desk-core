@@ -1,7 +1,7 @@
 [package]
 name = "artflow-minidesk"
 version = "0.1.0"
-description = "ArtFlow miniDesk — local-first commission desk for a single illustrator"
+description = "ArtFlow Desk Core — local-first commission desk for a single illustrator"
 edition = "2021"
 rust-version = "1.90"
 default-run = "artflow-minidesk"
