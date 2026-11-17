@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useBlocker } from "react-router-dom";
 
+import AttachmentPanel from "../components/AttachmentPanel";
 import ConfirmDialog from "../components/ConfirmDialog";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import { densityClass, dropIndex, filterOrders, type StatusFilter } from "../lib/ordersView";
@@ -793,6 +794,12 @@ export default function OrdersPage() {
                 </button>
               </div>
             </section>
+
+            <AttachmentPanel
+              orderId={detail.id}
+              onError={setError}
+              onNotice={setNotice}
+            />
 
             <StagePanel
               order={detail}

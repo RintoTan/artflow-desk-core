@@ -330,3 +330,65 @@ export const preferenceApi = {
   get: (key: string) => invoke<string | null>("preference_get", { key }),
   set: (key: string, value: string) => invoke<string | null>("preference_set", { key, value }),
 };
+
+// ---------------------------------------------------------------- DEV-04 附件
+
+export type AttachmentView = {
+  id: string;
+  orderId: string;
+  originalName: string;
+  displayName: string | null;
+  note: string | null;
+  tag: string | null;
+  mimeType: string;
+  byteSize: number;
+  sha256: string;
+  width: number | null;
+  height: number | null;
+  state: "ok" | "missing" | "corrupt";
+  createdAt: string;
+  originalPath: string;
+  thumbPath: string | null;
+  fileExists: boolean;
+  thumbExists: boolean;
+};
+
+export type ImportOutcome = {
+  sourceName: string;
+  ok: boolean;
+  attachment: AttachmentView | null;
+  error: string | null;
+};
+
+export type ThumbReport = {
+  total: number;
+  rebuilt: number;
+  skipped: number;
+  failed: number;
+  failures: string[];
+};
+
+export type VerifyReport = {
+  ok: number;
+  missing: number;
+  corrupt: number;
+  attachments: AttachmentView[];
+};
+
+export const attachmentApi = {
+  list: (orderId: string) => invoke<AttachmentView[]>("attachment_list", { orderId }),
+  import: (input: { orderId: string; sourcePaths: string[]; tag?: string | null }) =>
+    invoke<ImportOutcome[]>("attachment_import", { input }),
+  remove: (attachmentId: string) => invoke<void>("attachment_remove", { attachmentId }),
+  verify: (orderId: string) => invoke<VerifyReport>("attachment_verify", { orderId }),
+  rebuildThumbs: (orderId: string) =>
+    invoke<ThumbReport>("attachment_rebuild_thumbs", { orderId }),
+  repair: (input: { attachmentId: string; sourcePath: string }) =>
+    invoke<AttachmentView>("attachment_repair", { input }),
+  updateMeta: (input: {
+    attachmentId: string;
+    displayName?: string | null;
+    note?: string | null;
+    tag?: string | null;
+  }) => invoke<AttachmentView>("attachment_update_meta", { input }),
+};

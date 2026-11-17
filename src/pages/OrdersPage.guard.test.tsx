@@ -85,6 +85,9 @@ vi.mock("../bridge/commands", async () => {
       list: async () => ({ revision: 0, entries: [] }),
       move: async () => ({ revision: 1, entries: [] }),
     },
+    attachmentApi: {
+      list: async () => [],
+    },
     preferenceApi: {
       get: async () => null,
       set: async () => null,

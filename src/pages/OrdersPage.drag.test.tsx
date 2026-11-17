@@ -93,6 +93,9 @@ vi.mock("../bridge/commands", async () => {
       updateOrderDetails: vi.fn(),
     },
     queueApi: { list: queueList, move: queueMove },
+    attachmentApi: {
+      list: async () => [],
+    },
     preferenceApi: { get: async () => "comfortable", set: async () => null },
   };
 });

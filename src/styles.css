@@ -1196,3 +1196,238 @@ body:has(.row-dragging) {
   font-size: 11.5px;
   font-weight: 560;
 }
+
+/* ------------------------------------------------------------ 参考图片 */
+.attach-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.attach-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 10px;
+}
+
+.attach-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  background: var(--surface);
+}
+
+.attach-missing,
+.attach-corrupt {
+  border-color: #e7c3bc;
+  background: var(--danger-soft);
+}
+
+.attach-thumb {
+  border: none;
+  padding: 0;
+  background: var(--surface-alt);
+  border-radius: var(--radius-sm);
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  cursor: zoom-in;
+  display: grid;
+  place-items: center;
+}
+
+.attach-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.attach-placeholder {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.attach-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.attach-name {
+  font-size: 12.5px;
+  font-weight: 560;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attach-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.attach-row-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chip-warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+  align-self: flex-start;
+}
+
+/* ------------------------------------------------------------ 图片查看器 */
+.viewer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(9, 18, 28, 0.86);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.viewer {
+  width: min(1100px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #0f1a26;
+  color: #e7eff7;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.viewer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 13px;
+}
+
+.viewer-head .muted {
+  color: #93a8bc;
+}
+
+.viewer-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.viewer-zoom {
+  min-width: 46px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.viewer-stage {
+  flex: 1;
+  min-height: 240px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: repeating-conic-gradient(#131f2b 0% 25%, #16232f 0% 50%) 50% / 24px 24px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.viewer-dragging {
+  cursor: grabbing;
+}
+
+.viewer-image {
+  max-width: 92%;
+  max-height: 62vh;
+  transition: transform 60ms linear;
+  user-select: none;
+}
+
+.viewer-missing {
+  text-align: center;
+  color: #c9d7e4;
+}
+
+.viewer-foot {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.viewer-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.viewer-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px 12px;
+}
+
+.viewer-meta .field {
+  margin-top: 0;
+  max-width: none;
+}
+
+.compact-field span {
+  font-size: 11px;
+  color: #93a8bc;
+}
+
+.viewer-meta input {
+  padding: 6px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e7eff7;
+  font-family: inherit;
+  font-size: 12.5px;
+}
+
+.viewer-meta-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.viewer .btn {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #e7eff7;
+}
+
+.viewer .btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.viewer .btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.viewer .btn-danger {
+  background: #a4402f;
+  border-color: #a4402f;
+  color: #fff;
+}
