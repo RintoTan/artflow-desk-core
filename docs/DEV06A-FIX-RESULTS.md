@@ -413,7 +413,21 @@ kill <PID>
 48291b8 fix(close): intercept Cmd+Q with a custom menu item
 edb136b fix(close): save every dirty form before closing
 3b31860 docs: DEV-06A-FIX root cause, multi-draft fix and re-test steps
+168b1a0 fix(orders): keep the keyboard cursor inside the list viewport   ← KEY-01
+64cef86 test(orders): prove the create panel cannot open over a dirty detail
+ad2d21f docs: DEV-06A acceptance, SAFE-01 reachability, KEY-01 and DOCK-01 status
 ```
+
+本轮新增/修改文件：
+
+| 文件 | 变更 |
+|---|---|
+| `src/pages/OrdersPage.tsx` | 光标自动滚动、光标失效清理、行 ref 登记 |
+| `src/test/setup.ts` | 补 jsdom 缺失的 `scrollIntoView` |
+| `src/pages/OrdersPage.keyboard.test.tsx` | +5 条滚动与光标用例 |
+| `src/pages/OrdersPage.unsaved.test.tsx` | **新增** 5 条页面可达性用例 |
+| `docs/DEV06A-DOCK-TECH-NOTE.md` | **新增** Dock 退出技术评估 |
+| `docs/DEV06A-FIX-RESULTS.md` / `DEV06A-RESULTS.md` / `REMAINING-WORK.md` | 验收记录与状态 |
 
 剩余风险：
 
