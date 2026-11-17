@@ -370,5 +370,6 @@ QA 沙箱（`dev.artflow.minidesk.qa`）本轮未启动、未重建。
 ## 12. 本地 Git 提交（仅文档）
 
 ```text
-（提交后补）
+0b96c8c docs: DEV-06C pre-implementation review; close DEV-06B
+（仅文档；本轮没有任何代码改动，见 `git show --stat 0b96c8c`）
 ```
