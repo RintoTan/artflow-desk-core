@@ -188,6 +188,9 @@ export default function OrdersPage() {
   // 键盘光标：与"当前打开的订单"分开，方向键只移动光标，Enter 才打开。
   const [cursorId, setCursorId] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  // 键盘光标所在行：用于把它滚进可视区（列表容器 .order-rows 才是滚动容器）。
+  const rowRefs = useRef(new Map<string, HTMLButtonElement>());
+  const lastScrolledCursor = useRef<string | null>(null);
   const [guardBusy, setGuardBusy] = useState(false);
   const [guardError, setGuardError] = useState<string | null>(null);
 
@@ -210,6 +213,19 @@ export default function OrdersPage() {
     },
   });
   const formatTime = useTimeFormatter(timezone);
+
+  // 光标移动才滚动一次；数据刷新导致的重新渲染不会滚动，避免"滚到错误订单"。
+  // block: "nearest" 表示"已可见就不动"，所以不会每按一下就居中。
+  useEffect(() => {
+    if (!cursorId) {
+      lastScrolledCursor.current = null;
+      return;
+    }
+    if (lastScrolledCursor.current === cursorId) return;
+    lastScrolledCursor.current = cursorId;
+    rowRefs.current.get(cursorId)?.scrollIntoView({ block: "nearest" });
+  }, [cursorId]);
+
 
   function moveCursor(delta: 1 | -1) {
     if (visible.length === 0) return;
@@ -337,6 +353,13 @@ export default function OrdersPage() {
         .sort((a, b) => a.queuePosition - b.queuePosition),
     [orders],
   );
+
+  // 搜索/筛选把光标那一行过滤掉后，光标不能指向已经不存在的订单。
+  useEffect(() => {
+    if (cursorId && !visible.some((o) => o.id === cursorId)) {
+      setCursorId(null);
+    }
+  }, [cursorId, visible]);
 
   async function applyQueueMove(orderId: string, toIndex: number) {
     setBusy(true);
@@ -691,6 +714,10 @@ export default function OrdersPage() {
                   )}
                   <button
                     type="button"
+                    ref={(el) => {
+                      if (el) rowRefs.current.set(order.id, el);
+                      else rowRefs.current.delete(order.id);
+                    }}
                     className={`order-row${order.id === selectedId ? " order-row-active" : ""}${
                       order.id === cursorId ? " order-row-cursor" : ""
                     }`}

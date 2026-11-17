@@ -1,7 +1,9 @@
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { popModal, pushModal, resetModalStack } from "../lib/modalStack";
 
 import type { OrderView } from "../bridge/commands";
 
@@ -190,5 +192,92 @@ describe("订单列表键盘操作", () => {
     await renderOrders();
     await userEvent.keyboard("{Meta>}f{/Meta}");
     expect(screen.getByLabelText("搜索订单")).toHaveFocus();
+  });
+});
+
+describe("键盘光标自动滚动（KEY-01）", () => {
+  const scrolled: { text: string; options: ScrollIntoViewOptions | boolean | undefined }[] = [];
+  let original: typeof Element.prototype.scrollIntoView;
+
+  beforeEach(() => {
+    getOrder.mockClear();
+    queueMove.mockClear();
+    scrolled.length = 0;
+    original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = vi.fn(function (
+      this: Element,
+      options?: ScrollIntoViewOptions | boolean,
+    ) {
+      scrolled.push({ text: this.textContent ?? "", options });
+    }) as unknown as typeof Element.prototype.scrollIntoView;
+    resetModalStack();
+  });
+
+  afterEach(() => {
+    Element.prototype.scrollIntoView = original;
+    resetModalStack();
+  });
+
+  it("光标移动时把该行滚进可视区，用的是 nearest（已可见就不动）", async () => {
+    await renderOrders();
+    rows()[0]!.focus();
+
+    await userEvent.keyboard("{ArrowDown}");
+
+    expect(scrolled).toHaveLength(1);
+    expect(scrolled[0]!.text).toContain("第二张订单");
+    expect(scrolled[0]!.options).toEqual({ block: "nearest" });
+  });
+
+  it("连续移动只在光标变化时滚动，且目标始终是光标那一行", async () => {
+    await renderOrders();
+    rows()[0]!.focus();
+
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+
+    expect(scrolled.map((item) => item.text)).toEqual([
+      expect.stringContaining("第二张订单"),
+      expect.stringContaining("第三张订单"),
+    ]);
+    // 停留不产生额外滚动
+    await userEvent.keyboard("{ArrowDown}");
+    expect(scrolled).toHaveLength(2);
+  });
+
+  it("滚动不会改变右侧详情，也不会改队列", async () => {
+    await renderOrders();
+    await waitFor(() => expect(getOrder).toHaveBeenCalledTimes(1));
+    rows()[0]!.focus();
+
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+
+    expect(getOrder).toHaveBeenCalledTimes(1);
+    expect(queueMove).not.toHaveBeenCalled();
+  });
+
+  it("搜索把光标所在行过滤掉后，光标被安全清除", async () => {
+    await renderOrders();
+    rows()[0]!.focus();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(rows()[1]).toHaveClass("order-row-cursor");
+
+    await userEvent.click(screen.getByLabelText("搜索订单"));
+    await userEvent.keyboard("第三");
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(rows()[0]).not.toHaveClass("order-row-cursor");
+  });
+
+  it("模态打开时方向键既不动光标也不滚动", async () => {
+    await renderOrders();
+    rows()[0]!.focus();
+    pushModal("some-modal");
+
+    await userEvent.keyboard("{ArrowDown}");
+
+    expect(scrolled).toHaveLength(0);
+    expect(rows()[0]).not.toHaveClass("order-row-cursor");
+
+    popModal("some-modal");
   });
 });
