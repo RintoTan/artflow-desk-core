@@ -291,12 +291,10 @@ kill <PID>
 
 ## 9. Git 提交与剩余风险
 
-提交（见文末补充哈希）：
-
 ```text
-fix(close): intercept Cmd+Q with a custom menu item
-fix(close): save every dirty form before closing
-test/docs: multi-draft suite and DEV-06A-FIX report
+48291b8 fix(close): intercept Cmd+Q with a custom menu item
+edb136b fix(close): save every dirty form before closing
+3b31860 docs: DEV-06A-FIX root cause, multi-draft fix and re-test steps
 ```
 
 剩余风险：
