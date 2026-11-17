@@ -15,6 +15,17 @@
   --neutral-soft: #eceff3;
   --text-faint: #6b7783;
   /* 图片查看器专用（深底固定，不随主题反转） */
+  /* 结构性背景：以前是硬编码的浅色渐变，深色下会变成"浅底浅字" */
+  --sidebar-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(237, 243, 250, 0.82));
+  --panel-quiet-bg: rgba(255, 255, 255, 0.66);
+  --tone-accent-bg: linear-gradient(180deg, #f7fbff, var(--accent-soft));
+  --tone-warn-bg: linear-gradient(180deg, #fffaef, var(--warn-soft));
+  --tone-warn-border: #e3cf9c;
+  --tone-danger-bg: linear-gradient(180deg, #fff6f4, var(--danger-soft));
+  --chip-today-bg: #fff1e6;
+  --chip-today-text: #a55618;
+  --chip-neutral-bg: #eef1f5;
+  --chip-neutral-text: #5f6b78;
   --viewer-bg: #0b1016;
   --viewer-text: #e7eff7;
   --viewer-muted: #93a8bc;
@@ -22,6 +33,7 @@
   --text-muted: #5a7189;
   --accent: #2c6fb5;
   --accent-contrast: #ffffff;
+  --danger-contrast: #ffffff;
   --accent-soft: #e3eefb;
   --danger: #b4402f;
   --danger-soft: #fbeae7;
@@ -58,6 +70,7 @@
   --text-faint: #8598ab;
   --accent: #5aa7ea;
   --accent-contrast: #08121b;
+  --danger-contrast: #2a120d;
   --accent-soft: #1b2c3d;
   --danger: #e2836f;
   --danger-soft: #35211d;
@@ -68,6 +81,17 @@
   --warn-soft: #33280f;
   --neutral-soft: #232f3a;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.35);
+  /* 深色版结构性背景：顶部深一档、底部再深一档，与 --surface 同族 */
+  --sidebar-bg: linear-gradient(180deg, #1a232d, #141c24);
+  --panel-quiet-bg: rgba(255, 255, 255, 0.035);
+  --tone-accent-bg: linear-gradient(180deg, #1a2c3d, var(--accent-soft));
+  --tone-warn-bg: linear-gradient(180deg, #2e2612, var(--warn-soft));
+  --tone-warn-border: #6b5522;
+  --tone-danger-bg: linear-gradient(180deg, #34211d, var(--danger-soft));
+  --chip-today-bg: #33261a;
+  --chip-today-text: #e0a878;
+  --chip-neutral-bg: #25313d;
+  --chip-neutral-text: #a9b8c7;
   color-scheme: dark;
 }
 
@@ -154,7 +178,7 @@ body {
   gap: 20px;
   padding: 22px 16px 16px;
   border-right: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(237, 243, 250, 0.82));
+  background: var(--sidebar-bg);
   backdrop-filter: blur(8px);
 }
 
@@ -239,7 +263,7 @@ nav {
 }
 
 .panel-quiet {
-  background: rgba(255, 255, 255, 0.66);
+  background: var(--panel-quiet-bg);
   box-shadow: none;
 }
 
@@ -468,7 +492,7 @@ code.mono {
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #2560a0;
+  filter: brightness(0.92);
 }
 
 .notice {
@@ -735,11 +759,11 @@ code.mono {
 .btn-danger {
   background: var(--danger);
   border-color: var(--danger);
-  color: #fff;
+  color: var(--danger-contrast);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: #9d3626;
+  filter: brightness(0.92);
 }
 
 .confirm-bar {
@@ -1584,8 +1608,8 @@ body:has(.row-dragging) {
 }
 
 .tone-warn {
-  border-color: #e3cf9c;
-  background: linear-gradient(180deg, #fffaef, var(--warn-soft));
+  border-color: var(--tone-warn-border);
+  background: var(--tone-warn-bg);
 }
 
 .tone-warn .metric-value {
@@ -1594,7 +1618,7 @@ body:has(.row-dragging) {
 
 .tone-danger {
   border-color: var(--danger-border);
-  background: linear-gradient(180deg, #fff6f4, var(--danger-soft));
+  background: var(--tone-danger-bg);
 }
 
 .tone-danger .metric-value {
@@ -1603,7 +1627,7 @@ body:has(.row-dragging) {
 
 .tone-accent {
   border-color: var(--border-active);
-  background: linear-gradient(180deg, #f7fbff, var(--accent-soft));
+  background: var(--tone-accent-bg);
 }
 
 .tone-accent .metric-value {
@@ -1629,8 +1653,8 @@ body:has(.row-dragging) {
 }
 
 .risk-today {
-  background: #fff1e6;
-  color: #a55618;
+  background: var(--chip-today-bg);
+  color: var(--chip-today-text);
 }
 
 .risk-dueSoon {
@@ -1639,8 +1663,8 @@ body:has(.row-dragging) {
 }
 
 .risk-unscheduled {
-  background: #eef1f5;
-  color: #5f6b78;
+  background: var(--chip-neutral-bg);
+  color: var(--chip-neutral-text);
 }
 
 .chart {
