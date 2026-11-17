@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, describeError, type TimezoneInfo } from "../bridge/commands";
+import { usePageShortcuts } from "../lib/shortcuts";
+import { useUnsavedGuard } from "../lib/unsavedRegistry";
 
 const COMMON_ZONES = [
   "Asia/Shanghai",
@@ -29,7 +31,7 @@ export default function SettingsPage() {
       .catch((e) => setError(describeError(e)));
   }, []);
 
-  async function apply() {
+  async function apply(): Promise<string | null> {
     setBusy(true);
     setError(null);
     setMessage(null);
@@ -38,12 +40,32 @@ export default function SettingsPage() {
       setInfo(next);
       setDraft(next.workingTimezone);
       setMessage("工作时区已保存。历史事件的时间点不会改变，只影响展示、提醒与统计月份归属。");
+      return null;
     } catch (e) {
-      setError(describeError(e));
+      const text = describeError(e);
+      setError(text);
+      return text;
     } finally {
       setBusy(false);
     }
   }
+
+  const dirty = info !== null && draft.trim() !== "" && draft.trim() !== info.workingTimezone;
+
+  useUnsavedGuard({
+    id: "settings",
+    dirty,
+    save: () => apply(),
+    discard: () => {
+      if (info) setDraft(info.workingTimezone);
+    },
+  });
+
+  usePageShortcuts({
+    onSave: () => {
+      if (dirty && !busy) void apply();
+    },
+  });
 
   return (
     <>

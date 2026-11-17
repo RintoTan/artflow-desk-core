@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import ConfirmDialog from "../components/ConfirmDialog";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
+import { usePageShortcuts } from "../lib/shortcuts";
+import { useUnsavedGuard } from "../lib/unsavedRegistry";
 import { describeError, isConflict, templateApi, type TemplateView } from "../bridge/commands";
 
 type DraftStep = { stepId: string | null; title: string };
@@ -42,6 +44,31 @@ export default function TemplatesPage() {
 
   const selected = templates.find((t) => t.id === selectedId) ?? null;
   const dirty = selected !== null && draft !== null && !sameDraft(draft, draftFrom(selected));
+  const creatingDirty = creating && newName.trim() !== "";
+
+  useUnsavedGuard({
+    id: "templates",
+    dirty: dirty || creatingDirty,
+    save: async () => {
+      if (dirty) return save();
+      if (creatingDirty) return create();
+      return null;
+    },
+    discard: () => {
+      if (selected) setDraft(draftFrom(selected));
+      setNewName("");
+      setCreating(false);
+    },
+  });
+
+  usePageShortcuts({
+    onNew: () => {
+      if (!creating) setCreating(true);
+    },
+    onSave: () => {
+      if (dirty && !busy) void save();
+    },
+  });
 
   const load = useCallback(async () => {
     const list = await templateApi.list();
@@ -81,8 +108,8 @@ export default function TemplatesPage() {
     };
   }, []);
 
-  async function save() {
-    if (!selected || !draft) return;
+  async function save(): Promise<string | null> {
+    if (!selected || !draft) return null;
     setBusy(true);
     setError(null);
     try {
@@ -96,14 +123,19 @@ export default function TemplatesPage() {
       setSelectedId(updated.id);
       setDraft(draftFrom(updated));
       setNotice(`模板已保存（${list.length} 个模板）`);
+      return null;
     } catch (e) {
-      setError(isConflict(e) ? `${describeError(e)} 修改仍保留在表单中。` : describeError(e));
+      const message = isConflict(e)
+        ? `${describeError(e)} 修改仍保留在表单中。`
+        : describeError(e);
+      setError(message);
+      return message;
     } finally {
       setBusy(false);
     }
   }
 
-  async function create() {
+  async function create(): Promise<string | null> {
     setBusy(true);
     setError(null);
     try {
@@ -117,8 +149,11 @@ export default function TemplatesPage() {
       setCreating(false);
       select(created.id, list);
       setNotice("模板已创建，请继续编辑阶段");
+      return null;
     } catch (e) {
-      setError(describeError(e));
+      const message = describeError(e);
+      setError(message);
+      return message;
     } finally {
       setBusy(false);
     }

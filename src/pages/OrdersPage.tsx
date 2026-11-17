@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker, useSearchParams } from "react-router-dom";
 import { save } from "@tauri-apps/plugin-dialog";
 
@@ -14,6 +14,8 @@ import {
   type StatusFilter,
   type WorkFilter,
 } from "../lib/ordersView";
+import { usePageShortcuts } from "../lib/shortcuts";
+import { useUnsavedGuard } from "../lib/unsavedRegistry";
 import {
   api,
   describeError,
@@ -183,6 +185,9 @@ export default function OrdersPage() {
   const [creating, setCreating] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [manualNav, setManualNav] = useState<PendingNav | null>(null);
+  // 键盘光标：与"当前打开的订单"分开，方向键只移动光标，Enter 才打开。
+  const [cursorId, setCursorId] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const [guardBusy, setGuardBusy] = useState(false);
   const [guardError, setGuardError] = useState<string | null>(null);
 
@@ -192,7 +197,43 @@ export default function OrdersPage() {
   }, [detail, draft]);
 
   const blocker = useBlocker(dirty);
+
+  // 关窗保护复用页面自己的 dirty 与保存逻辑，不另建一套状态。
+  useUnsavedGuard({
+    id: "orders-detail",
+    dirty,
+    save: () => saveDraft(),
+    discard: () => {
+      if (detail) setDraft(draftFrom(detail));
+      setDraftError(null);
+    },
+  });
   const formatTime = useTimeFormatter(timezone);
+
+  function moveCursor(delta: 1 | -1) {
+    if (visible.length === 0) return;
+    const current = cursorId ?? selectedId;
+    const index = visible.findIndex((o) => o.id === current);
+    const nextIndex =
+      index < 0 ? 0 : Math.min(visible.length - 1, Math.max(0, index + delta));
+    const next = visible[nextIndex];
+    if (next) setCursorId(next.id);
+  }
+
+  // 键盘只移动光标/打开详情，**不碰队列**：不做任何 queue 写操作。
+  usePageShortcuts({
+    onNew: () => {
+      if (!creating) attemptCreate();
+    },
+    onSave: () => {
+      if (!creating && dirty && !busy) void saveDraft();
+    },
+    onFocusSearch: () => searchRef.current?.focus(),
+    onMoveSelection: moveCursor,
+    onOpenSelection: () => {
+      if (cursorId) attemptSelect(cursorId);
+    },
+  });
 
   const loadList = useCallback(async () => {
     const [list, clientList] = await Promise.all([api.listOrders(), api.listClients()]);
@@ -565,6 +606,7 @@ export default function OrdersPage() {
 
         <div className="list-tools">
           <input
+            ref={searchRef}
             className="list-search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -648,7 +690,9 @@ export default function OrdersPage() {
                   )}
                   <button
                     type="button"
-                    className={`order-row${order.id === selectedId ? " order-row-active" : ""}`}
+                    className={`order-row${order.id === selectedId ? " order-row-active" : ""}${
+                      order.id === cursorId ? " order-row-cursor" : ""
+                    }`}
                     onClick={() => attemptSelect(order.id)}
                   >
                     <span className="order-row-top">
@@ -1495,7 +1539,7 @@ function CreateOrderPanel({
   const [note, setNote] = useState("");
   const requestId = useMemo(() => newRequestId("create"), []);
 
-  async function submit() {
+  async function submit(): Promise<string | null> {
     setBusy(true);
     onError("");
     try {
@@ -1518,12 +1562,30 @@ function CreateOrderPanel({
         requestId,
       });
       await onCreated(order);
+      return null;
     } catch (e) {
-      onError(describeError(e));
+      const message = describeError(e);
+      onError(message);
+      return message;
     } finally {
       setBusy(false);
     }
   }
+
+  const creatingDirty =
+    title.trim() !== "" ||
+    commissionType.trim() !== "" ||
+    amount.trim() !== "" ||
+    note.trim() !== "" ||
+    newClientName.trim() !== "" ||
+    clientMode !== "none";
+  // 新建面板自己也能被关窗保护：内层 guard 优先于外层的详情 guard。
+  useUnsavedGuard({
+    id: "orders-create",
+    dirty: creatingDirty,
+    save: () => submit(),
+    discard: () => onCancel(),
+  });
 
   return (
     <section className="panel">

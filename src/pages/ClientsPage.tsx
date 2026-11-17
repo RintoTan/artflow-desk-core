@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
+import { usePageShortcuts } from "../lib/shortcuts";
+import { useUnsavedGuard } from "../lib/unsavedRegistry";
 import {
   clientApi,
   describeError,
@@ -42,6 +44,31 @@ export default function ClientsPage() {
   const [pendingSwitch, setPendingSwitch] = useState<{ id: string } | { create: true } | null>(null);
 
   const dirty = detail !== null && draft !== null && !sameDraft(draft, draftFrom(detail.client));
+  const creatingDirty = creating && newName.trim() !== "";
+
+  useUnsavedGuard({
+    id: "clients",
+    dirty: dirty || creatingDirty,
+    save: async () => {
+      if (dirty) return save();
+      if (creatingDirty) return create();
+      return null;
+    },
+    discard: () => {
+      if (detail) setDraft(draftFrom(detail.client));
+      setNewName("");
+      setCreating(false);
+    },
+  });
+
+  usePageShortcuts({
+    onNew: () => {
+      if (!creating) setCreating(true);
+    },
+    onSave: () => {
+      if (dirty && !busy) void save();
+    },
+  });
 
   const loadList = useCallback(async () => {
     const list = await clientApi.list();
@@ -81,8 +108,8 @@ export default function ClientsPage() {
     };
   }, [select]);
 
-  async function save() {
-    if (!detail || !draft) return;
+  async function save(): Promise<string | null> {
+    if (!detail || !draft) return null;
     setBusy(true);
     setError(null);
     try {
@@ -97,24 +124,27 @@ export default function ClientsPage() {
       setDraft(draftFrom(updated));
       setNotice("客户资料已保存");
       void loadList();
+      return null;
     } catch (e) {
+      const message = isConflict(e)
+        ? `${describeError(e)} 你的修改仍保留在表单中。`
+        : describeError(e);
+      setError(message);
       if (isConflict(e)) {
-        setError(`${describeError(e)} 你的修改仍保留在表单中。`);
         try {
           const latest = await clientApi.detail(detail.client.id);
           setDetail({ ...latest, orders: detail.orders });
         } catch {
           /* 保留原错误 */
         }
-      } else {
-        setError(describeError(e));
       }
+      return message;
     } finally {
       setBusy(false);
     }
   }
 
-  async function create() {
+  async function create(): Promise<string | null> {
     setBusy(true);
     setError(null);
     try {
@@ -124,8 +154,11 @@ export default function ClientsPage() {
       await loadList();
       await select(created.id);
       setNotice(`已创建客户「${created.displayName}」`);
+      return null;
     } catch (e) {
-      setError(describeError(e));
+      const message = describeError(e);
+      setError(message);
+      return message;
     } finally {
       setBusy(false);
     }

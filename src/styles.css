@@ -481,6 +481,12 @@ code.mono {
   border-color: #bcd6f0;
 }
 
+/* 键盘光标：与"已打开"区分，只表示"方向键停在这里" */
+.order-row-cursor {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .order-row-top {
   display: flex;
   align-items: center;
