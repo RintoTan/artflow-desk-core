@@ -6,9 +6,9 @@
 
 | 问题 | 状态 |
 |---|---|
-| `DEV06A-CLOSE-01` Cmd+Q 绕过保护 | **已修复并通过用户实机 R1/R2/R3** |
-| `DEV06A-SAFE-01` 多草稿只处理一份 | 底层防御已修复；**UI 实际不可形成双草稿**，有 5 条页面集成测试证明；建议关闭 |
-| `DEV06A-KEY-01` 光标移出可视区不滚动 | **已修复**（`scrollIntoView({block:"nearest"})`），等用户实机确认 |
+| `DEV06A-CLOSE-01` Cmd+Q 绕过保护 | **CLOSED**（用户 R1/R2/R3 实机 PASS） |
+| `DEV06A-SAFE-01` 多草稿只处理一份 | **CLOSED**（页面可达性 5 条集成测试 + 全局多草稿防御测试；R4 保留 NOT RUN） |
+| `DEV06A-KEY-01` 光标移出可视区不滚动 | **CLOSED**（用户 K1 实机 PASS） |
 | `DEV06A-DOCK-01` Dock 退出绕过保护 | **OPEN / P1 发布阻断**，见 `DEV06A-DOCK-TECH-NOTE.md` |
 
   本轮不再要求用户重复 R1～R3；需要复测的只有 KEY-01 与（若批准）DOCK-01。
@@ -34,7 +34,9 @@
 | R2 | Cmd+Q 放弃修改，重启后未创建 | **PASS** |
 | R3 | Cmd+Q 保存并关闭，重启后订单存在且不重复 | **PASS** |
 | R4 | 双草稿同时保存 | **NOT RUN** —— 见第 0.1 节 |
-| D | （历史）Cmd+Q 直接退出 | **FAIL → 已由 R1/R2/R3 覆盖修复** |
+| D | （历史）Cmd+Q 直接退出 | **FAIL → 修复后由 R1/R2/R3 实机 PASS** |
+| K1 | 订单列表键盘光标自动滚动 | **PASS** |
+| M1 | 菜单栏「退出」触发未保存草稿保护 | **PASS** |
 
 ### 0.1 R4 为什么是 NOT RUN 而不是 FAIL
 
@@ -234,7 +236,7 @@ useEffect(() => {
 > jsdom 没有 `scrollIntoView`，已在 `src/test/setup.ts` 补默认实现，
 > 否则任何滚动代码在组件测试里都会抛 TypeError。
 
-**真实窗口滚动仍标 NOT VERIFIED**，等你按一次方向键确认。
+**用户 K1 实机 PASS**（2026-11-17），真实窗口滚动已确认。
 
 ---
 

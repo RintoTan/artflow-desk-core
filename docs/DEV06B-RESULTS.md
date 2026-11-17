@@ -1,0 +1,297 @@
+# DEV-06B 主题系统与布局 — 结果报告
+
+- 日期：2026-11-17
+- 工程：`/Users/rinto/Documents/ChatGPT/ArtFlow-miniDesk`（`master`，未推送）
+- 结论：主题三模式（Arctic Blue / 深色 / 跟随系统）、受控自定义强调色、侧边栏折叠已实现；
+  自动化 282（Rust）+ 159（前端）全部通过。
+  **所有真实视觉表现与系统外观切换均为 NOT VERIFIED**，等你实机确认。
+  `DEV06A-DOCK-01` 保持 OPEN / P1，本轮未触碰。
+
+---
+
+## 1. DEV-06A 最终验收归档
+
+### 1.1 用户实机结果（终版）
+
+| 编号 | 项目 | 结果 |
+|---|---|---|
+| A | 红色按钮 → 取消后保留草稿 | PASS |
+| B | 红色按钮 → 放弃后不创建订单 | PASS |
+| C | 红色按钮 → 保存后关闭，重启数据存在 | PASS |
+| E | 已有订单编辑 → 保存并关闭 | PASS |
+| F1 | Cmd+F 聚焦订单搜索框 | PASS |
+| F2 | 方向键移动光标，Enter 打开订单 | PASS |
+| F3 | Cmd+N 打开新建面板，不重复叠加 | PASS |
+| F4 | 中文输入法选词不触发列表操作 | PASS |
+| G1 | Cmd+S 保存订单，切页后仍存在 | PASS |
+| G2 | 新建客户草稿触发关窗保护 | PASS（仅此路径） |
+| G3 | 新建模板草稿触发关窗保护 | PASS（仅此路径） |
+| R1 | Cmd+Q 弹确认框，取消后保留草稿 | PASS |
+| R2 | Cmd+Q 放弃修改，重启后未创建 | PASS |
+| R3 | Cmd+Q 保存并关闭，重启后订单存在且不重复 | PASS |
+| K1 | 订单列表键盘光标自动滚动 | PASS |
+| M1 | 菜单栏「退出」触发未保存草稿保护 | PASS |
+| R4 | 双草稿同时保存 | **NOT RUN**（UI 离页保护使前提无法形成，保留原状） |
+
+### 1.2 问题编号终态
+
+| 编号 | 状态 | 依据 |
+|---|---|---|
+| `DEV06A-CLOSE-01` | **CLOSED** | R1/R2/R3 实机 PASS；根因（默认 Quit 走 `terminate:`）已修复为自定义菜单项 |
+| `DEV06A-SAFE-01` | **CLOSED** | 5 条页面可达性集成测试 + 全局多草稿防御测试；R4 保留 NOT RUN |
+| `DEV06A-KEY-01` | **CLOSED** | K1 实机 PASS |
+| `DEV06A-DOCK-01` | **OPEN / P1 / v1.0 发布阻断** | Dock 退出仍走 `terminate:`，见 `DEV06A-DOCK-TECH-NOTE.md` |
+
+历史失败（命令 D）与修复过程完整保留在 `DEV06A-FIX-RESULTS.md`；
+本轮把其中"Cmd+Q 未经实机验证"的旧描述统一改成了最新结论，证据段落未删。
+
+---
+
+## 2. 主题架构与设计令牌
+
+### 2.1 现状审计结论
+
+- `src/styles.css` 已有完整变量层（`--bg / --surface / --border / --text / --accent / --danger / --ok / --warn` 等），
+  浅色主题本来就不是硬编码；
+- 但有 6 处硬编码色（`#bcd6f0` 选中描边、`#e7c3bc` 危险描边、`#eceff3`/`#6b7783` 中性块与弱文字、
+  查看器的 `#e7eff7`/`#93a8bc`），深色下会变成浅底浅字；
+- 主题设置键在 `settings.rs` 里已有占位（`active_light_theme` / `active_dark_theme`），但没有模式与读写接口。
+
+### 2.2 本轮改动
+
+新增令牌：`--border-active`、`--danger-border`、`--neutral-soft`、`--text-faint`、
+`--viewer-bg/text/muted`，并把上述 6 处硬编码全部替换成变量。
+
+`[data-theme="dark"]` 是一份**独立配色**，不是反相：
+
+| 令牌 | 浅色 | 深色 |
+|---|---|---|
+| `--bg` | `#f5f8fc` | `#0f151b` |
+| `--surface` | `#ffffff` | `#182028` |
+| `--surface-alt` | `#edf3fa` | `#1f2a34` |
+| `--border` / `-strong` | `#d3e0ee` / `#b7cbe0` | `#2b3947` / `#3b4d5e` |
+| `--text` / `--muted` | `#16283c` / `#5a7189` | `#e6edf4` / `#a3b4c6` |
+| `--accent` | `#2c6fb5` | `#5aa7ea`（提亮以便深底可读） |
+| `--danger` / `--ok` / `--warn` | `#b4402f` / `#2f7d5b` / `#9a6b17` | `#e2836f` / `#63bd92` / `#d9ac57` |
+
+深色下额外处理：`color-scheme: dark`（原生下拉/滚动条）、输入框背景与占位符、
+滚动条滑块、图片查看器遮罩与工具栏按钮、QA 横幅改用 `--warn` 变量。
+
+---
+
+## 3. 主题模式与自定义范围
+
+| 模式 | 存储值 | 行为 |
+|---|---|---|
+| Arctic Blue | `arctic` | 默认；即现有视觉，未重新设计 |
+| 深色 | `dark` | 强制深色，不随系统 |
+| 跟随系统 | `system` | 由 `prefers-color-scheme` 决定，**存的就是 `system` 本身** |
+
+自定义范围：**仅强调色**（`#rrggbb`），影响 `--accent` / `--accent-soft` / `--accent-contrast`，
+即按钮、焦点描边、选中态、链接。没有加几十个独立色板——冻结规格只要求受控范围，这一点保守处理。
+
+`--accent-soft` 由强调色与主题底色混合得到（深色 22%、浅色 14%），
+`--accent-contrast` 自动在白字与深字之间取对比更高者。
+
+---
+
+## 4. 系统外观监听
+
+- `window.matchMedia("(prefers-color-scheme: dark)")`，`addEventListener("change")`；
+- 只订阅一次，卸载时 `removeEventListener`；
+- 启动时先读 `matches` 再渲染，所以不会先闪一版错误配色；
+- **手动选 `dark` 或 `arctic` 时，系统切换不改变外观**（`resolveTheme` 只在 `system` 时看系统值）；
+- 存储层永远只存模式，不存"上次观察到的深浅"。
+
+---
+
+## 5. 持久化与异常回退
+
+- 存储：现有 `app_settings` 表，键 `ui.theme_mode` / `ui.accent`，**无 schema 迁移**；
+- 新增命令 `ui_theme_get` / `ui_theme_set`（已加入命令白名单，总数 48）；
+- 校验在后端做：模式必须是三选一，强调色必须是 `#rrggbb` 或空，否则 `INVALID`；
+- 读取时再校验一次：未知模式 → 返回 `arctic`；非法颜色 → `null`；
+  **但不会改写库里的原始值**，`storedMode` 一并返回，界面可据此提示"配置损坏"；
+- 保存失败：`persistTheme` 返回错误文本，界面保留当前预览与草稿，不假装成功；
+- 恢复默认主题：只重置主题两项，不动工作时区、订单与其它设置；
+- 主题异常与业务数据完全隔离：主题是 `app_settings` 里的两行文本，损坏也不会触发重建或清空数据目录。
+
+---
+
+## 6. 可读性与对比度
+
+`checkAccent()` 只检查两件真会出问题的事：
+
+1. 强调色与背景对比 < 3:1 → 警告（焦点描边/链接可能看不清）；
+2. 强调色与其上文字对比 < 4.5:1 → 警告（按钮文字可能读不清）。
+
+用 WCAG 2.x 相对亮度公式计算，测试里用黑白（21:1）与同色（1:1）校准。
+**不声称整个应用通过无障碍认证**：只覆盖"主按钮文字"与"强调色 vs 背景"两个组合，
+未逐页审计所有文字层级。
+
+其它语义不只靠颜色：危险按钮有边框色 + 文案，状态标签有文字（制作中/已完成/已取消/逾期），
+QA 环境有横幅文字而不只是配色。
+
+---
+
+## 7. 侧边栏折叠
+
+- 入口：侧栏底部按钮，`aria-expanded` + `aria-label`（折叠侧边栏 / 展开侧边栏），带箭头图标；
+- 收起后 `grid-template-columns: 68px`，主内容区自动变宽；
+- 每项导航保留 `title` 与 `.nav-label`，折叠时 label 隐藏但 **可访问名称仍在**（测试断言 `getByRole("link", {name:"订单"})`）；
+- 折叠不触碰路由，不会触发离页确认；不遮挡 QA 横幅（横幅在 `<main>` 内）；
+- 状态存在 `localStorage["minidesk.sidebar"]`：这是视图偏好、不是业务数据，
+  没有为它新增数据库字段或配置系统；读写失败时退化为仅本次会话生效。
+
+---
+
+## 8. 自动化测试
+
+```text
+cargo test                → 282 passed / 0 failed
+cargo check --all-targets → 通过，0 warning
+npm run test              → 159 passed / 0 failed（22 个文件）
+npx tsc --noEmit          → 通过
+npm run build             → ✓ built in 145ms
+```
+
+本轮新增 27 条前端 + 2 条 Rust：
+
+| 文件 | 用例 | 覆盖 |
+|---|---|---|
+| `src/lib/theme.test.ts` | 11 | 模式校验、system 解析、颜色规范化、WCAG 对比度、文字色选择、soft 混合、applyTheme 写/清变量、默认值 |
+| `src/App.theme.test.tsx` | 6 | 默认 Arctic、保存深色后不被系统覆盖、跟随系统实时切换、强调色写入与清除、启动读取已存主题、损坏模式回退 |
+| `src/App.sidebar.test.tsx` | 4 | 折叠/展开、`aria-expanded`、导航可访问名与 title、localStorage 持久化、重挂载保持 |
+| `src/pages/SettingsPage.theme.test.tsx` | 6 | 预览不写库、保存写库并清草稿、放弃回滚、恢复默认仍需保存、非法颜色提示、对比度警告 |
+| `src-tauri/src/commands/theme.rs` | 2 | 模式白名单、颜色必须 `#rrggbb` |
+
+回归：原有 132 条前端用例全绿（关窗/多草稿/快捷键/KEY-01/CSV/统计/附件），
+Rust 280 → 282 只增不减。
+
+> 一处修正：`App.close.test.tsx` 里 `expect(invoke).not.toHaveBeenCalled()` 因为
+> App 启动会调用 `ui_theme_get` 而失效，已收紧为 `not.toHaveBeenCalledWith("confirm_close")`。
+> 这是断言精度问题，不是行为变化。
+
+---
+
+## 9. 真实 macOS 仍需确认（NOT VERIFIED）
+
+| # | 项目 |
+|---|---|
+| 1 | 深色主题的实际观感（对比、层次、图片查看器、滚动条） |
+| 2 | 切换深色后重启，主题是否保留 |
+| 3 | 跟随系统时切换 macOS 外观，是否实时变化 |
+| 4 | 手动选深色后切换系统外观，是否**不**变 |
+| 5 | 自定义强调色后的按钮/焦点/选中态是否协调 |
+| 6 | 恢复默认主题是否真的回到 Arctic Blue |
+| 7 | 侧边栏折叠后的排版、图标辨认与 tooltip |
+| 8 | 窄窗口（约 900px 宽）下折叠/展开是否挤压或溢出 |
+| 9 | 主题草稿未保存时，红色按钮与 Cmd+Q 是否照样弹出确认 |
+| 10 | 深色下模态、确认框、图片查看器文字是否可读 |
+
+我可以证明代码路径与 DOM/状态行为，**不能证明像素**（无辅助访问与录屏权限）。
+
+---
+
+## 10. 正式数据隔离与指纹
+
+| 项 | 开工前 | 收工后 |
+|---|---|---|
+| 活动代际 | `gen-c00a879220964299af7adcef8b9fc1c5` | 同 |
+| schema | v3 | v3（**无迁移**） |
+| 订单 / 客户 / 模板 / 附件 | 4 / 1 / 2 / 2 | 4 / 1 / 2 / 2 |
+| 事件（completed） | 23（4） | 23（4） |
+| 编号高水位 | `state/highwater.sqlite` | 未触碰 |
+
+- 本轮全部测试在 `tempfile` 与 jsdom 中；QA 只启动，未重建 seeded、未清空 clean。
+- 主题写入只发生在 `app_settings` 两行；正式库从未被 QA 命令指向。
+
+---
+
+## 11. DOCK-01
+
+保持 **OPEN / P1 / v1.0 发布阻断**，本轮未修改 AppDelegate、未注入原生钩子、
+未改动退出主流程。技术方案与授权边界见 `DEV06A-DOCK-TECH-NOTE.md`。
+
+补充一条本轮新增的风险：**主题草稿同样会在 Dock 退出时丢失**（它登记在同一个 guard 里，
+Dock 退出绕过整个确认流程）。这条与 DEV-06A 的结论一致，不是新漏洞，但影响面扩大了。
+
+---
+
+## 12. Git 提交
+
+见文末（分组提交后补）：
+
+```text
+feat(theme): theme modes, tokens and controlled accent colour
+feat(settings): theme editor with preview, validation and draft guard
+feat(layout): collapsible sidebar with icon navigation
+test/docs: theme, sidebar and settings suites plus DEV-06B report
+```
+
+---
+
+## 13. 已知限制与未完成事项
+
+1. **Dock 退出仍绕过保护**（P1，见第 11 节）。
+2. 主题只支持强调色自定义；正文/背景色不可调（有意保守）。
+3. 折叠状态存在 `localStorage`，不走设置备份；换机不跟随。
+4. 未做移动端适配：折叠是为桌面窄窗口准备的，不是响应式布局工程。
+5. 深色下的图片查看器沿用固定深底（本身就是深色设计），只微调边框与按钮。
+6. 对比度只覆盖两个组合，不是全站无障碍审计。
+7. 侧边栏折叠带动画（160ms），若你在实机觉得拖沓可直接去掉。
+
+---
+
+## 14. 你的实机验收步骤
+
+### 14.1 打开终端
+
+`Command + 空格` → 输入 `终端` → 回车。
+
+### 14.2 启动（用 Seeded，数据更丰富）
+
+```bash
+cd /Users/rinto/Documents/ChatGPT/ArtFlow-miniDesk
+lsof -ti:1421 | xargs kill -9 2>/dev/null
+npm run qa:seeded
+```
+
+确认三件事：终端有 `mode=qa scenario=seeded`、窗口标题含「QA 测试环境」、顶部有琥珀色横幅。
+
+### 14.3 主题
+
+| 步骤 | 操作 | 预期 |
+|---|---|---|
+| 1 | 左侧「设置」→「外观」 | 看到「用户选择 / 当前实际外观 / 已保存」三行 |
+| 2 | 点「深色」 | 界面立刻变深，但「已保存」仍显示 Arctic Blue |
+| 3 | 点「保存设置」 | 提示已保存，「已保存」变成深色 |
+| 4 | 关闭应用、重新 `npm run qa:seeded` | 打开仍是深色 |
+| 5 | 点「跟随系统」，保存，然后在「系统设置 → 外观」切换浅色/深色 | 应用实时跟着变 |
+| 6 | 再手动选「深色」保存，然后切换系统外观 | 应用**保持深色不变** |
+| 7 | 强调色选一个浅黄（如 `#ffe9a8`） | 出现对比度警告提示 |
+| 8 | 点「恢复默认主题」→ 保存 | 回到 Arctic Blue、强调色回默认 |
+
+### 14.4 侧边栏
+
+| 步骤 | 操作 | 预期 |
+|---|---|---|
+| 9 | 点侧栏底部「折叠」 | 侧栏变窄，只剩图标；鼠标悬停图标出现名称提示 |
+| 10 | 依次点几个图标 | 页面正常切换，当前页高亮仍在 |
+| 11 | 点「展开」 | 恢复原宽度 |
+| 12 | 把窗口拖窄到约 900px 宽，再折叠 | 主内容不被压坏、不出现横向滚动 |
+
+### 14.5 主题草稿保护
+
+| 步骤 | 操作 | 预期 |
+|---|---|---|
+| 13 | 「设置」里点「深色」但**不保存** | 界面已预览为深色 |
+| 14 | 点红色关闭按钮 | 弹出未保存确认，文案里能看到「主题」 |
+| 15 | 选「取消」 | 回到设置页，深色预览仍在 |
+| 16 | 按 `Cmd+Q` | 同样弹确认框 |
+
+### 14.6 停止与报错
+
+终端 `Ctrl + C`；卡住就 `pgrep -fl artflow-minidesk` 再 `kill <PID>`。
+
+报告给我：终端 `env ready` 那一行、你点了什么、期望、实际（截图最好）。
