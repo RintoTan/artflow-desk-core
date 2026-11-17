@@ -64,6 +64,22 @@ describe("侧边栏折叠", () => {
     expect(screen.getAllByRole("link")).toHaveLength(7);
   });
 
+  it("每个导航项都有统一的线性图标，描边与尺寸一致", async () => {
+    await renderShell();
+    const icons = document.querySelectorAll("svg.nav-icon");
+    // 7 个导航 + 折叠按钮上的箭头
+    expect(icons.length).toBe(8);
+    for (const icon of Array.from(icons)) {
+      const path = icon.querySelector("path");
+      expect(path?.getAttribute("stroke-width") ?? icon.getAttribute("stroke-width")).toBe("1.8");
+      expect(icon.getAttribute("aria-hidden")).toBe("true");
+    }
+    // 每个导航链接都含图标，且图标不抢可访问名称
+    for (const link of Array.from(document.querySelectorAll("a.nav-item"))) {
+      expect(link.querySelector("svg.nav-icon")).not.toBeNull();
+    }
+  });
+
   it("再次点击展开，状态可来回切换", async () => {
     await renderShell();
     await userEvent.click(screen.getByRole("button", { name: "折叠侧边栏" }));
