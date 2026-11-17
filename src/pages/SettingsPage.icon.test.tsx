@@ -43,6 +43,20 @@ vi.mock("../bridge/commands", async () => {
   };
 });
 
+/** jsdom 没有 matchMedia；系统外观固定为浅色，测试只关心主题草稿的联动 */
+function installMatchMedia() {
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
+}
+
 async function renderSettings() {
   const mod = await import("../lib/appIcon");
   await mod.loadIcon();
@@ -61,6 +75,7 @@ function card(name: string) {
 }
 
 beforeEach(() => {
+  installMatchMedia();
   iconInfo = { variant: "orbit", storedVariant: null, defaultVariant: "orbit" };
   iconSet.mockClear();
   iconGet.mockClear();
@@ -146,6 +161,35 @@ describe("设置页的应用图标", () => {
     const label = guardLabel(activeGuard()!);
     expect(label).toContain("主题");
     expect(label).toContain("应用图标");
+  });
+
+  it("卡片主图跟着主题明暗走：默认浅色，点深色立刻换深色版", async () => {
+    await renderSettings();
+    const art = () => card("Orbit").querySelector<HTMLImageElement>(".icon-card-art");
+    expect(art()?.dataset.iconAppearance).toBe("light");
+
+    await userEvent.click(screen.getByRole("button", { name: "深色" }));
+    expect(art()?.dataset.iconAppearance).toBe("dark");
+
+    // 放弃主题草稿后回到浅色
+    await userEvent.click(screen.getByRole("button", { name: "放弃修改" }));
+    expect(art()?.dataset.iconAppearance).toBe("light");
+  });
+
+  it("每张卡都给出浅色/深色两个静态预览", async () => {
+    await renderSettings();
+    for (const name of ["Orbit", "Layers", "Wave A"]) {
+      const minis = Array.from(card(name).querySelectorAll(".icon-card-mini"));
+      expect(minis).toHaveLength(2);
+      expect(minis.map((el) => (el as HTMLImageElement).dataset.iconAppearance)).toEqual([
+        "light",
+        "dark",
+      ]);
+    }
+    // 只是展示：主题模式仍然只有那一组三个按钮，没有多出第二套开关
+    expect(
+      screen.getAllByRole("button", { name: /^(Arctic Blue（默认浅色）|深色|跟随系统)$/ }),
+    ).toHaveLength(3);
   });
 
   it("明确标示 Dock 图标不会随设置变化", async () => {

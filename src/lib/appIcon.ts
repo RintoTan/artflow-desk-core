@@ -1,7 +1,11 @@
-import layersUrl from "../assets/app-icons/layers.svg";
-import orbitUrl from "../assets/app-icons/orbit.svg";
-import waveAUrl from "../assets/app-icons/wave-a.svg";
+import layersDark from "../assets/app-icons/layers-dark.svg";
+import layersLight from "../assets/app-icons/layers-light.svg";
+import orbitDark from "../assets/app-icons/orbit-dark.svg";
+import orbitLight from "../assets/app-icons/orbit-light.svg";
+import waveADark from "../assets/app-icons/wave-a-dark.svg";
+import waveALight from "../assets/app-icons/wave-a-light.svg";
 import { iconApi } from "../bridge/commands";
+import { currentChoice, resolveTheme, subscribeTheme, systemPrefersDark } from "./theme";
 
 /**
  * 应用图标变体：和主题一样分成"已保存 / 预览"两层。
@@ -28,11 +32,23 @@ export const ICON_DESCRIPTION: Record<IconVariant, string> = {
   "wave-a": "字母 A 与流动曲线",
 };
 
-const ICON_ASSET: Record<IconVariant, string> = {
-  orbit: orbitUrl,
-  layers: layersUrl,
-  "wave-a": waveAUrl,
+/**
+ * 每套图标都有浅色 / 深色两份，由当前**实际生效**的外观决定用哪一份。
+ * 两份是从同一份原始 SVG 只换色值派生的（scripts/make-icon-variants.mjs），
+ * 不是用 invert / filter 生成的。
+ */
+export type Appearance = "light" | "dark";
+
+const ICON_ASSET: Record<IconVariant, Record<Appearance, string>> = {
+  orbit: { light: orbitLight, dark: orbitDark },
+  layers: { light: layersLight, dark: layersDark },
+  "wave-a": { light: waveALight, dark: waveADark },
 };
+
+/** 主题的实际外观 → 图标配色。system 已经在上游被解析成具体明暗。 */
+export function appearanceOf(resolved: "arctic" | "dark"): Appearance {
+  return resolved === "dark" ? "dark" : "light";
+}
 
 let saved: IconVariant = DEFAULT_ICON_VARIANT;
 let preview: IconVariant | null = null;
@@ -72,8 +88,23 @@ export function normalizeIcon(raw: string | null | undefined): IconVariant {
   return raw === "layers" || raw === "wave-a" || raw === "orbit" ? raw : DEFAULT_ICON_VARIANT;
 }
 
-export function iconAsset(variant: IconVariant = currentIcon()): string {
-  return ICON_ASSET[variant];
+export function iconAsset(
+  variant: IconVariant = currentIcon(),
+  appearance: Appearance = "light",
+): string {
+  return ICON_ASSET[normalizeIcon(variant)][appearance];
+}
+
+/**
+ * 当前生效外观。复用主题模块的订阅（含系统外观监听），
+ * 不新建第二套 matchMedia 监听器。
+ */
+export function currentAppearance(): Appearance {
+  return appearanceOf(resolveTheme(currentChoice().mode, systemPrefersDark()));
+}
+
+export function subscribeAppearance(listener: () => void): () => void {
+  return subscribeTheme(listener);
 }
 
 /** 预览：只改渲染，不落库。 */

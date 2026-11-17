@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, describeError, type TimezoneInfo } from "../bridge/commands";
+import { AppIconImage } from "../components/AppIconImage";
 import {
   DEFAULT_ICON_VARIANT,
   ICON_DESCRIPTION,
@@ -7,13 +8,13 @@ import {
   ICON_VARIANTS,
   clearIconPreview,
   hasIconPreview,
-  iconAsset,
   persistIcon,
   savedIcon,
   setIconPreview,
   subscribeIcon,
   type IconVariant,
 } from "../lib/appIcon";
+import { useAppearance } from "../lib/useAppearance";
 import { usePageShortcuts } from "../lib/shortcuts";
 import { useUnsavedGuard } from "../lib/unsavedRegistry";
 import {
@@ -111,6 +112,9 @@ export default function SettingsPage() {
       }),
     [],
   );
+
+  // 卡片主图跟着"当前实际生效外观"走（主题预览已经过 setPreview，这里读到的是预览值）
+  const iconAppearance = useAppearance();
 
   const timezoneDirty =
     info !== null && draft.trim() !== "" && draft.trim() !== info.workingTimezone;
@@ -305,18 +309,33 @@ export default function SettingsPage() {
                   aria-label={`应用图标 ${ICON_LABEL[variant]}（${ICON_DESCRIPTION[variant]}）`}
                   onClick={() => previewIcon(variant)}
                 >
-                  <img
+                  <AppIconImage
                     className="icon-card-art"
-                    src={iconAsset(variant)}
-                    alt=""
-                    aria-hidden="true"
-                    width={64}
-                    height={64}
+                    variant={variant}
+                    appearance={iconAppearance}
+                    size={64}
                   />
                   <span className="icon-card-name">{ICON_LABEL[variant]}</span>
                   <span className="icon-card-desc">{ICON_DESCRIPTION[variant]}</span>
                   <span className="icon-card-state" aria-hidden={!selected}>
                     {selected ? (iconSaved === variant ? "已保存" : "未保存") : ""}
+                  </span>
+                  {/* 只做展示：两套配色都给你看一眼，不构成第二套主题设置 */}
+                  <span className="icon-card-pair">
+                    <AppIconImage
+                      className="icon-card-mini"
+                      variant={variant}
+                      appearance="light"
+                      size={26}
+                    />
+                    <span className="icon-card-pair-label">浅色</span>
+                    <AppIconImage
+                      className="icon-card-mini"
+                      variant={variant}
+                      appearance="dark"
+                      size={26}
+                    />
+                    <span className="icon-card-pair-label">深色</span>
                   </span>
                 </button>
               );
@@ -325,13 +344,13 @@ export default function SettingsPage() {
           <div className="icon-scale-row">
             <span className="muted">32px 实际大小</span>
             {ICON_VARIANTS.map((variant) => (
-              <img
+              <AppIconImage
                 key={variant}
                 className="icon-scale-item"
-                src={iconAsset(variant)}
+                variant={variant}
+                appearance={iconAppearance}
+                size={32}
                 alt={ICON_LABEL[variant]}
-                width={32}
-                height={32}
               />
             ))}
             <button

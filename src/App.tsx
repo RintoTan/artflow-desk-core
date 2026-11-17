@@ -3,12 +3,9 @@ import { NavLink, Outlet } from "react-router-dom";
 
 import { api, describeError } from "./bridge/commands";
 import UnsavedChangesDialog from "./components/UnsavedChangesDialog";
-import {
-  currentIcon,
-  iconAsset,
-  loadIcon,
-  subscribeIcon,
-} from "./lib/appIcon";
+import { AppIconImage } from "./components/AppIconImage";
+import { currentIcon, loadIcon, subscribeIcon } from "./lib/appIcon";
+import { useAppearance } from "./lib/useAppearance";
 import { subscribeModalStack, topModal } from "./lib/modalStack";
 import {
   applyTheme,
@@ -136,6 +133,8 @@ export default function App() {
 
   // 应用图标：只有品牌图标跟着变，主题色与状态色不受影响。
   const iconVariant = useSyncExternalStore(subscribeIcon, currentIcon, currentIcon);
+  // 明暗由主题模块给出（含 system 解析），这里只取结果
+  const appearance = useAppearance();
   useEffect(() => {
     void loadIcon();
   }, []);
@@ -320,12 +319,11 @@ export default function App() {
     <div className={collapsed ? "shell shell-sidebar-collapsed" : "shell"}>
       <aside className="sidebar">
         <div className="brand">
-          <img
+          <AppIconImage
             className="brand-mark"
-            src={iconAsset(iconVariant)}
-            alt=""
-            aria-hidden="true"
-            data-icon-variant={iconVariant}
+            variant={iconVariant}
+            appearance={appearance}
+            size={26}
           />
           <div className="brand-text">
             <strong>ArtFlow miniDesk</strong>
