@@ -1,128 +1,188 @@
-//! QA 沙箱：独立数据根目录的解析与守卫。
+//! QA 沙箱：独立应用标识 + 独立场景目录。
 //!
-//! 只解决一件事——让「测试数据」和「正式数据」在启动阶段就不可能混在一起：
+//! 设计取舍：**不使用环境变量覆盖数据目录**。
+//! 正式发布版如果接受任意路径，就等于给"把用户数据指到别处"开了后门，
+//! 一旦误设（或被人恶意设置）就可能覆盖真实台账。
 //!
-//! 1. **双钥匙**：`AF_MINIDESK_QA=1` 与 `AF_MINIDESK_QA_ROOT=<绝对路径>` 必须同时给出，
-//!    只给一个直接拒绝启动。避免"以为开了 QA，其实还在正式目录"。
-//! 2. **标记文件**：QA 根目录里必须有 `.qa-root` 且内容匹配。没有标记的目录（包括正式
-//!    数据目录）不会被当成 QA 环境，`qa_seed` 之外的任何写入都无法让它变成 QA。
-//! 3. **互相包含检查**：QA 根与正式数据目录在任一方向互相包含都拒绝。
-//! 4. **反向守卫**：正式启动时若发现正式数据目录里出现 QA 标记，也拒绝启动，
-//!    防止测试数据被当成正式台账使用。
+//! 因此改用结构性隔离：
 //!
-//! 这些判定只依赖路径与环境变量，不读数据库，因此在打开任何数据之前就能生效。
+//! 1. QA 用独立应用标识 `dev.artflow.minidesk.qa`，`app_data_dir()` 天然指向
+//!    `~/Library/Application Support/dev.artflow.minidesk.qa`，与正式目录是兄弟目录。
+//! 2. QA 模式下再按场景分子目录：`<qa>/seeded` 与 `<qa>/clean`，两套场景互不影响。
+//! 3. 场景名只接受 `seeded` / `clean` 两个白名单值，**不接受路径**，
+//!    所以即使变量被乱设，也只会落在 QA 目录内部。
+//! 4. 正式模式完全不读该变量；并且在正式目录里发现 QA 标记时拒绝启动（反向守卫）。
+//! 5. 路径比较前先做"最长存在祖先"的 canonicalize，符号链接别名绕不过去。
+//!
+//! 结果是：正式构建没有任何参数能改变它的数据目录；QA 构建只能在自己的目录内换场景。
 
-use std::ffi::OsStr;
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, AppResult};
 
-pub const QA_ROOT_ENV: &str = "AF_MINIDESK_QA_ROOT";
-pub const QA_FLAG_ENV: &str = "AF_MINIDESK_QA";
+pub const PRODUCTION_IDENTIFIER: &str = "dev.artflow.minidesk";
+pub const QA_IDENTIFIER: &str = "dev.artflow.minidesk.qa";
+pub const SCENARIO_ENV: &str = "AF_MINIDESK_QA_SCENARIO";
 pub const QA_MARKER_FILE: &str = ".qa-root";
 pub const QA_MARKER_BODY: &str = "artflow-minidesk-qa";
 
-/// 尽量取真实路径；不存在的路径保留原样，交给后续存在性检查报错。
-pub fn normalize(path: &Path) -> PathBuf {
-    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scenario {
+    /// 预置虚构数据，用于看复杂状态。
+    Seeded,
+    /// 空白环境，用于从零走流程（首次启动、建单、导图）。
+    Clean,
 }
 
-fn contains(parent: &Path, child: &Path) -> bool {
-    child.starts_with(parent)
-}
-
-/// 解析启动时应该使用的数据根。
-///
-/// - 返回 `Ok(None)`：正常模式，使用正式数据目录。
-/// - 返回 `Ok(Some(path))`：QA 模式，使用该目录。
-/// - 返回 `Err`：配置不合法，调用方必须**中止启动**而不是回退到正式目录。
-pub fn resolve_root(
-    production_root: &Path,
-    qa_root: Option<&OsStr>,
-    qa_flag: Option<&OsStr>,
-) -> AppResult<Option<PathBuf>> {
-    match (qa_root, qa_flag) {
-        (None, None) => {
-            let production = normalize(production_root);
-            if production.join(QA_MARKER_FILE).exists() {
-                return Err(AppError::env(format!(
-                    "正式数据目录里出现了 QA 标记（{}），拒绝启动：\
-                     这通常意味着测试数据被写进了正式目录。\
-                     请先确认数据来源，再手动删除该标记后重新启动。",
-                    QA_MARKER_FILE
-                )));
-            }
-            Ok(None)
+impl Scenario {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Scenario::Seeded => "seeded",
+            Scenario::Clean => "clean",
         }
-        (Some(_), None) => Err(AppError::env(format!(
-            "只设置了 {QA_ROOT_ENV}。QA 模式必须同时设置 {QA_FLAG_ENV}=1，否则拒绝启动。"
-        ))),
-        (None, Some(_)) => Err(AppError::env(format!(
-            "只设置了 {QA_FLAG_ENV}。QA 模式必须同时给出 {QA_ROOT_ENV}=<绝对路径>，\
-             不会默认使用正式数据目录。"
-        ))),
-        (Some(raw), Some(flag)) => {
-            if flag != "1" {
-                return Err(AppError::env(format!(
-                    "{QA_FLAG_ENV} 只接受 1，收到 {:?}",
-                    flag.to_string_lossy()
-                )));
-            }
-            let candidate = PathBuf::from(raw);
-            if !candidate.is_absolute() {
-                return Err(AppError::env(format!(
-                    "{QA_ROOT_ENV} 必须是绝对路径，收到 {:?}",
-                    candidate.display().to_string()
-                )));
-            }
-            verify_marker(&candidate)?;
+    }
 
-            let production = normalize(production_root);
-            let qa = normalize(&candidate);
-            if qa == production || contains(&production, &qa) || contains(&qa, &production) {
-                return Err(AppError::env(format!(
-                    "QA 根目录不能与正式数据目录互相包含：qa={} production={}",
-                    qa.display(),
-                    production.display()
-                )));
-            }
-            Ok(Some(qa))
+    pub fn parse(raw: &str) -> AppResult<Self> {
+        match raw.trim() {
+            "seeded" => Ok(Scenario::Seeded),
+            "clean" => Ok(Scenario::Clean),
+            other => Err(AppError::env(format!(
+                "{SCENARIO_ENV} 只接受 seeded 或 clean，收到 {other:?}；\
+                 这里是场景名，不是路径，目录不会因此改变。"
+            ))),
         }
     }
 }
 
-/// 校验一个目录确实是 QA 根（存在且带正确标记）。
-pub fn verify_marker(dir: &Path) -> AppResult<()> {
-    if !dir.is_dir() {
+/// 只有 QA 构建（独立标识）才允许进入 QA 模式。
+pub fn is_qa_identifier(identifier: &str) -> bool {
+    identifier == QA_IDENTIFIER
+}
+
+/// 场景名 → 该场景的数据根。白名单场景名，永远是 QA 目录的子目录。
+pub fn scenario_root(qa_app_data_dir: &Path, scenario: Scenario) -> PathBuf {
+    qa_app_data_dir.join(scenario.as_str())
+}
+
+/// 只在 QA 构建里调用。正式构建根本不读这个变量。
+pub fn scenario_from_env() -> AppResult<Scenario> {
+    match std::env::var(SCENARIO_ENV) {
+        Ok(value) => Scenario::parse(&value),
+        Err(std::env::VarError::NotPresent) => Ok(Scenario::Seeded),
+        Err(std::env::VarError::NotUnicode(_)) => Err(AppError::env(format!(
+            "{SCENARIO_ENV} 不是合法 UTF-8，拒绝启动"
+        ))),
+    }
+}
+
+/// 正式应用的数据目录（用于交叉检查；只依赖 HOME，不依赖当前进程身份）。
+pub fn production_data_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|home| {
+        PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join(PRODUCTION_IDENTIFIER)
+    })
+}
+
+/// 取"最长存在祖先"的 canonical 路径，再接回不存在的尾部。
+///
+/// 这样即使 `qa_root` 还不存在、或者中间某一段是符号链接，
+/// 比较结果也不会被别名骗过去。
+pub fn normalize(path: &Path) -> PathBuf {
+    let mut missing: Vec<OsString> = Vec::new();
+    let mut cursor = path.to_path_buf();
+    loop {
+        if let Ok(canon) = fs::canonicalize(&cursor) {
+            let mut out = canon;
+            for segment in missing.iter().rev() {
+                out.push(segment);
+            }
+            return out;
+        }
+        match (cursor.file_name(), cursor.parent()) {
+            (Some(name), Some(parent)) => {
+                missing.push(name.to_os_string());
+                cursor = parent.to_path_buf();
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
+/// QA 根不得与正式数据目录等价、嵌套或互为别名。
+pub fn ensure_not_production(qa_root: &Path) -> AppResult<()> {
+    ensure_isolated(qa_root, production_data_dir().as_deref())
+}
+
+/// 可注入正式目录的版本，供测试构造符号链接等场景。
+pub fn ensure_isolated(qa_root: &Path, production: Option<&Path>) -> AppResult<()> {
+    if let Some(production) = production {
+        let qa = normalize(qa_root);
+        let prod = normalize(&production);
+        if qa == prod || qa.starts_with(&prod) || prod.starts_with(&qa) {
+            return Err(AppError::env(format!(
+                "QA 数据根与正式数据目录重叠，拒绝启动：qa={} production={}",
+                qa.display(),
+                prod.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// 正式模式的反向守卫：正式目录里出现 QA 标记就不启动。
+pub fn guard_production_root(app_data_dir: &Path) -> AppResult<()> {
+    if app_data_dir.join(QA_MARKER_FILE).exists() {
         return Err(AppError::env(format!(
-            "QA 根目录不存在：{}。请先运行 qa_seed 初始化。",
-            dir.display()
+            "正式数据目录里出现 QA 标记（{}），拒绝启动：\
+             这通常意味着测试数据被写进了正式目录，请先确认数据来源。",
+            app_data_dir.join(QA_MARKER_FILE).display()
         )));
     }
-    let marker = dir.join(QA_MARKER_FILE);
-    match fs::read_to_string(&marker) {
-        Ok(body) if body.trim() == QA_MARKER_BODY => Ok(()),
-        Ok(_) => Err(AppError::env(format!(
-            "QA 标记内容不正确：{}。不做任何改动，请先检查该目录是什么。",
-            marker.display()
-        ))),
-        Err(_) => Err(AppError::env(format!(
-            "缺少 QA 标记 {}（{}）。没有标记的目录不会被当作 QA 环境，\
-             以免把正式数据目录当成测试环境。",
-            QA_MARKER_FILE,
-            dir.display()
-        ))),
-    }
+    Ok(())
 }
 
-/// 写入 QA 标记。只由 `qa_seed` 在用户显式初始化时调用。
+pub fn has_marker(dir: &Path) -> bool {
+    dir.join(QA_MARKER_FILE).is_file()
+}
+
 pub fn write_marker(dir: &Path) -> AppResult<()> {
     fs::create_dir_all(dir)?;
     fs::write(dir.join(QA_MARKER_FILE), format!("{QA_MARKER_BODY}\n"))?;
     Ok(())
 }
 
-pub fn has_marker(dir: &Path) -> bool {
-    dir.join(QA_MARKER_FILE).is_file()
+pub fn verify_marker(dir: &Path) -> AppResult<()> {
+    if !dir.is_dir() {
+        return Err(AppError::env(format!(
+            "QA 场景目录不存在：{}",
+            dir.display()
+        )));
+    }
+    match fs::read_to_string(dir.join(QA_MARKER_FILE)) {
+        Ok(body) if body.trim() == QA_MARKER_BODY => Ok(()),
+        Ok(_) => Err(AppError::denied(format!(
+            "{} 的 QA 标记内容不正确，拒绝执行任何改动",
+            dir.display()
+        ))),
+        Err(_) => Err(AppError::denied(format!(
+            "{} 缺少 QA 标记 {}，拒绝执行任何改动",
+            dir.display(),
+            QA_MARKER_FILE
+        ))),
+    }
+}
+
+/// `qa_seed` 与测试用：默认 QA 根（`~/Library/Application Support/dev.artflow.minidesk.qa/<scenario>`）。
+pub fn default_root(scenario: Scenario) -> AppResult<PathBuf> {
+    let home = std::env::var_os("HOME")
+        .ok_or_else(|| AppError::env("无法读取 HOME，不能定位 QA 目录"))?;
+    let base = PathBuf::from(home)
+        .join("Library")
+        .join("Application Support")
+        .join(QA_IDENTIFIER);
+    Ok(scenario_root(&base, scenario))
 }

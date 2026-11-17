@@ -21,6 +21,8 @@ pub struct EnvironmentStatus {
     pub root_path: String,
     /// true = 本次进程跑在 QA 沙箱里；界面必须显式标注，避免把测试数据当正式数据。
     pub qa_mode: bool,
+    /// `seeded` / `clean`；正式模式为 null。
+    pub qa_scenario: Option<String>,
     pub sqlite_version: String,
     pub journal_mode: String,
     pub working_timezone: String,
@@ -49,6 +51,7 @@ pub fn environment_status(state: State<'_, AppState>) -> AppResult<EnvironmentSt
         upgraded_from: outcome.upgraded_from,
         root_path: state.env.root().to_string_lossy().to_string(),
         qa_mode: state.qa_mode(),
+        qa_scenario: state.qa_scenario().map(|s| s.to_string()),
         sqlite_version: facts.sqlite_version,
         journal_mode: facts.journal_mode,
         working_timezone: settings::working_timezone(&conn)

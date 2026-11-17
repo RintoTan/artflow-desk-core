@@ -13,6 +13,8 @@ export type EnvironmentStatus = {
   rootPath: string;
   /** true = 当前进程跑在 QA 沙箱（后端总是返回；旧夹具可省略）。 */
   qaMode?: boolean;
+  /** `seeded` / `clean`；正式模式为 null。 */
+  qaScenario?: string | null;
   sqliteVersion: string;
   journalMode: string;
   workingTimezone: string;

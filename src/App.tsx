@@ -15,14 +15,15 @@ const NAV = [
 
 export default function App() {
   // QA 模式必须在界面上一眼可见：连不上后端时保持普通外观，不猜。
-  const [qaMode, setQaMode] = useState(false);
+  const [qa, setQa] = useState<{ scenario: string | null } | null>(null);
 
   useEffect(() => {
     let alive = true;
     api
       .status()
       .then((status) => {
-        if (alive) setQaMode(Boolean(status.qaMode));
+        if (!alive) return;
+        setQa(status.qaMode ? { scenario: status.qaScenario ?? null } : null);
       })
       .catch(() => {
         /* 状态查询失败不影响外壳渲染 */
@@ -39,7 +40,7 @@ export default function App() {
           <span className="brand-mark" aria-hidden="true" />
           <div>
             <strong>ArtFlow miniDesk</strong>
-            <small>{qaMode ? "QA 测试环境" : "本地委托台账"}</small>
+            <small>{qa ? "QA 测试环境" : "本地委托台账"}</small>
           </div>
         </div>
 
@@ -63,9 +64,10 @@ export default function App() {
       </aside>
 
       <main className="main">
-        {qaMode && (
+        {qa && (
           <p className="qa-banner" role="status">
-            QA 测试环境 · 数据目录与正式应用完全隔离，这里的订单不会出现在正式台账里
+            QA 测试环境（{qa.scenario === "clean" ? "空白场景" : "预置场景"}）·
+            数据目录与正式应用完全隔离，这里的订单不会出现在正式台账里
           </p>
         )}
         <Outlet />

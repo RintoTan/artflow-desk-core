@@ -9,7 +9,12 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "vitest run"
+    "test": "vitest run",
+    "qa:seeded": "tauri dev --config src-tauri/tauri.qa.conf.json",
+    "qa:clean": "AF_MINIDESK_QA_SCENARIO=clean tauri dev --config src-tauri/tauri.qa.conf.json",
+    "qa:seed": "cargo run --manifest-path src-tauri/Cargo.toml --bin qa_seed -- --scenario seeded",
+    "qa:seed:clean": "cargo run --manifest-path src-tauri/Cargo.toml --bin qa_seed -- --scenario clean",
+    "qa:rebuild": "cargo run --manifest-path src-tauri/Cargo.toml --bin qa_seed -- --scenario seeded --rebuild"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.4",

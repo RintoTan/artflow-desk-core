@@ -10,6 +10,7 @@ pub mod domain;
 pub mod error;
 pub mod infra;
 pub mod media;
+pub mod qa_dataset;
 pub mod store;
 
 use tauri::Manager;
@@ -21,27 +22,34 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let production_root = app
+            // 数据根只由"构建标识"决定：
+            // - 正式标识 → 正式目录，任何环境变量都不参与；
+            // - QA 标识  → <qa 目录>/<scenario>，场景名走白名单，不接受路径。
+            let identifier = app.config().identifier.clone();
+            let app_data_dir = app
                 .path()
                 .app_data_dir()
                 .map_err(|e| format!("无法解析应用数据目录：{e}"))?;
 
-            // QA 沙箱：双钥匙 + 标记文件 + 互相包含检查，任一不满足都中止启动，
-            // 绝不回退到正式数据目录。
-            let qa_root = crate::store::qa::resolve_root(
-                &production_root,
-                std::env::var_os(crate::store::qa::QA_ROOT_ENV).as_deref(),
-                std::env::var_os(crate::store::qa::QA_FLAG_ENV).as_deref(),
-            )?;
-            let qa_mode = qa_root.is_some();
-            let root = qa_root.unwrap_or_else(|| production_root.clone());
+            let (root, qa) = if crate::store::qa::is_qa_identifier(&identifier) {
+                let scenario = crate::store::qa::scenario_from_env()?;
+                let root = crate::store::qa::scenario_root(&app_data_dir, scenario);
+                crate::store::qa::ensure_not_production(&root)?;
+                crate::store::qa::write_marker(&root)?;
+                (root, Some(scenario))
+            } else {
+                crate::store::qa::guard_production_root(&app_data_dir)?;
+                (app_data_dir, None)
+            };
 
             // 打开环境即取得跨进程独占锁；此后整个进程生命周期都持有它。
-            let state = AppState::open_mode(&root, qa_mode)?;
+            let state = AppState::open_qa(&root, qa)?;
             let outcome = state.env.outcome();
             println!(
-                "[minidesk] env ready mode={} path={} generation={} schema=v{} first_run={} tz={}",
-                if qa_mode { "qa" } else { "production" },
+                "[minidesk] env ready mode={} scenario={} identifier={} path={} generation={} schema=v{} first_run={} tz={}",
+                if state.qa_mode() { "qa" } else { "production" },
+                state.qa_scenario().unwrap_or("-"),
+                identifier,
                 state.env.root().display(),
                 outcome.generation,
                 outcome.schema_version,

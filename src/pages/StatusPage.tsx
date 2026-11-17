@@ -59,7 +59,11 @@ export default function StatusPage() {
         <div className="grid">
           <Row
             label="运行模式"
-            value={status.qaMode ? "QA 测试环境（与正式数据隔离）" : "正式应用"}
+            value={
+              status.qaMode
+                ? `QA 测试环境 · ${status.qaScenario === "clean" ? "空白场景" : "预置场景"}（与正式数据隔离）`
+                : "正式应用"
+            }
           />
           <Row label="应用版本" value={status.appVersion} />
           <Row label="数据库结构" value={`v${status.schemaVersion}`} />

@@ -5,20 +5,21 @@ use std::path::Path;
 use crate::error::{AppError, AppResult};
 use crate::store::environment::Environment;
 use crate::store::highwater::HighWater;
+use crate::store::qa::Scenario;
 
 pub struct AppState {
     pub env: Environment,
     pub highwater: HighWater,
-    /// true = 本次进程跑在 QA 沙箱里。界面必须显示标识。
-    qa_mode: bool,
+    /// Some = 本次进程跑在 QA 沙箱的某个场景里。界面必须显示标识。
+    qa: Option<Scenario>,
 }
 
 impl AppState {
     pub fn open(root: &Path) -> AppResult<Self> {
-        Self::open_mode(root, false)
+        Self::open_qa(root, None)
     }
 
-    pub fn open_mode(root: &Path, qa_mode: bool) -> AppResult<Self> {
+    pub fn open_qa(root: &Path, qa: Option<Scenario>) -> AppResult<Self> {
         let env = Environment::open(root)?;
         let hw_path = env.layout().highwater_db();
         if !hw_path.exists() {
@@ -32,11 +33,15 @@ impl AppState {
         Ok(Self {
             env,
             highwater,
-            qa_mode,
+            qa,
         })
     }
 
     pub fn qa_mode(&self) -> bool {
-        self.qa_mode
+        self.qa.is_some()
+    }
+
+    pub fn qa_scenario(&self) -> Option<&'static str> {
+        self.qa.map(|s| s.as_str())
     }
 }
