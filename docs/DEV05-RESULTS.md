@@ -258,6 +258,25 @@ Rust 232 → **261**；前端 52 → **75**。
 
 ---
 
+## 12.5 本地 Git 提交
+
+```text
+7d963bd  feat(domain): deadline classification, dashboard metrics, history stats and CSV export
+7d288be  feat(commands): dashboard, stats and CSV export surface (45 commands)
+95dae6f  test: dashboard, stats and CSV coverage (29 cases)
+9797526  feat(ui): dashboard, stats page, risk badges and CSV export flows
+59c1c42  docs: DEV-05 results, spec index and remaining-work registry
+b367550  chore: track the status page route import   ← 提交信息写错了
+```
+
+`b367550` 实际内容只有一处：`tests/attachments_recovery.rs` 里去掉一个不需要的 `mut`
+（`let mut conn` → `let conn`），与"status page route import"毫无关系。
+信息写错了，我没有改写历史，在这里如实记录。
+
+未推送远程。
+
+---
+
 ## 13. DEV-06 前置条件
 
 1. 主题系统需要覆盖本轮新增的 `.metric-*`、`.chart*`、`.risk-*` 等类名——
