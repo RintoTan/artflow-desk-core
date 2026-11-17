@@ -2,7 +2,53 @@
 
 - 日期：2026-11-17
 - 范围：A 时间轴迁入详情 / B 统计图窄窗适配 / C 展示名称改为 ArtFlow Desk Core
-- 状态：三个工作包均已实现，自动化全绿；**WKWebView 实机观感待你确认**
+- 状态：**CLOSED / ACCEPTED**（用户 Mac 实机验收 R1–R5 完成，R4 为 NOT RUN，见 §0）
+
+---
+
+## 0. 最终实机验收（DEV-06C 关闭依据）
+
+| 编号 | 项目 | 结果 |
+|---|---|---|
+| R1 | 订单列表恢复简洁 | **PASS** |
+| R2 | 订单详情排期概览 | **PASS** |
+| R3 | 900px 十二个月图表 | **PASS** |
+| R4 | 530px 六加六图表 | **NOT RUN** |
+| R5 | ArtFlow Desk Core 展示名称 | **PASS** |
+
+### R4 = NOT RUN（不是 PASS，也不是 FAIL）
+
+用户反馈：当前 Mac 应用窗口**无法缩小到 530px**，无法构成该用例的前提。
+
+原因是配置层面的硬限制，已核实：
+
+```text
+src-tauri/tauri.conf.json      minWidth: 880   minHeight: 600
+src-tauri/tauri.qa.conf.json   minWidth: 880   minHeight: 600
+```
+
+所以 530px 窗口在当前构建里**物理上不可达**，这不是功能缺陷，也不该被记成失败。
+
+处理方式：
+
+- 保留 **R4 = NOT RUN**，不改判；
+- 保留 Blink 530px 的自动化几何测试作为**辅助证据**（`layout:check` 仍在 530 内容宽度上验证两排布局）；
+- 若后续版本放宽窗口下限、或出现更窄的平台，可在该平台重新执行；
+- **不阻断本次关闭**：两排模式已在 900px（R3）实机 PASS，530 只是同一模式的更窄变体。
+
+### 关闭范围（CLOSED / ACCEPTED）
+
+- 订单列表恢复 DEV-06B 已验收的信息结构；
+- 订单详情只读「排期概览」；
+- 十二个月统计图响应式布局（单排 / 两排）；
+- 浅色与深色统计图可读性；
+- 数值气泡与键盘访问；
+- 桌面端用户可见名称 **ArtFlow Desk Core**。
+
+**不在关闭范围**：正式 `.app` 与 Finder 名称（DEV-08）、运行时 Dock 图标（DEV-08 评估）、
+DOCK-01（保持风险登记）、CSV 汇总表头旧品牌名（待单独裁定）、530px WKWebView 实机（NOT RUN）。
+
+关闭后不再在 DEV-06C 名义下追加没有新故障证据的 UI 补丁。
 - 未改动：`--chart-*` 之外的主题令牌、统计口径、CSV、schema、identifier、Dock 相关一切
 
 ---
