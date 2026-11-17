@@ -82,13 +82,6 @@ export type OrderView = {
   capabilities: Capabilities;
 };
 
-export type ClientSummary = {
-  id: string;
-  displayName: string;
-  contact: string | null;
-  orderCount: number;
-};
-
 export type OrderEvent = {
   id: number;
   orderId: string;
@@ -180,7 +173,7 @@ export const api = {
   listOrders: () => invoke<OrderView[]>("list_orders"),
   getOrder: (orderId: string) => invoke<OrderView>("get_order", { orderId }),
   listOrderEvents: (orderId: string) => invoke<OrderEvent[]>("list_order_events", { orderId }),
-  listClients: () => invoke<ClientSummary[]>("list_clients"),
+  listClients: () => invoke<ClientView[]>("list_clients"),
   createOrder: (input: CreateOrderInput) => invoke<OrderView>("create_order", { input }),
   updateOrderDetails: (input: UpdateDetailsInput) =>
     invoke<OrderView>("update_order_details", { input }),
@@ -220,4 +213,120 @@ export const api = {
     orderedStageIds: string[];
     requestId?: string | null;
   }) => invoke<OrderView>("workflow_reorder_stages", { input }),
+};
+
+// ---------------------------------------------------------------- DEV-03
+
+export type QueueEntry = {
+  orderId: string;
+  code: string;
+  title: string;
+  queuePosition: number;
+  workState: WorkState;
+  currentStageTitle: string | null;
+  clientName: string | null;
+};
+
+export type QueueSnapshot = {
+  revision: number;
+  entries: QueueEntry[];
+};
+
+export type ClientView = {
+  id: string;
+  displayName: string;
+  contact: string | null;
+  note: string | null;
+  revision: number;
+  orderCount: number;
+  activeCount: number;
+  completedCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ClientOrderBrief = {
+  id: string;
+  code: string;
+  title: string;
+  status: OrderStatus;
+  currentStageTitle: string | null;
+  amountCents: number | null;
+  createdAt: string;
+};
+
+export type ClientDetail = {
+  client: ClientView;
+  orders: ClientOrderBrief[];
+};
+
+export type StepView = {
+  stepId: string;
+  title: string;
+  position: number;
+};
+
+export type TemplateView = {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  revision: number;
+  steps: StepView[];
+  stepCount: number;
+  usageCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StepInput = {
+  stepId?: string | null;
+  title: string;
+};
+
+export type ListDensity = "comfortable" | "compact";
+
+export const queueApi = {
+  list: () => invoke<QueueSnapshot>("queue_list"),
+  move: (input: { orderId: string; expectedQueueRevision: number; toIndex: number }) =>
+    invoke<QueueSnapshot>("queue_move", { input }),
+};
+
+export const clientApi = {
+  list: () => invoke<ClientView[]>("list_clients"),
+  create: (input: { displayName: string; contact?: string | null; note?: string | null }) =>
+    invoke<ClientView>("client_create", { input }),
+  update: (input: {
+    clientId: string;
+    expectedRevision: number;
+    displayName: string;
+    contact?: string | null;
+    note?: string | null;
+  }) => invoke<ClientView>("client_update", { input }),
+  detail: (clientId: string) => invoke<ClientDetail>("client_detail", { clientId }),
+};
+
+export const templateApi = {
+  list: () => invoke<TemplateView[]>("template_list"),
+  create: (input: { name: string; steps: StepInput[]; makeDefault: boolean }) =>
+    invoke<TemplateView>("template_create", { input }),
+  update: (input: {
+    templateId: string;
+    expectedRevision: number;
+    name: string;
+    steps: StepInput[];
+  }) => invoke<TemplateView>("template_update", { input }),
+  duplicate: (input: { sourceId: string; name: string }) =>
+    invoke<TemplateView>("template_duplicate", { input }),
+  remove: (input: {
+    templateId: string;
+    expectedRevision: number;
+    replacementDefaultId?: string | null;
+  }) => invoke<TemplateView[]>("template_delete", { input }),
+  setDefault: (input: { templateId: string }) =>
+    invoke<TemplateView[]>("template_set_default", { input }),
+};
+
+export const preferenceApi = {
+  get: (key: string) => invoke<string | null>("preference_get", { key }),
+  set: (key: string, value: string) => invoke<string | null>("preference_set", { key, value }),
 };

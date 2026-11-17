@@ -2,12 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useBlocker } from "react-router-dom";
 
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
+import { densityClass, dropIndex, filterOrders, type StatusFilter } from "../lib/ordersView";
 import {
   api,
   describeError,
   isConflict,
   newRequestId,
-  type ClientSummary,
+  preferenceApi,
+  queueApi,
+  type ClientView,
+  type ListDensity,
   type CreateOrderInput,
   type OrderEvent,
   type OrderView,
@@ -136,12 +140,17 @@ type PendingNav =
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<OrderView[]>([]);
-  const [clients, setClients] = useState<ClientSummary[]>([]);
+  const [clients, setClients] = useState<ClientView[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<OrderView | null>(null);
   const [events, setEvents] = useState<OrderEvent[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [timezone, setTimezone] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [density, setDensity] = useState<ListDensity>("comfortable");
+  const [queueRev, setQueueRev] = useState(0);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -212,15 +221,21 @@ export default function OrdersPage() {
     let alive = true;
     (async () => {
       try {
-        const [list, clientList, status] = await Promise.all([
+        const [list, clientList, status, queue, densityValue] = await Promise.all([
           api.listOrders(),
           api.listClients(),
           api.status(),
+          queueApi.list(),
+          preferenceApi.get("list_density"),
         ]);
         if (!alive) return;
         setOrders(list);
         setClients(clientList);
         setTimezone(status.workingTimezone);
+        setQueueRev(queue.revision);
+        if (densityValue === "compact" || densityValue === "comfortable") {
+          setDensity(densityValue);
+        }
         if (list.length > 0 && list[0]) {
           await selectOrder(list[0].id);
         }
@@ -234,6 +249,59 @@ export default function OrdersPage() {
       alive = false;
     };
   }, [selectOrder]);
+
+  const visible = useMemo(
+    () => filterOrders(orders, { query, status: statusFilter }),
+    [orders, query, statusFilter],
+  );
+  const activeQueue = useMemo(
+    () =>
+      orders
+        .filter((order) => order.status === "active")
+        .sort((a, b) => a.queuePosition - b.queuePosition),
+    [orders],
+  );
+
+  async function applyQueueMove(orderId: string, toIndex: number) {
+    setBusy(true);
+    setError(null);
+    try {
+      const snap = await queueApi.move({
+        orderId,
+        expectedQueueRevision: queueRev,
+        toIndex,
+      });
+      setQueueRev(snap.revision);
+      setOrders(await api.listOrders());
+    } catch (e) {
+      setError(describeError(e));
+      if (isConflict(e)) {
+        const snap = await queueApi.list().catch(() => null);
+        if (snap) setQueueRev(snap.revision);
+        setOrders(await api.listOrders().catch(() => orders));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function shiftQueue(orderId: string, delta: number) {
+    const index = activeQueue.findIndex((order) => order.id === orderId);
+    if (index < 0) return;
+    const target = index + delta;
+    if (target < 0 || target >= activeQueue.length) return;
+    void applyQueueMove(orderId, target);
+  }
+
+  async function toggleDensity() {
+    const next: ListDensity = density === "compact" ? "comfortable" : "compact";
+    setDensity(next);
+    try {
+      await preferenceApi.set("list_density", next);
+    } catch (e) {
+      setError(describeError(e));
+    }
+  }
 
   // ---------------------------------------------------------------- 动作
 
@@ -406,42 +474,133 @@ export default function OrdersPage() {
         <header className="panel-head compact">
           <div>
             <h2>订单</h2>
-            <p className="muted">{orders.length} 张 · 活动在前</p>
+            <p className="muted">
+              {visible.length}/{orders.length} 张 · 活动在前
+            </p>
           </div>
           <button type="button" className="btn btn-primary btn-sm" onClick={attemptCreate}>
             新建
           </button>
         </header>
 
-        {orders.length === 0 ? (
+        <div className="list-tools">
+          <input
+            className="list-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索标题 / 编号 / 客户"
+            aria-label="搜索订单"
+          />
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            onClick={() => void toggleDensity()}
+            aria-pressed={density === "compact"}
+            title={density === "compact" ? "切换到舒适模式" : "切换到紧凑模式"}
+          >
+            {density === "compact" ? "紧凑" : "舒适"}
+          </button>
+        </div>
+
+        <div className="filter-row" role="group" aria-label="按状态筛选">
+          {(
+            [
+              ["all", "全部"],
+              ["active", "活动"],
+              ["complete", "已完成"],
+              ["cancelled", "已取消"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={`filter-chip${statusFilter === value ? " filter-chip-active" : ""}`}
+              aria-pressed={statusFilter === value}
+              onClick={() => setStatusFilter(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {visible.length === 0 ? (
           <div className="empty">
-            <p>还没有订单。</p>
-            <p className="muted">点击「新建」创建第一张委托。</p>
+            <p>{orders.length === 0 ? "还没有订单。" : "没有符合筛选条件的订单。"}</p>
+            {orders.length === 0 && <p className="muted">点击「新建」创建第一张委托。</p>}
           </div>
         ) : (
-          <ul className="order-rows">
-            {orders.map((order) => (
-              <li key={order.id}>
-                <button
-                  type="button"
-                  className={`order-row${order.id === selectedId ? " order-row-active" : ""}`}
-                  onClick={() => attemptSelect(order.id)}
+          <ul className={`order-rows ${densityClass(density)}`}>
+            {visible.map((order) => {
+              const queueIndex = activeQueue.findIndex((item) => item.id === order.id);
+              const canReorder = order.status === "active" && statusFilter !== "complete" && statusFilter !== "cancelled";
+              return (
+                <li
+                  key={order.id}
+                  draggable={canReorder && busy === false}
+                  onDragStart={() => setDragIndex(queueIndex)}
+                  onDragOver={(e) => {
+                    if (!canReorder) return;
+                    e.preventDefault();
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (dragIndex === null) return;
+                    const target = queueIndex;
+                    const next = dropIndex(dragIndex, target, activeQueue.length);
+                    setDragIndex(null);
+                    if (next === null) return;
+                    void applyQueueMove(order.id, next);
+                  }}
+                  onDragEnd={() => setDragIndex(null)}
+                  className={dragIndex === queueIndex && queueIndex >= 0 ? "row-dragging" : undefined}
                 >
-                  <span className="order-row-top">
-                    <code className="order-code">{order.code}</code>
-                    <span className={`chip chip-${order.status}`}>{STATUS_LABEL[order.status]}</span>
-                  </span>
-                  <span className="order-row-title">{order.title}</span>
-                  <span className="order-row-meta">
-                    <span className={`dot dot-${order.workState}`} />
-                    {WORK_LABEL[order.workState]}
-                    {order.currentStageTitle ? ` · ${order.currentStageTitle}` : ""}
-                    {order.clientName ? ` · ${order.clientName}` : ""}
-                  </span>
-                </button>
-              </li>
-            ))}
+                  <button
+                    type="button"
+                    className={`order-row${order.id === selectedId ? " order-row-active" : ""}`}
+                    onClick={() => attemptSelect(order.id)}
+                  >
+                    <span className="order-row-top">
+                      <code className="order-code">{order.code}</code>
+                      <span className={`chip chip-${order.status}`}>{STATUS_LABEL[order.status]}</span>
+                    </span>
+                    <span className="order-row-title">{order.title}</span>
+                    <span className="order-row-meta">
+                      <span className={`dot dot-${order.workState}`} />
+                      {WORK_LABEL[order.workState]}
+                      {order.currentStageTitle ? ` · ${order.currentStageTitle}` : ""}
+                      {order.clientName ? ` · ${order.clientName}` : ""}
+                    </span>
+                  </button>
+                  {canReorder && activeQueue.length > 1 && (
+                    <span className="queue-tools">
+                      <button
+                        type="button"
+                        className="link-btn"
+                        disabled={busy || queueIndex <= 0}
+                        aria-label={`把 ${order.code} 上移`}
+                        onClick={() => shiftQueue(order.id, -1)}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="link-btn"
+                        disabled={busy || queueIndex >= activeQueue.length - 1}
+                        aria-label={`把 ${order.code} 下移`}
+                        onClick={() => shiftQueue(order.id, 1)}
+                      >
+                        ↓
+                      </button>
+                    </span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
+        )}
+
+        {statusFilter === "all" && query === "" && activeQueue.length > 1 && (
+          <p className="muted list-hint">拖动行、或用 ↑ ↓ 调整活动队列顺序；排序不影响订单编号。</p>
         )}
       </aside>
 
@@ -774,7 +933,7 @@ function DetailsForm({
   disabled,
 }: {
   draft: Draft | null;
-  clients: ClientSummary[];
+  clients: ClientView[];
   onChange: (next: Draft) => void;
   disabled: boolean;
 }) {
@@ -1103,7 +1262,7 @@ function CreateOrderPanel({
   onError,
   setBusy,
 }: {
-  clients: ClientSummary[];
+  clients: ClientView[];
   busy: boolean;
   onCancel: () => void;
   onCreated: (order: OrderView) => Promise<void>;
