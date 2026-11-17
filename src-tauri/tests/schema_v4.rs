@@ -101,7 +101,7 @@ fn v3_copy_upgrades_without_losing_data_or_defaults() {
 
     // 重新用当前程序打开 = 执行 v3 → v4。
     let env = common::open(&root);
-    assert_eq!(user_version(&env), 4);
+    assert_eq!(user_version(&env), migrations::APP_SCHEMA_VERSION);
     let conn = env.open_db().unwrap();
 
     let (title, source, amount): (String, Option<String>, Option<i64>) = conn
@@ -217,11 +217,12 @@ fn failed_v4_step_leaves_no_partial_schema() {
         }
     }
     let err = Environment::open_with(&root, &list, 4, Some(common::tz()));
+    // 注意：这里刻意只升到 4，验证"坏 v4 整步回滚"，与最高版本无关。
     assert!(err.is_err(), "坏迁移必须整体失败");
 
     // 重新用正式迁移表打开：应当能正常升到 v4，且没有半截列。
     let env = common::open(&root);
-    assert_eq!(user_version(&env), 4);
+    assert_eq!(user_version(&env), migrations::APP_SCHEMA_VERSION);
     let cols = columns(&env, "orders");
     assert_eq!(
         cols.iter().filter(|c| *c == "source").count(),

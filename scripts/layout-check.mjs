@@ -241,6 +241,54 @@ for (const [width, expectedMode] of [
   );
 }
 
+// 看板 / 表格：切换视图不得写业务数据，横向滚动只能发生在面板内部
+for (const [view, widths] of [
+  ["board", [1400, 900, 530]],
+  ["table", [900, 530]],
+]) {
+  for (const width of widths) {
+    const raw = execFileSync(
+      process.execPath,
+      ["scripts/layout-probe.mjs", URL, String(width), "/orders"],
+      { encoding: "utf8", env: { ...process.env, PROBE_SLOT: "1", PROBE_VIEW: view } },
+    );
+    const line = raw.split("\n").find((l) => l.startsWith("VIEW "));
+    const parsed = line ? JSON.parse(raw.slice(raw.indexOf("{", raw.indexOf("VIEW ")))) : null;
+    const g = parsed?.geom;
+    const problems = [];
+    if (!parsed?.clicked) problems.push("找不到视图切换控件");
+    else if (parsed.clicked.length !== 3) problems.push(`视图只有 ${parsed.clicked.length} 个`);
+    if (!g) problems.push("没有拿到几何数据");
+    else {
+      if (g.overflowX) problems.push(`页面横向溢出 ${g.pageScrollW} > ${g.innerW}`);
+      if (g.writeCalls.length) problems.push(`切换视图触发了业务写入：${g.writeCalls.join(",")}`);
+      if (g.cards > 0) problems.push("切到宽视图后卡片列表仍在 DOM 里");
+      if (view === "board") {
+        if (!g.board.exists) problems.push("看板没有渲染");
+        else {
+          if (g.board.cols < 2) problems.push(`看板只有 ${g.board.cols} 列（夹具失效）`);
+          if (g.board.minColW < 180) problems.push(`列宽 ${g.board.minColW}px < 180px`);
+          const shouldScroll = g.board.scrollW > g.board.clientW;
+          if (g.board.scrollsInside !== shouldScroll) problems.push("看板滚动状态异常");
+          if (width <= 900 && !g.board.scrollsInside) problems.push("窄窗下看板没有在面板内横向滚动");
+        }
+      } else if (!g.table.exists) {
+        problems.push("表格没有渲染");
+      } else {
+        if (!g.table.scrollsInside) problems.push("窄窗下表格没有在面板内横向滚动");
+        if (g.table.wrapClientW > g.innerW) problems.push("表格容器比视口还宽");
+      }
+    }
+    record(
+      `view:${view} @${width}`,
+      problems,
+      g?.board?.exists
+        ? `${g.board.cols} 列 / 最小列宽 ${g.board.minColW}px / 内部滚动 ${g.board.scrollsInside}`
+        : `表格 ${g?.table?.wrapClientW}px 容器内滚动 ${g?.table?.scrollsInside}`,
+    );
+  }
+}
+
 if (failures.length) {
   console.error(`\n${failures.length}/${checks} 项几何回归失败`);
   process.exit(1);

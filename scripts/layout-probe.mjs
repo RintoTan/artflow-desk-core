@@ -76,6 +76,9 @@ const fixtures = {
       orderCount: 2,
       activeCount: 1,
       completedCount: 1,
+      knownAmountCents: 176000,
+      lastOrderAt: "2026-11-02T03:04:05.000Z",
+      tags: [{ id: "t1", name: "长期客户", clientCount: 1 }],
       createdAt: "2026-09-01T00:00:00.000Z",
       updatedAt: "2026-09-01T00:00:00.000Z",
     },
@@ -88,6 +91,9 @@ const fixtures = {
       orderCount: 1,
       activeCount: 1,
       completedCount: 0,
+      knownAmountCents: 0,
+      lastOrderAt: null,
+      tags: [],
       createdAt: "2026-09-02T00:00:00.000Z",
       updatedAt: "2026-09-02T00:00:00.000Z",
     },
@@ -127,10 +133,15 @@ const fixtures = {
     },
   ],
   list_order_events: [],
+  client_tag_list: [{ id: "t1", name: "长期客户", clientCount: 1 }],
   attachment_list: [],
 };
 
+const STAGE_TITLES = ["草稿", "线稿", "固有色", "细化", "最终调整"];
+
 function order(id, code, title, position) {
+  // 让四张单分布在不同阶段，看板才会有多列可量（横向滚动是否只发生在面板内）。
+  const stageIndex = (position - 1) % STAGE_TITLES.length;
   return {
     id,
     code,
@@ -138,13 +149,14 @@ function order(id, code, title, position) {
     clientId: "c1",
     clientName: "林小满",
     commissionType: "半身立绘",
-    amountCents: 88000,
+    source: position % 2 === 0 ? "米画师" : "画加",
+    amountCents: position === 3 ? null : 88000,
     note: "探针数据",
     status: "active",
     workState: "inProgress",
-    currentStageId: "s2",
-    currentStageTitle: "线稿",
-    currentStageIndex: 1,
+    currentStageId: `s${stageIndex + 1}`,
+    currentStageTitle: STAGE_TITLES[stageIndex],
+    currentStageIndex: stageIndex,
     stageCount: 5,
     stages: [
       { id: "s1", title: "草稿", position: 0, isCurrent: false },
@@ -248,8 +260,10 @@ if (process.env.PROBE_DARK === "1") {
 }
 
 const mockScript = `
+window.__MINIDESK_CALLS__ = [];
 window.__TAURI_INTERNALS__ = {
   invoke: async (cmd, args) => {
+    window.__MINIDESK_CALLS__.push(cmd);
     const table = ${JSON.stringify(fixtures)};
     const value = table[cmd];
     if (typeof value === "function") return value(args);
@@ -352,7 +366,9 @@ const expression = `(() => {
   const main = document.querySelector("main.main");
   const layout = document.querySelector(".orders-layout");
   const list = document.querySelector(".orders-list");
-  const detail = layout ? layout.children[1] : null;
+  // 必须按类名定位：布局的首个子节点可能是 <datalist> 之类的无盒元素，
+  // 用 children 序号会把列表当成详情，量出"自己和自己重叠"的假失败。
+  const detail = document.querySelector(".orders-detail");
   const rect = (el) => {
     if (!el) return null;
     const r = el.getBoundingClientRect();
@@ -619,7 +635,8 @@ if (process.env.PROBE_MUTATE) {
     const l = document.querySelector(".orders-layout");
     const list = document.querySelector(".orders-list");
     const rows = document.querySelector(".order-rows");
-    const detail = l ? l.children[1] : null;
+    // 用类名定位详情，不要用子节点序号：布局里可能插入 <datalist> 等无盒节点。
+    const detail = document.querySelector(".orders-detail");
     const rr = (e) => { if (!e) return null; const r = e.getBoundingClientRect(); return { y: Math.round(r.y), h: Math.round(r.height), bottom: Math.round(r.bottom) }; };
     const a = rr(list), b = rr(detail);
     return {
@@ -637,6 +654,68 @@ if (process.env.PROBE_MUTATE) {
     });
     console.log("MUTATE", step.slice(0, 72).padEnd(74), JSON.stringify(value.result?.result?.value));
   }
+}
+
+// PROBE_VIEW=board|table：切换到指定视图并测量几何，同时核对"切换视图没有业务写入"。
+if (process.env.PROBE_VIEW) {
+  const run = async (expression) => {
+    const value = await send("Runtime.evaluate", { expression, returnByValue: true });
+    return value.result?.result?.value;
+  };
+  const clicked = await run(`(() => {
+    const box = document.querySelector('[aria-label="切换订单视图"]');
+    if (!box) return null;
+    const target = Array.from(box.querySelectorAll("button")).find(
+      (b) => b.textContent.trim() === ${JSON.stringify(process.env.PROBE_VIEW === "board" ? "看板" : "表格")}
+    );
+    if (!target) return null;
+    target.click();
+    return Array.from(box.querySelectorAll("button")).map((b) => b.textContent.trim());
+  })()`);
+  await sleep(500);
+
+  const geom = await run(`(() => {
+    const root = document.documentElement;
+    const board = document.querySelector(".board");
+    const cols = board ? Array.from(board.querySelectorAll(".board-col")) : [];
+    const widths = cols.map((c) => Math.round(c.getBoundingClientRect().width));
+    const table = document.querySelector(".table-wrap");
+    const tableEl = document.querySelector(".order-table");
+    const wide = document.querySelector(".orders-wide");
+    const writeCalls = (window.__MINIDESK_CALLS__ || []).filter((cmd) =>
+      /^(create_order|update_order_details|advance_stage|rework_stage|start_work|undo_start_work|complete_order|cancel_order|reopen_order|queue_move|client_create|client_update|client_tag_\w+|attachment_\w+|workflow_\w+|template_\w+)$/.test(cmd)
+    );
+    return {
+      pageScrollW: root.scrollWidth,
+      innerW: window.innerWidth,
+      overflowX: root.scrollWidth > window.innerWidth + 1,
+      wideW: wide ? Math.round(wide.getBoundingClientRect().width) : null,
+      board: board
+        ? {
+            exists: true,
+            cols: cols.length,
+            minColW: widths.length ? Math.min(...widths) : 0,
+            scrollW: Math.round(board.scrollWidth),
+            clientW: Math.round(board.clientWidth),
+            scrollsInside: board.scrollWidth > board.clientWidth,
+          }
+        : { exists: false },
+      table: table
+        ? {
+            exists: true,
+            wrapScrollW: Math.round(table.scrollWidth),
+            wrapClientW: Math.round(table.clientWidth),
+            tableW: tableEl ? Math.round(tableEl.getBoundingClientRect().width) : 0,
+            scrollsInside: table.scrollWidth > table.clientWidth,
+          }
+        : { exists: false },
+      writeCalls,
+      cards: document.querySelectorAll(".order-row").length,
+      chips: Array.from(document.querySelectorAll(".view-switch button")).map((b) => b.textContent.trim()),
+    };
+  })()`);
+
+  console.log("VIEW", JSON.stringify({ clicked, geom }, null, 2));
 }
 
 // PROBE_TOOLTIP：模拟悬停长标题，验证气泡出现位置、是否被裁、滚动后是否收起。
