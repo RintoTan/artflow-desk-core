@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 
-import { api } from "./bridge/commands";
+import { api, describeError } from "./bridge/commands";
+import UnsavedChangesDialog from "./components/UnsavedChangesDialog";
+import { subscribeModalStack, topModal } from "./lib/modalStack";
+import { activeGuard, useHasUnsavedDraft } from "./lib/unsavedRegistry";
 
 const NAV = [
   { to: "/", label: "工作台", end: true },
@@ -13,9 +16,28 @@ const NAV = [
   { to: "/status", label: "数据环境" },
 ];
 
+type CloseKind = "window" | "quit";
+
+type TauriBridge = {
+  destroy: () => Promise<void>;
+  exit: () => Promise<void>;
+};
+
 export default function App() {
   // QA 模式必须在界面上一眼可见：连不上后端时保持普通外观，不猜。
   const [qa, setQa] = useState<{ scenario: string | null } | null>(null);
+  const [closeKind, setCloseKind] = useState<CloseKind | null>(null);
+  const [closeError, setCloseError] = useState<string | null>(null);
+  const [closeBusy, setCloseBusy] = useState(false);
+
+  const hasDraft = useHasUnsavedDraft();
+  const closingRef = useRef(false);
+  const closeInFlight = useRef(false);
+  const pendingCloseRef = useRef<CloseKind | null>(null);
+  const closeKindRef = useRef<CloseKind | null>(null);
+  const bridgeRef = useRef<TauriBridge | null>(null);
+
+  closeKindRef.current = closeKind;
 
   useEffect(() => {
     let alive = true;
@@ -32,6 +54,156 @@ export default function App() {
       alive = false;
     };
   }, []);
+
+  /**
+   * 真正关闭：程序化关闭会绕过下面的拦截，所以先置 closingRef，
+   * 保证"保存后关闭"不会再被自己的 onCloseRequested 拦一次（否则无限循环）。
+   */
+  const finishClose = useCallback(async (kind: CloseKind) => {
+    const bridge = bridgeRef.current;
+    closingRef.current = true;
+    if (!bridge) return;
+    if (kind === "quit") {
+      await bridge.exit();
+    } else {
+      await bridge.destroy();
+    }
+  }, []);
+
+  const openCloseDialog = useCallback(
+    (kind: CloseKind) => {
+      if (!activeGuard()) {
+        void finishClose(kind);
+        return;
+      }
+      setCloseError(null);
+      setCloseKind(kind);
+    },
+    [finishClose],
+  );
+
+  /**
+   * 关窗请求的入口（红色按钮与 Cmd+Q 共用一个通道）。
+   * - 已有其它模态打开时先记下来，等栈空了再问，避免同时出现两个保护弹窗；
+   * - 已经在问的时候再次点击不做任何事（不重复保存、不重复关闭）。
+   */
+  const requestClose = useCallback(
+    (kind: CloseKind) => {
+      if (closingRef.current) return;
+      if (closeKindRef.current !== null) return;
+      if (topModal() !== null) {
+        pendingCloseRef.current = kind;
+        return;
+      }
+      openCloseDialog(kind);
+    },
+    [openCloseDialog],
+  );
+
+  // 其它模态关掉后，把排队中的关窗请求补上。
+  useEffect(
+    () =>
+      subscribeModalStack(() => {
+        const pending = pendingCloseRef.current;
+        if (pending && topModal() === null) {
+          pendingCloseRef.current = null;
+          openCloseDialog(pending);
+        }
+      }),
+    [openCloseDialog],
+  );
+
+  // 真实 Tauri 事件接线：只在 Tauri 里注册，浏览器预览下保持安静。
+  useEffect(() => {
+    let disposed = false;
+    let unlistenClose: (() => void) | null = null;
+    let unlistenExit: (() => void) | null = null;
+
+    (async () => {
+      const core = await import("@tauri-apps/api/core");
+      if (!core.isTauri()) return;
+      const [windowApi, eventApi] = await Promise.all([
+        import("@tauri-apps/api/window"),
+        import("@tauri-apps/api/event"),
+      ]);
+      if (disposed) return;
+
+      const win = windowApi.getCurrentWindow();
+      bridgeRef.current = {
+        destroy: () => win.destroy(),
+        exit: async () => {
+          await core.invoke("confirm_close");
+        },
+      };
+
+      unlistenClose = await win.onCloseRequested((event) => {
+        if (closingRef.current) return;
+        // 拦下系统关闭，再由界面决定close/discard。
+        event.preventDefault();
+        requestClose("window");
+      });
+
+      // Cmd+Q 走的是应用退出链路，不是窗口关闭：由 Rust 侧拦下后发这个事件。
+      unlistenExit = await eventApi.listen("app://exit-requested", () => {
+        if (closingRef.current) return;
+        requestClose("quit");
+      });
+    })().catch(() => {
+      /* 非 Tauri 环境：没有桥，也就没有关窗拦截 */
+    });
+
+    return () => {
+      disposed = true;
+      unlistenClose?.();
+      unlistenExit?.();
+    };
+  }, [requestClose]);
+
+  async function handleSaveAndClose() {
+    const kind = closeKindRef.current;
+    if (!kind) return;
+    if (closeInFlight.current) return;
+    const guard = activeGuard();
+    if (!guard) {
+      await finishClose(kind);
+      return;
+    }
+    closeInFlight.current = true;
+    setCloseBusy(true);
+    setCloseError(null);
+    try {
+      const error = await guard.save();
+      if (error) {
+        // 保存失败：窗口保持打开，输入全部保留。
+        setCloseError(error);
+        return;
+      }
+      await finishClose(kind);
+    } catch (e) {
+      setCloseError(describeError(e));
+    } finally {
+      closeInFlight.current = false;
+      setCloseBusy(false);
+    }
+  }
+
+  async function handleDiscardAndClose() {
+    const kind = closeKindRef.current;
+    if (!kind) return;
+    if (closeInFlight.current) return;
+    closeInFlight.current = true;
+    try {
+      activeGuard()?.discard();
+      await finishClose(kind);
+    } finally {
+      closeInFlight.current = false;
+    }
+  }
+
+  function handleCancelClose() {
+    setCloseKind(null);
+    setCloseError(null);
+  }
 
   return (
     <div className="shell">
@@ -58,7 +230,7 @@ export default function App() {
         </nav>
 
         <footer className="sidebar-foot">
-          <span>DEV-01 数据基座</span>
+          <span>{hasDraft ? "有未保存的修改" : "DEV-06A 关窗保护"}</span>
           <span className="muted">未完成 v1.0</span>
         </footer>
       </aside>
@@ -72,6 +244,25 @@ export default function App() {
         )}
         <Outlet />
       </main>
+
+      <UnsavedChangesDialog
+        open={closeKind !== null}
+        title={closeKind === "quit" ? "退出前有未保存的修改" : "关闭窗口前有未保存的修改"}
+        detail={
+          closeKind === "quit"
+            ? "退出 ArtFlow miniDesk 会丢失尚未保存的修改。"
+            : "关闭这个窗口会丢失尚未保存的修改。"
+        }
+        saveLabel="保存并关闭"
+        discardLabel="放弃修改并关闭"
+        stayLabel="取消，继续编辑"
+        hint="按 Esc 等同于「取消，继续编辑」，不会丢失草稿。"
+        error={closeError}
+        busy={closeBusy}
+        onSaveAndLeave={handleSaveAndClose}
+        onDiscard={handleDiscardAndClose}
+        onStay={handleCancelClose}
+      />
     </div>
   );
 }

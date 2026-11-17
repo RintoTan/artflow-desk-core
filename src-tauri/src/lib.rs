@@ -13,13 +13,13 @@ pub mod media;
 pub mod qa_dataset;
 pub mod store;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use infra::state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // 数据根只由"构建标识"决定：
@@ -99,6 +99,7 @@ pub fn run() {
             }
 
             app.manage(state);
+            app.manage(infra::close::ExitGate::new());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -146,8 +147,20 @@ pub fn run() {
             commands::stats::dashboard_completed_events,
             commands::stats::stats_report,
             commands::stats::export_summary_csv,
-            commands::stats::export_orders_csv
+            commands::stats::export_orders_csv,
+            infra::close::confirm_close
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("ArtFlow miniDesk 启动失败");
+
+    // Cmd+Q 与应用退出走这里：没被授权就拦下，交给界面问用户。
+    app.run(|handle, event| {
+        if let tauri::RunEvent::ExitRequested { api, .. } = event {
+            let gate = handle.state::<infra::close::ExitGate>();
+            if !gate.is_allowed() {
+                api.prevent_exit();
+                let _ = handle.emit("app://exit-requested", ());
+            }
+        }
+    });
 }

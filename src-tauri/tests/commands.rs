@@ -47,6 +47,7 @@ const APPROVED: &[&str] = &[
     "stats_report",
     "export_summary_csv",
     "export_orders_csv",
+    "confirm_close",
 ];
 
 /// 解析 `generate_handler![...]` 并取每项最后一段标识符。

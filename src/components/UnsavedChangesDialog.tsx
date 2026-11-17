@@ -11,6 +11,12 @@ type Props = {
   error?: string | null;
   /** 父组件正在处理（保存中），期间禁用操作并阻止重复导航 */
   busy?: boolean;
+  /** 文案可覆盖：关窗确认复用同一个对话框，但不该写"离开" */
+  title?: string;
+  saveLabel?: string;
+  discardLabel?: string;
+  stayLabel?: string;
+  hint?: string;
   onSaveAndLeave: () => void | Promise<void>;
   onDiscard: () => void | Promise<void>;
   onStay: () => void;
@@ -32,6 +38,11 @@ export default function UnsavedChangesDialog({
   detail,
   error,
   busy = false,
+  title = "有尚未保存的修改",
+  saveLabel = "保存并离开",
+  discardLabel = "放弃修改",
+  stayLabel = "继续编辑",
+  hint = "按 Esc 等同于「继续编辑」，不会丢失草稿。",
   onSaveAndLeave,
   onDiscard,
   onStay,
@@ -146,7 +157,7 @@ export default function UnsavedChangesDialog({
         onKeyDown={handleKeyDown}
       >
         <h2 id={TITLE_ID} className="modal-title">
-          有尚未保存的修改
+          {title}
         </h2>
         <p id={DESC_ID} className="modal-body">
           {detail ?? "离开当前页面会丢失尚未保存的资料修改。"}
@@ -165,7 +176,7 @@ export default function UnsavedChangesDialog({
             disabled={locked}
             onClick={() => runOnce(onSaveAndLeave)}
           >
-            保存并离开
+            {saveLabel}
           </button>
           <button
             type="button"
@@ -173,7 +184,7 @@ export default function UnsavedChangesDialog({
             disabled={locked}
             onClick={() => runOnce(onDiscard)}
           >
-            放弃修改
+            {discardLabel}
           </button>
           <button
             type="button"
@@ -182,11 +193,11 @@ export default function UnsavedChangesDialog({
             disabled={locked}
             onClick={() => runOnce(onStay)}
           >
-            继续编辑
+            {stayLabel}
           </button>
         </div>
 
-        <p className="modal-hint">按 Esc 等同于「继续编辑」，不会丢失草稿。</p>
+        <p className="modal-hint">{hint}</p>
       </div>
     </div>,
     document.body,

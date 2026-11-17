@@ -36,6 +36,14 @@ export function isTopModal(id: string): boolean {
   return topModal() === id;
 }
 
+/** 供外壳监听"栈何时空了"（例如把待处理的关窗请求补上）。 */
+export function subscribeModalStack(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
 /** 测试用：清空栈，避免用例之间互相影响。 */
 export function resetModalStack(): void {
   stack = [];
