@@ -93,6 +93,7 @@ vi.mock("../bridge/commands", async () => {
       }),
       updateOrderDetails: vi.fn(),
     },
+    templateApi: { list: async () => [] },
     queueApi: { list: queueList, move: queueMove },
     attachmentApi: {
       list: async () => [],

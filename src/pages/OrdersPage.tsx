@@ -22,8 +22,10 @@ import {
   preferenceApi,
   queueApi,
   statsApi,
+  templateApi,
   type ClientView,
   type ListDensity,
+  type TemplateView,
   type CreateOrderInput,
   type OrderEvent,
   type OrderView,
@@ -153,6 +155,7 @@ type PendingNav =
 export default function OrdersPage() {
   const [orders, setOrders] = useState<OrderView[]>([]);
   const [clients, setClients] = useState<ClientView[]>([]);
+  const [templates, setTemplates] = useState<TemplateView[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<OrderView | null>(null);
   const [events, setEvents] = useState<OrderEvent[]>([]);
@@ -240,9 +243,10 @@ export default function OrdersPage() {
     let alive = true;
     (async () => {
       try {
-        const [list, clientList, status, queue, densityValue] = await Promise.all([
+        const [list, clientList, templateList, status, queue, densityValue] = await Promise.all([
           api.listOrders(),
           api.listClients(),
+          templateApi.list(),
           api.status(),
           queueApi.list(),
           preferenceApi.get("list_density"),
@@ -250,13 +254,18 @@ export default function OrdersPage() {
         if (!alive) return;
         setOrders(list);
         setClients(clientList);
+        setTemplates(templateList);
         setTimezone(status.workingTimezone);
         setQueueRev(queue.revision);
         if (densityValue === "compact" || densityValue === "comfortable") {
           setDensity(densityValue);
         }
-        if (list.length > 0 && list[0]) {
-          await selectOrder(list[0].id);
+        // 从工作台/统计页带着 orderId 跳进来时，必须选中那一张，
+        // 不能因为"默认选第一张"把它覆盖掉（S3 的根因就是这个覆盖）。
+        const requested = params.get("orderId");
+        const targetId = requested ?? list[0]?.id;
+        if (targetId) {
+          await selectOrder(targetId);
         }
       } catch (e) {
         if (alive) setError(describeError(e));
@@ -727,6 +736,7 @@ export default function OrdersPage() {
         {creating ? (
           <CreateOrderPanel
             clients={clients}
+            templates={templates}
             busy={busy}
             onCancel={() => setCreating(false)}
             onCreated={async (order) => {
@@ -1452,6 +1462,7 @@ function EventTimeline({
 
 function CreateOrderPanel({
   clients,
+  templates,
   busy,
   onCancel,
   onCreated,
@@ -1459,6 +1470,7 @@ function CreateOrderPanel({
   setBusy,
 }: {
   clients: ClientView[];
+  templates: TemplateView[];
   busy: boolean;
   onCancel: () => void;
   onCreated: (order: OrderView) => Promise<void>;
@@ -1468,6 +1480,13 @@ function CreateOrderPanel({
   const [title, setTitle] = useState("");
   const [clientMode, setClientMode] = useState<"none" | "existing" | "new">("none");
   const [clientId, setClientId] = useState("");
+  // 默认选中当前默认模板；用户可主动切换（D-00-07）
+  const defaultTemplateId = templates.find((t) => t.isDefault)?.id ?? templates[0]?.id ?? "";
+  const [templateId, setTemplateId] = useState(defaultTemplateId);
+  // 模板列表可能晚于面板挂载才到达，到了再补上默认值，避免下拉显示与实际提交不一致。
+  useEffect(() => {
+    if (templateId === "" && defaultTemplateId !== "") setTemplateId(defaultTemplateId);
+  }, [defaultTemplateId, templateId]);
   const [newClientName, setNewClientName] = useState("");
   const [commissionType, setCommissionType] = useState("");
   const [amount, setAmount] = useState("");
@@ -1495,6 +1514,7 @@ function CreateOrderPanel({
         plannedStartDate: startDate === "" ? null : startDate,
         plannedDeliveryDate: deliveryDate === "" ? null : deliveryDate,
         note: note.trim() === "" ? null : note,
+        templateId: templateId === "" ? null : templateId,
         requestId,
       });
       await onCreated(order);
@@ -1564,6 +1584,28 @@ function CreateOrderPanel({
             />
           </label>
         )}
+
+        {/* 说明文字放在 label 之外：否则它会被算进 select 的可访问名称里 */}
+        <div className="field">
+          <label htmlFor="create-order-template">
+            <span>制作流程</span>
+          </label>
+          <select
+            id="create-order-template"
+            value={templateId}
+            onChange={(e) => setTemplateId(e.target.value)}
+            disabled={busy || templates.length === 0}
+          >
+            {templates.length === 0 && <option value="">（使用默认流程）</option>}
+            {templates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.name}（{template.stepCount} 个阶段）
+                {template.isDefault ? " · 默认" : ""}
+              </option>
+            ))}
+          </select>
+          <p className="hint">创建时会把该流程的阶段复制成这张订单的独立流程。</p>
+        </div>
 
         <label className="field">
           <span>委托类型</span>
