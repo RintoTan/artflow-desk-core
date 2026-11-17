@@ -41,6 +41,10 @@ pub struct AttachmentView {
     pub display_name: Option<String>,
     pub note: Option<String>,
     pub tag: Option<String>,
+    /// NULL = 尚未分类；reference = 参考素材；final = 画师标记的成品。
+    pub role: Option<String>,
+    /// 是否允许出现在本机默认画廊；旧附件一律 0。
+    pub gallery_visible: bool,
     pub mime_type: String,
     pub byte_size: i64,
     pub sha256: String,
@@ -186,7 +190,8 @@ fn read_view(
     let row = conn
         .query_row(
             "SELECT id, order_id, original_name, display_name, note, tag, rel_path,
-                    thumb_rel_path, mime_type, byte_size, sha256, width, height, state, created_at
+                    thumb_rel_path, mime_type, byte_size, sha256, width, height, state, created_at,
+                    role, gallery_visible
              FROM attachments WHERE id = ?1",
             [attachment_id],
             |r| {
@@ -206,6 +211,8 @@ fn read_view(
                     r.get::<_, Option<i64>>(12)?,
                     r.get::<_, String>(13)?,
                     r.get::<_, String>(14)?,
+                    r.get::<_, Option<String>>(15)?,
+                    r.get::<_, i64>(16)?,
                 ))
             },
         )
@@ -232,6 +239,8 @@ fn read_view(
         display_name: row.3,
         note: row.4,
         tag: row.5,
+        role: row.15,
+        gallery_visible: row.16 == 1,
         mime_type: row.8,
         byte_size: row.9,
         sha256: row.10,
@@ -1050,6 +1059,22 @@ pub struct UpdateAttachmentMetaInput {
     pub display_name: Option<String>,
     pub note: Option<String>,
     pub tag: Option<String>,
+    /// 三态：缺省（不改）/ null（清回未分类）/ "reference" / "final"。
+    /// 用 Option<Option<String>> 区分"没传"和"传了 null"。
+    #[serde(default, deserialize_with = "deserialize_some")]
+    pub role: Option<Option<String>>,
+    /// 缺省 = 不改；传值则按布尔处理。
+    #[serde(default)]
+    pub gallery_visible: Option<bool>,
+}
+
+/// 让 `Option<Option<T>>` 在字段缺失时为 None、显式 null 时为 Some(None)。
+fn deserialize_some<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 fn clean_optional(raw: &Option<String>, max: usize, field: &str) -> AppResult<Option<String>> {
@@ -1078,9 +1103,53 @@ pub fn update_meta(
     let note = clean_optional(&input.note, 1000, "图片备注")?;
     let tag = clean_optional(&input.tag, 40, "分类标签")?;
 
+    // 目标角色：没传 = 保持原值；传 null = 回到未分类。
+    let current_role: Option<String> = conn
+        .query_row(
+            "SELECT role FROM attachments WHERE id = ?1",
+            [&input.attachment_id],
+            |r| r.get(0),
+        )
+        .optional()?
+        .ok_or_else(|| AppError::not_found("附件不存在"))?;
+    let role = match &input.role {
+        None => current_role,
+        Some(None) => None,
+        Some(Some(raw)) => {
+            let value = raw.trim();
+            if value.is_empty() {
+                None
+            } else if value == "reference" || value == "final" {
+                Some(value.to_string())
+            } else {
+                return Err(AppError::invalid("附件角色只能是 reference 或 final"));
+            }
+        }
+    };
+
+    // 只有明确标记为成品的附件才允许进入本机画廊。
+    // 这条跨列规则由领域层保证：实测 `ALTER TABLE ADD COLUMN` 的跨列 CHECK
+    // 不会被强制执行，因此不能只写在建表语句里。
+    let visible = input.gallery_visible.unwrap_or_else(|| {
+        conn.query_row(
+            "SELECT gallery_visible FROM attachments WHERE id = ?1",
+            [&input.attachment_id],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+            == 1
+    });
+    if visible && role.as_deref() != Some("final") {
+        return Err(AppError::invalid(
+            "只有标记为成品的附件才能设为画廊展示；请先把作品角色设为「成品」",
+        ));
+    }
+
     let changed = conn.execute(
-        "UPDATE attachments SET display_name = ?1, note = ?2, tag = ?3 WHERE id = ?4",
-        params![display, note, tag, input.attachment_id],
+        "UPDATE attachments SET display_name = ?1, note = ?2, tag = ?3, role = ?4,
+                gallery_visible = ?5
+         WHERE id = ?6",
+        params![display, note, tag, role, i64::from(visible), input.attachment_id],
     )?;
     if changed != 1 {
         return Err(AppError::not_found("附件不存在"));

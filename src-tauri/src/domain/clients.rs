@@ -17,11 +17,28 @@ pub struct ClientView {
     pub contact: Option<String>,
     pub note: Option<String>,
     pub revision: i64,
+    /// 当前关联订单数（含已完成与已取消；永久删除后随剩余订单重算）。
     pub order_count: i64,
     pub active_count: i64,
     pub completed_count: i64,
+    /// 已知委托金额合计（分）。NULL 金额不计入，也不当成 0。
+    /// 名字刻意不叫"实收"：这里没有任何收款事实。
+    pub known_amount_cents: i64,
+    /// 最近一次下单时间（UTC RFC3339，订单创建时间）；由前端按工作时时区格式化。
+    pub last_order_at: Option<String>,
+    pub tags: Vec<TagView>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// 客户标签：画师手工维护的分类，不参与任何自动分层。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagView {
+    pub id: String,
+    pub name: String,
+    /// 被多少客户使用；用于"删除仍在使用"的拒绝说明。
+    pub client_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -72,11 +89,14 @@ fn clean_optional(raw: &Option<String>, max: usize, field: &str) -> AppResult<Op
 }
 
 fn read_one(conn: &Connection, id: &str) -> AppResult<ClientView> {
-    conn.query_row(
+    let mut view = conn.query_row(
         "SELECT c.id, c.display_name, c.contact, c.note, c.revision,
                 (SELECT COUNT(*) FROM orders o WHERE o.client_id = c.id),
                 (SELECT COUNT(*) FROM orders o WHERE o.client_id = c.id AND o.status = 'active'),
                 (SELECT COUNT(*) FROM orders o WHERE o.client_id = c.id AND o.status = 'complete'),
+                (SELECT COALESCE(SUM(o.amount_cents), 0) FROM orders o
+                   WHERE o.client_id = c.id AND o.amount_cents IS NOT NULL),
+                (SELECT MAX(o.created_at) FROM orders o WHERE o.client_id = c.id),
                 c.created_at, c.updated_at
          FROM clients c WHERE c.id = ?1",
         [id],
@@ -90,13 +110,155 @@ fn read_one(conn: &Connection, id: &str) -> AppResult<ClientView> {
                 order_count: r.get(5)?,
                 active_count: r.get(6)?,
                 completed_count: r.get(7)?,
-                created_at: r.get(8)?,
-                updated_at: r.get(9)?,
+                known_amount_cents: r.get(8)?,
+                last_order_at: r.get(9)?,
+                tags: Vec::new(),
+                created_at: r.get(10)?,
+                updated_at: r.get(11)?,
             })
         },
     )
     .optional()?
-    .ok_or_else(|| AppError::not_found("客户不存在"))
+    .ok_or_else(|| AppError::not_found("客户不存在"))?;
+
+    view.tags = tags_of(conn, &view.id)?;
+    Ok(view)
+}
+
+/// 一个客户身上的标签（按名称排序）。
+pub fn tags_of(conn: &Connection, client_id: &str) -> AppResult<Vec<TagView>> {
+    let mut stmt = conn.prepare(
+        "SELECT t.id, t.name,
+                (SELECT COUNT(*) FROM client_tag_link l WHERE l.tag_id = t.id)
+         FROM client_tag_link l
+         JOIN client_tags t ON t.id = l.tag_id
+         WHERE l.client_id = ?1
+         ORDER BY t.name, t.id",
+    )?;
+    let rows = stmt
+        .query_map([client_id], |r| {
+            Ok(TagView {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                client_count: r.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// 全部标签（按名称排序），带使用计数。
+pub fn list_tags(conn: &Connection) -> AppResult<Vec<TagView>> {
+    let mut stmt = conn.prepare(
+        "SELECT t.id, t.name,
+                (SELECT COUNT(*) FROM client_tag_link l WHERE l.tag_id = t.id)
+         FROM client_tags t
+         ORDER BY t.name, t.id",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(TagView {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                client_count: r.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+fn clean_tag_name(raw: &str) -> AppResult<String> {
+    let name = raw.trim();
+    let count = name.chars().count();
+    if count == 0 {
+        return Err(AppError::invalid("标签名称不能为空"));
+    }
+    if count > 20 {
+        return Err(AppError::invalid("标签名称不能超过 20 字"));
+    }
+    Ok(name.to_string())
+}
+
+/// 新建标签。同名（含大小写与首尾空白归一后）直接拒绝，不做静默合并：
+/// 合并会让用户以为新建成功，实际挂到了别的标签上。
+pub fn create_tag(conn: &Connection, name: &str) -> AppResult<TagView> {
+    let name = clean_tag_name(name)?;
+    let existing: Option<String> = conn
+        .query_row("SELECT id FROM client_tags WHERE name = ?1", [&name], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    if existing.is_some() {
+        return Err(AppError::invalid(format!("标签「{name}」已存在")));
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = timezone::now_timestamp();
+    conn.execute(
+        "INSERT INTO client_tags (id, name, created_at) VALUES (?1, ?2, ?3)",
+        params![id, name, now],
+    )?;
+    Ok(TagView {
+        id,
+        name,
+        client_count: 0,
+    })
+}
+
+/// 删除标签。仍被客户使用时拒绝并说明用量，让用户先解除关联，
+/// 而不是让外键 CASCADE 静默抹掉关系。
+pub fn delete_tag(conn: &Connection, tag_id: &str) -> AppResult<()> {
+    let used: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM client_tag_link WHERE tag_id = ?1",
+            [tag_id],
+            |r| r.get(0),
+        )
+        .optional()?
+        .unwrap_or(0);
+    if used > 0 {
+        return Err(AppError::invalid(format!(
+            "该标签仍被 {used} 位客户使用，请先解除关联再删除"
+        )));
+    }
+    let changed = conn.execute("DELETE FROM client_tags WHERE id = ?1", [tag_id])?;
+    if changed != 1 {
+        return Err(AppError::not_found("标签不存在"));
+    }
+    Ok(())
+}
+
+/// 给客户挂标签。重复挂载视为成功（幂等），因为结果状态相同。
+pub fn link_tag(conn: &Connection, client_id: &str, tag_id: &str) -> AppResult<Vec<TagView>> {
+    let client: Option<String> = conn
+        .query_row("SELECT id FROM clients WHERE id = ?1", [client_id], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    if client.is_none() {
+        return Err(AppError::not_found("客户不存在"));
+    }
+    let tag: Option<String> = conn
+        .query_row("SELECT id FROM client_tags WHERE id = ?1", [tag_id], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    if tag.is_none() {
+        return Err(AppError::not_found("标签不存在"));
+    }
+    conn.execute(
+        "INSERT OR IGNORE INTO client_tag_link (client_id, tag_id) VALUES (?1, ?2)",
+        params![client_id, tag_id],
+    )?;
+    tags_of(conn, client_id)
+}
+
+/// 解除关联。不存在的关系视为已达成目标（幂等）。
+pub fn unlink_tag(conn: &Connection, client_id: &str, tag_id: &str) -> AppResult<Vec<TagView>> {
+    conn.execute(
+        "DELETE FROM client_tag_link WHERE client_id = ?1 AND tag_id = ?2",
+        params![client_id, tag_id],
+    )?;
+    tags_of(conn, client_id)
 }
 
 pub fn list(conn: &Connection) -> AppResult<Vec<ClientView>> {

@@ -421,6 +421,8 @@ fn attachment_meta_can_be_edited_and_is_validated() {
             display_name: Some("  封面参考  ".into()),
             note: Some("客户指定配色".into()),
             tag: Some("配色".into()),
+            role: None,
+            gallery_visible: None,
         },
     )
     .unwrap();
@@ -439,6 +441,8 @@ fn attachment_meta_can_be_edited_and_is_validated() {
             display_name: Some(too_long),
             note: None,
             tag: None,
+            role: None,
+            gallery_visible: None,
         },
     )
     .unwrap_err();

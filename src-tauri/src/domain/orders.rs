@@ -32,6 +32,8 @@ pub struct OrderView {
     pub client_id: Option<String>,
     pub client_name: Option<String>,
     pub commission_type: Option<String>,
+    /// 接稿渠道；可空。旧订单为 NULL = 未设置，不回填虚构值。
+    pub source: Option<String>,
     pub amount_cents: Option<i64>,
     pub note: Option<String>,
     pub status: String,
@@ -83,6 +85,11 @@ fn clean_optional(raw: &Option<String>, max: usize, field: &str) -> AppResult<Op
             Ok(Some(trimmed.to_string()))
         }
     }
+}
+
+/// 来源是自由文本，但要挡住纯空白与超长值；不做枚举白名单（渠道会变）。
+pub fn clean_source(raw: &Option<String>) -> AppResult<Option<String>> {
+    clean_optional(raw, 40, "来源")
 }
 
 fn clean_date(raw: &Option<String>, field: &str) -> AppResult<Option<String>> {
@@ -156,7 +163,7 @@ pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
                 o.amount_cents, o.note, o.status, o.current_stage_id, o.queue_position,
                 o.planned_start_date, o.planned_delivery_date,
                 o.started_at, o.completed_at, o.cancelled_at,
-                o.revision, o.created_at, o.updated_at
+                o.revision, o.created_at, o.updated_at, o.source
          FROM orders o
          LEFT JOIN clients c ON c.id = o.client_id
          WHERE o.id = ?1",
@@ -182,6 +189,7 @@ pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
                 r.get::<_, i64>(16)?,
                 r.get::<_, String>(17)?,
                 r.get::<_, String>(18)?,
+                r.get::<_, Option<String>>(19)?,
             ))
         },
     )?;
@@ -219,6 +227,7 @@ pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
         client_id: row.3,
         client_name: row.4,
         commission_type: row.5,
+        source: row.19,
         amount_cents: row.6,
         note: row.7,
         status: row.8,
@@ -292,6 +301,8 @@ pub struct CreateOrderInput {
     #[serde(default)]
     pub client: ClientChoice,
     pub commission_type: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
     pub amount_cents: Option<i64>,
     pub planned_start_date: Option<String>,
     pub planned_delivery_date: Option<String>,
@@ -312,6 +323,7 @@ pub fn create_order(
 ) -> AppResult<OrderView> {
     let title = clean_title(&input.title)?;
     let commission_type = clean_optional(&input.commission_type, 80, "委托类型")?;
+    let source = clean_source(&input.source)?;
     let note = clean_optional(&input.note, 4000, "委托说明")?;
     validate_amount(input.amount_cents)?;
     let start_date = clean_date(&input.planned_start_date, "计划开始日期")?;
@@ -431,17 +443,17 @@ pub fn create_order(
 
     tx.execute(
         "INSERT INTO orders (
-            id, code, title, client_id, commission_type, amount_cents, note, status,
+            id, code, title, client_id, commission_type, source, amount_cents, note, status,
             stage_template_id, current_stage_id, queue_position,
             planned_start_date, planned_delivery_date,
             started_at, completed_at, cancelled_at, request_id,
             revision, created_at, updated_at
          ) VALUES (
-            ?1, ?2, ?3, ?4, ?5, ?6, ?7, 'active',
-            ?8, ?9, ?10,
-            ?11, ?12,
-            NULL, NULL, NULL, ?13,
-            0, ?14, ?14
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'active',
+            ?9, ?10, ?11,
+            ?12, ?13,
+            NULL, NULL, NULL, ?14,
+            0, ?15, ?15
          )",
         params![
             order_id,
@@ -449,6 +461,7 @@ pub fn create_order(
             title,
             client_id,
             commission_type,
+            source,
             input.amount_cents,
             note,
             template_id,
@@ -508,6 +521,8 @@ pub struct UpdateDetailsInput {
     pub title: String,
     pub client_id: Option<String>,
     pub commission_type: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
     pub amount_cents: Option<i64>,
     pub planned_start_date: Option<String>,
     pub planned_delivery_date: Option<String>,
@@ -518,6 +533,7 @@ pub struct UpdateDetailsInput {
 pub fn update_details(conn: &mut Connection, input: UpdateDetailsInput) -> AppResult<OrderView> {
     let title = clean_title(&input.title)?;
     let commission_type = clean_optional(&input.commission_type, 80, "委托类型")?;
+    let source = clean_source(&input.source)?;
     let note = clean_optional(&input.note, 4000, "委托说明")?;
     validate_amount(input.amount_cents)?;
     let start_date = clean_date(&input.planned_start_date, "计划开始日期")?;
@@ -534,7 +550,7 @@ pub fn update_details(conn: &mut Connection, input: UpdateDetailsInput) -> AppRe
     let current = tx
         .query_row(
             "SELECT title, client_id, commission_type, amount_cents, note,
-                    planned_start_date, planned_delivery_date, revision
+                    planned_start_date, planned_delivery_date, revision, source
              FROM orders WHERE id = ?1",
             [&input.order_id],
             |r| {
@@ -547,6 +563,7 @@ pub fn update_details(conn: &mut Connection, input: UpdateDetailsInput) -> AppRe
                     r.get::<_, Option<String>>(5)?,
                     r.get::<_, Option<String>>(6)?,
                     r.get::<_, i64>(7)?,
+                    r.get::<_, Option<String>>(8)?,
                 ))
             },
         )
@@ -570,7 +587,8 @@ pub fn update_details(conn: &mut Connection, input: UpdateDetailsInput) -> AppRe
         && current.3 == input.amount_cents
         && current.4 == note
         && current.5 == start_date
-        && current.6 == delivery_date;
+        && current.6 == delivery_date
+        && current.8 == source;
 
     if unchanged {
         let view = load(&tx, &input.order_id)?;
@@ -589,7 +607,7 @@ pub fn update_details(conn: &mut Connection, input: UpdateDetailsInput) -> AppRe
     let changed = tx.execute(
         "UPDATE orders
          SET title = ?1, client_id = ?2, commission_type = ?3, amount_cents = ?4, note = ?5,
-             planned_start_date = ?6, planned_delivery_date = ?7,
+             planned_start_date = ?6, planned_delivery_date = ?7, source = ?11,
              revision = revision + 1, updated_at = ?8
          WHERE id = ?9 AND revision = ?10",
         params![
@@ -602,7 +620,8 @@ pub fn update_details(conn: &mut Connection, input: UpdateDetailsInput) -> AppRe
             delivery_date,
             now,
             input.order_id,
-            input.expected_revision
+            input.expected_revision,
+            source
         ],
     )?;
     if changed != 1 {
