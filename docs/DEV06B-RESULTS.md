@@ -3,7 +3,8 @@
 - 日期：2026-11-17
 - 工程：`/Users/rinto/Documents/ChatGPT/ArtFlow-miniDesk`（`master`，未推送）
 - 后续修复：深色视觉缺陷（`DEV06B-VIS-FIX-RESULTS.md`）、窄窗口布局与导航图标
-  （`DEV06B-LAYOUT-FIX-RESULTS.md`）；两项均待用户截图复核。
+  （`DEV06B-LAYOUT-FIX-RESULTS.md`）、最终布局与 UI 统一
+  （`DEV06B-FINAL-FIX-RESULTS.md`，含九种组合的真实几何验证）。
 - 结论：主题三模式（Arctic Blue / 深色 / 跟随系统）、受控自定义强调色、侧边栏折叠已实现；
   自动化 282（Rust）+ 159（前端）全部通过。
   **所有真实视觉表现与系统外观切换均为 NOT VERIFIED**，等你实机确认。
@@ -184,7 +185,7 @@ Rust 280 → 282 只增不减。
 | T2-A/B | 主题切换与持久化 | PASS |
 | T3-A/B/C | 跟随系统与手动覆盖 | PASS |
 | T4-A/B | 侧边栏折叠 | **PARTIAL**（命中区域偏小） |
-| T4-C | 窄窗口布局 | **FAIL**（订单/客户/模板重叠裁切）→ 已由 LAYOUT-FIX 修复待复测 |
+| T4-C | 窄窗口布局 | **FAIL** → LAYOUT-FIX 未修好（规则生效但轨道塌陷）→ FINAL-FIX 已定位根因并实测通过，待截图复核 |
 | T5-A/B/C | 强调色与对比度提示 | PASS |
 
 ## 9. 真实 macOS 仍需确认（NOT VERIFIED）
