@@ -322,12 +322,18 @@ kill <上面的 PID>
 
 ## 12. Git 提交
 
-按"机制 / 页面接入 / 测试与文档"三组提交，哈希见提交后的补充（本节在提交前写成）：
+按"机制 / 页面接入 / 测试与文档"三组提交：
 
 ```text
-feat(close): guard window close and app exit behind a draft check
-feat(shortcuts): page shortcuts and keyboard-only order selection
-test/docs: window close suite, shortcuts suite and DEV-06A report
+1673964 feat(close): guard window close and app exit behind a draft check
+228f808 feat(shortcuts): page shortcuts and keyboard-only order selection
+1eff2a8 test/docs: window close suite, shortcut suite and DEV-06A report
+```
+
+另有两个 QA-01 归档提交（在 DEV-06A 之前）：
+
+```text
+29fb2a4 docs(qa01): archive the final acceptance and correct the monthly completion figure
 ```
 
 未推送远程。
