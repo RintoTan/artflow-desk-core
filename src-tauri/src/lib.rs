@@ -38,6 +38,47 @@ pub fn run() {
                 outcome.working_timezone
             );
 
+            // 启动维护：先按操作日志收敛崩溃遗留，再执行上次没做完的文件清理。
+            // 两件事都以"只删自己确认过的文件"为前提，失败不影响启动。
+            {
+                let mut conn = state.env.open_db()?;
+                let generation = state.env.active_generation().to_string();
+                let layout = state.env.layout().clone();
+                match crate::domain::attachments::recover(&mut conn, &layout, &generation) {
+                    Ok(report) => {
+                        if report.completed + report.rolled_back > 0
+                            || !report.quarantined.is_empty()
+                            || !report.kept_unknown.is_empty()
+                        {
+                            println!(
+                                "[minidesk] attachment recovery: completed={} rolled_back={} quarantined={} kept={} failed={}",
+                                report.completed,
+                                report.rolled_back,
+                                report.quarantined.len(),
+                                report.kept_unknown.len(),
+                                report.failed
+                            );
+                        }
+                    }
+                    Err(e) => eprintln!("[minidesk] attachment recovery failed: {}", e.message),
+                }
+                match crate::domain::attachments::run_cleanup(&mut conn, &layout, &generation) {
+                    Ok(report) => {
+                        if report.removed + report.failed + report.refused > 0 {
+                            println!(
+                                "[minidesk] cleanup: removed={} already_gone={} stale={} refused={} failed={}",
+                                report.removed,
+                                report.already_gone,
+                                report.skipped_stale,
+                                report.refused,
+                                report.failed
+                            );
+                        }
+                    }
+                    Err(e) => eprintln!("[minidesk] cleanup failed: {}", e.message),
+                }
+            }
+
             app.manage(state);
             Ok(())
         })

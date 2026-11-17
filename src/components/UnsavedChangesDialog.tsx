@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+
+import { popModal, pushModal, useIsTopModal } from "../lib/modalStack";
 
 type Props = {
   open: boolean;
@@ -34,6 +36,8 @@ export default function UnsavedChangesDialog({
   onDiscard,
   onStay,
 }: Props) {
+  const modalId = useId();
+  const isTop = useIsTopModal(modalId);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const stayRef = useRef<HTMLButtonElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
@@ -41,6 +45,12 @@ export default function UnsavedChangesDialog({
   const [localBusy, setLocalBusy] = useState(false);
 
   const locked = busy || localBusy;
+
+  useEffect(() => {
+    if (!open) return;
+    pushModal(modalId);
+    return () => popModal(modalId);
+  }, [open, modalId]);
 
   // 打开时记录原焦点并聚焦「继续编辑」；关闭时还回去。
   useEffect(() => {
@@ -66,13 +76,14 @@ export default function UnsavedChangesDialog({
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      if (!isTop) return;
       event.preventDefault();
       event.stopPropagation();
       if (!locked) onStay();
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [open, locked, onStay]);
+  }, [open, locked, onStay, isTop]);
 
   const runOnce = useCallback(
     (action: () => void | Promise<void>) => {
@@ -124,7 +135,7 @@ export default function UnsavedChangesDialog({
   if (!open) return null;
 
   return createPortal(
-    <div className="modal-overlay" data-testid="unsaved-overlay">
+    <div className="modal-overlay" data-testid="unsaved-overlay" data-modal-layer="modal">
       <div
         className="modal"
         role="alertdialog"

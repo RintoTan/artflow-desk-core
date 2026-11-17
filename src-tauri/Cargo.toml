@@ -30,7 +30,12 @@ iana-time-zone = "0.1"
 
 [dev-dependencies]
 tempfile = "3.27.0"
+glob = "0.3"
 
 [[bin]]
 name = "minidesk-probe"
 path = "src/bin/minidesk_probe.rs"
+
+[[bin]]
+name = "attachments-probe"
+path = "src/bin/attachments_probe.rs"

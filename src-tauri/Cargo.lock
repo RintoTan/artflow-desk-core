@@ -54,6 +54,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "fs2",
+ "glob",
  "iana-time-zone",
  "image",
  "rusqlite",

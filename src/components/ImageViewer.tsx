@@ -3,6 +3,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { createPortal } from "react-dom";
 
 import type { AttachmentView } from "../bridge/commands";
+import { popModal, pushModal, useIsTopModal } from "../lib/modalStack";
 
 type Props = {
   items: AttachmentView[];
@@ -15,6 +16,7 @@ type Props = {
   onRepair: () => void;
 };
 
+const VIEWER_MODAL_ID = "image-viewer";
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 6;
 
@@ -40,6 +42,13 @@ export default function ImageViewer({
   const [note, setNote] = useState(item?.note ?? "");
   const [tag, setTag] = useState(item?.tag ?? "");
   const closeRef = useRef<HTMLButtonElement | null>(null);
+  const isTop = useIsTopModal(VIEWER_MODAL_ID);
+
+  // 查看器是模态栈的底层；上面的确认框打开时，它不再响应 Esc、也不接受交互。
+  useEffect(() => {
+    pushModal(VIEWER_MODAL_ID);
+    return () => popModal(VIEWER_MODAL_ID);
+  }, []);
 
   const reset = useCallback(() => {
     setZoom(1);
@@ -70,9 +79,13 @@ export default function ImageViewer({
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (!isTop) return;
         event.preventDefault();
         onClose();
-      } else if (event.key === "ArrowLeft") {
+        return;
+      }
+      if (!isTop) return;
+      if (event.key === "ArrowLeft") {
         event.preventDefault();
         step(-1);
       } else if (event.key === "ArrowRight") {
@@ -84,7 +97,7 @@ export default function ImageViewer({
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [onClose, step, reset]);
+  }, [onClose, step, reset, isTop]);
 
   if (!item) return null;
 
@@ -95,7 +108,14 @@ export default function ImageViewer({
     (tag.trim() || null) !== (item.tag ?? null);
 
   return createPortal(
-    <div className="viewer-overlay" role="dialog" aria-modal="true" aria-label="图片查看器">
+    <div
+      className="viewer-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="图片查看器"
+      data-modal-layer="viewer"
+      {...(isTop ? {} : { inert: true })}
+    >
       <div className="viewer">
         <header className="viewer-head">
           <div>

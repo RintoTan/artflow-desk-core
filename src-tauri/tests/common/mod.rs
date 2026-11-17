@@ -63,7 +63,8 @@ pub fn insert_order(conn: &mut rusqlite::Connection, code: &str, title: &str) ->
 
 /// 一个完整可用的测试环境：临时目录 + 数据环境 + 编号记录。
 pub struct Ctx {
-    pub _dir: tempfile::TempDir,
+    /// 只有在 `Ctx::new()` 时才持有临时目录；`Ctx::at()` 复用调用方的目录。
+    pub _dir: Option<tempfile::TempDir>,
     pub env: Environment,
     pub hw: HighWater,
 }
@@ -74,7 +75,18 @@ impl Ctx {
         let env = open(&dir.path().join("data"));
         let hw = highwater(&env);
         Self {
-            _dir: dir,
+            _dir: Some(dir),
+            env,
+            hw,
+        }
+    }
+
+    /// 打开一个已存在的数据环境（用于崩溃后重开、或与子进程共享目录）。
+    pub fn at(root: &std::path::Path) -> Self {
+        let env = open(root);
+        let hw = highwater(&env);
+        Self {
+            _dir: None,
             env,
             hw,
         }

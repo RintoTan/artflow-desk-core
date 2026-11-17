@@ -124,6 +124,133 @@ describe("参考图片面板", () => {
     await waitFor(() => expect(remove).toHaveBeenCalledWith("att-1"));
   });
 
+  it("查看器里点移除：确认框在最上层，查看器仍在", async () => {
+    const user = userEvent.setup();
+    list.mockResolvedValue([attachment({ displayName: "封面参考" })]);
+    const { default: AttachmentPanel } = await import("./AttachmentPanel");
+    render(<AttachmentPanel orderId="order-1" onError={vi.fn()} onNotice={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "查看 封面参考" }));
+    const viewer = await screen.findByRole("dialog", { name: "图片查看器" });
+    expect(viewer).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "移除这张" }));
+
+    expect(await screen.findByRole("alertdialog")).toHaveTextContent("确认移除这张参考图片？");
+    // 查看器仍然存在，只是被压在下面
+    expect(screen.getByRole("dialog", { name: "图片查看器" })).toBeInTheDocument();
+    // 两个模态层级不同：确认框在模态层，查看器在查看器层
+    expect(screen.getByTestId("confirm-overlay").dataset.modalLayer).toBe("modal");
+    expect(screen.getByRole("dialog", { name: "图片查看器" }).dataset.modalLayer).toBe("viewer");
+    // 背景查看器被 inert，键盘焦点进不去
+    expect(screen.getByRole("dialog", { name: "图片查看器" })).toHaveAttribute("inert");
+  });
+
+  it("取消删除后确认框关闭、查看器保留、未调用删除", async () => {
+    const user = userEvent.setup();
+    list.mockResolvedValue([attachment({ displayName: "封面参考" })]);
+    const { default: AttachmentPanel } = await import("./AttachmentPanel");
+    render(<AttachmentPanel orderId="order-1" onError={vi.fn()} onNotice={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "查看 封面参考" }));
+    await screen.findByRole("dialog", { name: "图片查看器" });
+    await user.click(screen.getByRole("button", { name: "移除这张" }));
+    await screen.findByRole("alertdialog");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "取消" })).toHaveFocus(),
+    );
+
+    await user.click(screen.getByRole("button", { name: "取消" }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(screen.getByRole("dialog", { name: "图片查看器" })).toBeInTheDocument();
+    expect(remove).not.toHaveBeenCalled();
+    // 焦点回到查看器里触发删除的按钮
+    expect(screen.getByRole("button", { name: "移除这张" })).toHaveFocus();
+  });
+
+  it("Esc 第一次只关闭确认框，第二次才关闭查看器", async () => {
+    const user = userEvent.setup();
+    list.mockResolvedValue([attachment({ displayName: "封面参考" })]);
+    const { default: AttachmentPanel } = await import("./AttachmentPanel");
+    render(<AttachmentPanel orderId="order-1" onError={vi.fn()} onNotice={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "查看 封面参考" }));
+    await screen.findByRole("dialog", { name: "图片查看器" });
+    await user.click(screen.getByRole("button", { name: "移除这张" }));
+    await screen.findByRole("alertdialog");
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(screen.getByRole("dialog", { name: "图片查看器" })).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "图片查看器" })).not.toBeInTheDocument(),
+    );
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("查看器里确认删除只移除目标附件", async () => {
+    const user = userEvent.setup();
+    const second = attachment({ id: "att-2", originalName: "另一张.png", displayName: "另一张" });
+    list.mockResolvedValue([attachment({ displayName: "封面参考" }), second]);
+    const { default: AttachmentPanel } = await import("./AttachmentPanel");
+    render(<AttachmentPanel orderId="order-1" onError={vi.fn()} onNotice={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "查看 封面参考" }));
+    await screen.findByRole("dialog", { name: "图片查看器" });
+    await user.click(screen.getByRole("button", { name: "移除这张" }));
+    await screen.findByRole("alertdialog");
+    await user.click(screen.getByRole("button", { name: "确认移除" }));
+
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("att-1"));
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it("删除失败时保留错误反馈且不关闭确认框", async () => {
+    const user = userEvent.setup();
+    list.mockResolvedValue([attachment({ displayName: "封面参考" })]);
+    remove.mockRejectedValue({ code: "IO", message: "文件被占用" });
+    const onError = vi.fn();
+    const { default: AttachmentPanel } = await import("./AttachmentPanel");
+    render(<AttachmentPanel orderId="order-1" onError={onError} onNotice={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "查看 封面参考" }));
+    await screen.findByRole("dialog", { name: "图片查看器" });
+    await user.click(screen.getByRole("button", { name: "移除这张" }));
+    await screen.findByRole("alertdialog");
+    await user.click(screen.getByRole("button", { name: "确认移除" }));
+
+    await waitFor(() => expect(onError).toHaveBeenCalled());
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
+
+  it("连续点击确认只执行一次删除", async () => {
+    const user = userEvent.setup();
+    list.mockResolvedValue([attachment({ displayName: "封面参考" })]);
+    const pending: { resolve?: () => void } = {};
+    remove.mockImplementation(
+      () =>
+        new Promise<undefined>((resolve) => {
+          pending.resolve = () => resolve(undefined);
+        }),
+    );
+    const { default: AttachmentPanel } = await import("./AttachmentPanel");
+    render(<AttachmentPanel orderId="order-1" onError={vi.fn()} onNotice={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "查看 封面参考" }));
+    await screen.findByRole("dialog", { name: "图片查看器" });
+    await user.click(screen.getByRole("button", { name: "移除这张" }));
+    await screen.findByRole("alertdialog");
+    const confirm = screen.getByRole("button", { name: "确认移除" });
+    await user.click(confirm);
+    await user.click(confirm);
+
+    expect(remove).toHaveBeenCalledTimes(1);
+    pending.resolve?.();
+  });
+
   it("点击缩略图打开查看器，Esc 可关闭", async () => {
     const user = userEvent.setup();
     list.mockResolvedValue([attachment({ displayName: "封面参考" })]);

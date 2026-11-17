@@ -12,9 +12,10 @@ use crate::error::{AppError, AppResult};
 
 pub mod v1;
 pub mod v2;
+pub mod v3;
 
 /// 当前程序支持的最高 schema 版本。
-pub const APP_SCHEMA_VERSION: i64 = 2;
+pub const APP_SCHEMA_VERSION: i64 = 3;
 
 pub struct Migration {
     pub version: i64,
@@ -34,6 +35,11 @@ pub fn production() -> Vec<Migration> {
             version: 2,
             name: "v2_queue_and_events",
             apply: v2::apply,
+        },
+        Migration {
+            version: 3,
+            name: "v3_attachment_jobs",
+            apply: v3::apply,
         },
     ]
 }

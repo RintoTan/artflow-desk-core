@@ -47,6 +47,30 @@ pub fn render_webp(bytes: &[u8]) -> AppResult<Vec<u8>> {
     Ok(out.into_inner())
 }
 
+/// 缩略图缓存是否真的可用：存在、非空、能解码、且没有超出尺寸约定。
+/// 只检查"非空"是不够的——被截断或写成别的格式的文件同样存在且非空。
+pub fn is_valid(path: &std::path::Path) -> bool {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() || metadata.len() == 0 {
+        return false;
+    }
+    let Ok(bytes) = std::fs::read(path) else {
+        return false;
+    };
+    let Ok(format) = image::guess_format(&bytes) else {
+        return false;
+    };
+    if format != ImageFormat::WebP {
+        return false;
+    }
+    match image::load_from_memory(&bytes) {
+        Ok(decoded) => decoded.width().max(decoded.height()) <= media::THUMB_EDGE + 1,
+        Err(_) => false,
+    }
+}
+
 /// 缩略图最长边（供前端展示"可重建"说明）。
 pub fn edge() -> u32 {
     media::THUMB_EDGE

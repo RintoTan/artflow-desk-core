@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+
+import { popModal, pushModal, useIsTopModal } from "../lib/modalStack";
 
 type Props = {
   open: boolean;
@@ -47,12 +49,21 @@ export default function ConfirmDialog({
   onCancel,
   onConfirm,
 }: Props) {
+  const modalId = useId();
+  const isTop = useIsTopModal(modalId);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const cancelRef = useRef<HTMLButtonElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const inFlightRef = useRef(false);
   const [localBusy, setLocalBusy] = useState(false);
   const locked = busy || localBusy;
+
+  // 入栈/出栈：只有栈顶模态响应 Esc，并且据此禁用背景交互。
+  useEffect(() => {
+    if (!open) return;
+    pushModal(modalId);
+    return () => popModal(modalId);
+  }, [open, modalId]);
 
   useEffect(() => {
     if (!open) return;
@@ -73,13 +84,15 @@ export default function ConfirmDialog({
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      // 只看自己是不是栈顶：否则 Esc 会同时关掉下层的查看器。
+      if (!isTop) return;
       event.preventDefault();
       event.stopPropagation();
       if (!locked) onCancel();
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [open, locked, onCancel]);
+  }, [open, locked, onCancel, isTop]);
 
   const submit = useCallback(() => {
     if (inFlightRef.current || locked || confirmDisabled) return;
@@ -121,7 +134,7 @@ export default function ConfirmDialog({
   if (!open) return null;
 
   return createPortal(
-    <div className="modal-overlay" data-testid="confirm-overlay">
+    <div className="modal-overlay" data-testid="confirm-overlay" data-modal-layer="modal">
       <div
         className="modal"
         role="alertdialog"
