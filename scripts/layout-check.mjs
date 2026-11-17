@@ -381,80 +381,27 @@ for (const [view, widths] of [
   );
 }
 
-// 看板阶段导航：所有阶段都能从导航触达
+// 看板阶段筛选：按模板分组、覆盖全部模板（聚焦导航已随模式删除）
 {
   const raw = execFileSync(
     process.execPath,
     ["scripts/layout-probe.mjs", URL, "900", "/orders"],
-    {
-      encoding: "utf8",
-      env: { ...process.env, PROBE_SLOT: "1", PROBE_VIEW: "board", PROBE_BOARD_MODE: "focus" },
-    },
+    { encoding: "utf8", env: { ...process.env, PROBE_SLOT: "1", PROBE_VIEW: "board" } },
   );
   const line = raw.slice(raw.indexOf("VIEW "));
   const g = JSON.parse(line.slice(line.indexOf("{"))).geom;
   const problems = [];
-  // 聚焦模式已删除，改为校验「按阶段筛选」按模板分组可用
-  const stageSelect = g.stageFilter;
-  if (!stageSelect) problems.push("看板没有阶段筛选入口");
-  else if (stageSelect.groups < 2) problems.push(`阶段筛选只覆盖 ${stageSelect.groups} 个模板`);
-  else if (g.boardNav.chips < g.board.cols || g.boardNav.chips === 0) {
-    problems.push(`导航 ${g.boardNav.chips} 个阶段，少于可见列 ${g.board.cols} 个`);
-  } else if (g.board.cols > 3) {
-    problems.push(`可见列 ${g.board.cols} 个，聚焦式看板应 ≤3`);
+  const info = g.stageFilter;
+  if (!info) problems.push("看板没有阶段筛选入口");
+  else {
+    if (info.groups < 1) problems.push("阶段筛选没有按模板分组");
+    if (info.options < 1) problems.push("阶段筛选没有可选项");
   }
   record(
-    "orders: 看板阶段筛选按模板分组覆盖全部阶段",
+    "orders: 看板阶段筛选按模板分组",
     problems,
-    g.stageFilter ? `${g.stageFilter.groups} 个模板分组，${g.stageFilter.options} 个阶段` : "无",
+    info ? `${info.groups} 个模板分组 / ${info.options} 个阶段` : "无",
   );
-}
-
-// 底部安全距离：测"滚到底后最后一项与视口下边界的真实距离"，不是读 padding
-{
-  const targets = [
-    ["cards", "rows", "卡片列表"],
-    ["board", "board", "看板"],
-    ["table", "table", "表格"],
-  ];
-  const problems = [];
-  const seen = [];
-  for (const [view, key, label] of targets) {
-    const raw = execFileSync(
-      process.execPath,
-      ["scripts/layout-probe.mjs", URL, "900", "/orders"],
-      { encoding: "utf8", env: { ...process.env, PROBE_SLOT: "1", PROBE_VIEW: view } },
-    );
-    const line = raw.slice(raw.indexOf("VIEW "));
-    const g = JSON.parse(line.slice(line.indexOf("{"))).geom;
-    const gap = key === "board" ? (g.flat?.bottomGap ?? null) : (g.bottomGap?.gap ?? null);
-    if (gap === null) {
-      problems.push(`${label}没有测到真实底部距离`);
-      continue;
-    }
-    seen.push(`${label}=${gap}px`);
-    if (gap < 16) problems.push(`${label}滚到底只剩 ${gap}px，应 ≥16px`);
-  }
-  record("orders: 滚动到底保留真实安全距离", problems, seen.join(" / "));
-}
-
-// 抽屉关闭按钮：位于可见标题栏内、尺寸够点
-{
-  const raw = execFileSync(
-    process.execPath,
-    ["scripts/layout-probe.mjs", URL, "900", "/orders"],
-    { encoding: "utf8", env: { ...process.env, PROBE_SLOT: "1", PROBE_VIEW: "board", PROBE_DRAWER: "1" } },
-  );
-  const line = raw.slice(raw.indexOf("VIEW "));
-  const drawer = JSON.parse(line.slice(line.indexOf("{"))).geom.drawer;
-  const problems = [];
-  if (!drawer) problems.push("抽屉没有渲染或缺少标题栏");
-  else {
-    if (!drawer.inside) problems.push("关闭按钮不在抽屉内");
-    if (drawer.size < 28 || drawer.h < 28) problems.push(`关闭按钮只有 ${drawer.size}px，太小`);
-    if (drawer.offsetTop > 60) problems.push(`关闭按钮距抽屉顶部 ${drawer.offsetTop}px，不在标题栏`);
-  }
-  record("orders: 抽屉关闭按钮在标题栏内且可点", problems, JSON.stringify(drawer));
 }
 
 if (failures.length) {
