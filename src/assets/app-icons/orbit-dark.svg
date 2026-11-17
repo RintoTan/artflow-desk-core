@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+<title id="title">ArtFlow miniDesk — Orbit</title><desc id="desc">Two mathematically paired orbital curves framing a four-point star on an icy-blue rounded square.</desc>
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#1B2836"/><stop offset="1" stop-color="#111A22"/></linearGradient>
+ <linearGradient id="orbA" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#6FB3EE"/><stop offset="0.55" stop-color="#8FCBF7"/><stop offset="1" stop-color="#BFE6FF"/></linearGradient>
+ <linearGradient id="orbB" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#B9A6FF"/><stop offset="0.5" stop-color="#C8BDFF"/><stop offset="1" stop-color="#9FCDFB"/></linearGradient>
+ <linearGradient id="star" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#E8F2FF"/><stop offset="1" stop-color="#BFD9F6"/></linearGradient>
+</defs>
+<rect x="12" y="12" width="488" height="488" rx="112" fill="url(#bg)"/>
+<g fill="none" stroke-width="31" stroke-linecap="round">
+ <ellipse cx="256" cy="256" rx="173" ry="83" transform="rotate(47 256 256)" stroke="url(#orbA)"/>
+ <ellipse cx="256" cy="256" rx="173" ry="83" transform="rotate(-47 256 256)" stroke="url(#orbB)" opacity="0.94"/>
+</g>
+<path d="M256 222 C264 242 270 249 290 256 C270 263 264 270 256 290 C248 270 242 263 222 256 C242 249 248 242 256 222Z" fill="url(#star)"/>
+</svg>

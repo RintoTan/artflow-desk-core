@@ -25,9 +25,21 @@ const SRC = join(ROOT, "src/assets/app-icons");
 const PNG_DIR = join(SRC, "png");
 const TAURI_ICONS = join(ROOT, "src-tauri/icons");
 
-const VARIANTS = ["orbit", "layers", "wave-a"];
+// 三个标识 × 两种明暗 = 六份 SVG（由 make-icon-variants.mjs 从原始文件派生）
+const VARIANTS = [
+  "orbit",
+  "orbit-light",
+  "orbit-dark",
+  "layers",
+  "layers-light",
+  "layers-dark",
+  "wave-a",
+  "wave-a-light",
+  "wave-a-dark",
+];
 const PNG_SIZES = [1024, 256, 64, 32];
-const DEFAULT_VARIANT = "orbit";
+// 安装包图标仍取自原始 orbit.svg：本轮不改动打包图标
+const BUILD_ICON_SOURCE = "orbit";
 const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
 
 const port = 9400 + Math.floor(Math.random() * 90);
@@ -192,7 +204,7 @@ if (only === "all" || only === "svg") {
 }
 
 if (only === "all" || only === "icons") {
-  const base = join(PNG_DIR, `${DEFAULT_VARIANT}-1024.png`);
+  const base = join(PNG_DIR, `${BUILD_ICON_SOURCE}-1024.png`);
   writeFileSync(join(TAURI_ICONS, "icon.png"), readFileSync(base));
 
   // iconutil 要求目录名以 .iconset 结尾
@@ -212,7 +224,7 @@ if (only === "all" || only === "icons") {
     [1024, "icon_512x512@2x.png"],
   ];
   for (const [size, name] of macSizes) {
-    const src = join(PNG_DIR, `${DEFAULT_VARIANT}-${size}.png`);
+    const src = join(PNG_DIR, `${BUILD_ICON_SOURCE}-${size}.png`);
     const dest = join(iconset, name);
     const r = spawn("sips", ["-z", String(size), String(size), src, "--out", dest], {
       stdio: "ignore",
@@ -223,7 +235,7 @@ if (only === "all" || only === "icons") {
   }
   await icnsFrom(iconset, join(TAURI_ICONS, "icon.icns"));
   rmSync(iconsetRoot, { recursive: true, force: true });
-  console.log("icon.icns / icon.png 已更新（默认变体 " + DEFAULT_VARIANT + "）");
+  console.log(`icon.icns / icon.png 已更新（来源 ${BUILD_ICON_SOURCE}.svg）`);
 
   // ICO 需要 16/24/32/48/64/128/256，只有 32/64/256 是现成的，其余从 1024 缩放
   const icoTmp = mkdtempSync(join(tmpdir(), "app-icon.ico-"));

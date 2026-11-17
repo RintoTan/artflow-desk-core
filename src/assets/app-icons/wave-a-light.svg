@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+<title id="title">ArtFlow miniDesk — Wave A</title><desc id="desc">An A-shaped pair of smooth gradient strokes crossed by a sine-like flowing ribbon with two terminal nodes.</desc>
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#E9F2FC"/><stop offset="1" stop-color="#D4E6F8"/></linearGradient>
+ <linearGradient id="left" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#2E7BC0"/><stop offset="1" stop-color="#1D4F86"/></linearGradient>
+ <linearGradient id="right" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3E86CE"/><stop offset="1" stop-color="#6F63C0"/></linearGradient>
+ <linearGradient id="wave" x1="0" y1="0.5" x2="1" y2="0.5"><stop stop-color="#2F6FAE"/><stop offset="0.5" stop-color="#5B8FC8"/><stop offset="1" stop-color="#7A6BC4"/></linearGradient>
+</defs>
+<rect x="12" y="12" width="488" height="488" rx="112" fill="url(#bg)"/>
+<g fill="none" stroke-width="66" stroke-linecap="round" stroke-linejoin="round">
+ <path d="M151 385 L235 162 Q251 126 271 162" stroke="url(#left)"/>
+ <path d="M271 162 L366 385" stroke="url(#right)"/>
+</g>
+<path d="M87 267 C145 207 192 326 257 284 C322 244 344 233 425 275" fill="none" stroke="url(#wave)" stroke-width="17" stroke-linecap="round"/>
+<circle cx="87" cy="267" r="14" fill="#1F4E7E"/>
+<circle cx="425" cy="275" r="14" fill="#1F4E7E"/>
+</svg>
