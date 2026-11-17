@@ -4,7 +4,8 @@ use tauri::State;
 
 use crate::domain::events::Event;
 use crate::domain::lifecycle::{self, LifecycleInput, ReworkInput};
-use crate::domain::orders::{self, ClientSummary, CreateOrderInput, OrderView, UpdateDetailsInput};
+use crate::domain::clients::ClientView;
+use crate::domain::orders::{self, CreateOrderInput, OrderView, UpdateDetailsInput};
 use crate::domain::workflow::{
     self, AddStageInput, RemoveStageInput, RenameStageInput, ReorderStagesInput,
 };
@@ -43,9 +44,9 @@ pub fn list_order_events(state: State<'_, AppState>, order_id: String) -> AppRes
 }
 
 #[tauri::command]
-pub fn list_clients(state: State<'_, AppState>) -> AppResult<Vec<ClientSummary>> {
+pub fn list_clients(state: State<'_, AppState>) -> AppResult<Vec<ClientView>> {
     let conn = state.env.open_db()?;
-    orders::list_clients(&conn)
+    crate::domain::clients::list(&conn)
 }
 
 #[tauri::command]

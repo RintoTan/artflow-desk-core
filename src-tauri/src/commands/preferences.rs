@@ -1,12 +1,15 @@
-//! 应用偏好（DEV-01 只落地工作时区，其余键随 DEV-06 增加）。
+//! 应用偏好：工作时区 + 允许的界面偏好键。
 
 use serde::Serialize;
 use tauri::State;
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::infra::state::AppState;
 use crate::store::settings;
 use crate::store::timezone;
+
+/// 允许前端读写的偏好键。新增键必须同时出现在这里，否则拒绝。
+const ALLOWED_KEYS: &[&str] = &[settings::KEY_LIST_DENSITY];
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,7 +33,10 @@ pub fn working_timezone_get(state: State<'_, AppState>) -> AppResult<TimezoneInf
 
 /// 修改工作时区：只影响展示、提醒与统计月份归属，不修改已保存的时间点。
 #[tauri::command]
-pub fn working_timezone_set(state: State<'_, AppState>, timezone_name: String) -> AppResult<TimezoneInfo> {
+pub fn working_timezone_set(
+    state: State<'_, AppState>,
+    timezone_name: String,
+) -> AppResult<TimezoneInfo> {
     let conn = state.env.open_db()?;
     let now = timezone::now_timestamp();
     let tz = settings::set_working_timezone(&conn, &timezone_name, &now)?;
@@ -40,4 +46,32 @@ pub fn working_timezone_set(state: State<'_, AppState>, timezone_name: String) -
         system_timezone: system.name().to_string(),
         same_as_system: tz == system,
     })
+}
+
+#[tauri::command]
+pub fn preference_get(state: State<'_, AppState>, key: String) -> AppResult<Option<String>> {
+    if !ALLOWED_KEYS.contains(&key.as_str()) {
+        return Err(AppError::denied(format!("不允许读取的偏好项：{key}")));
+    }
+    let conn = state.env.open_db()?;
+    settings::get(&conn, &key)
+}
+
+#[tauri::command]
+pub fn preference_set(
+    state: State<'_, AppState>,
+    key: String,
+    value: String,
+) -> AppResult<Option<String>> {
+    if !ALLOWED_KEYS.contains(&key.as_str()) {
+        return Err(AppError::denied(format!("不允许写入的偏好项：{key}")));
+    }
+    // 列表密度只有两个合法值。
+    if key == settings::KEY_LIST_DENSITY && value != "comfortable" && value != "compact" {
+        return Err(AppError::invalid("列表密度只能是 comfortable 或 compact"));
+    }
+    let conn = state.env.open_db()?;
+    let now = timezone::now_timestamp();
+    settings::set(&conn, &key, &value, &now)?;
+    settings::get(&conn, &key)
 }

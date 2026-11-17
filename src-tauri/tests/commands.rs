@@ -22,6 +22,19 @@ const APPROVED: &[&str] = &[
     "workflow_rename_stage",
     "workflow_remove_stage",
     "workflow_reorder_stages",
+    "queue_list",
+    "queue_move",
+    "client_create",
+    "client_update",
+    "client_detail",
+    "template_list",
+    "template_create",
+    "template_update",
+    "template_duplicate",
+    "template_delete",
+    "template_set_default",
+    "preference_get",
+    "preference_set",
 ];
 
 /// 解析 `generate_handler![...]` 并取每项最后一段标识符。

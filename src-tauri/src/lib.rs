@@ -61,7 +61,20 @@ pub fn run() {
             commands::orders::workflow_add_stage,
             commands::orders::workflow_rename_stage,
             commands::orders::workflow_remove_stage,
-            commands::orders::workflow_reorder_stages
+            commands::orders::workflow_reorder_stages,
+            commands::queue::queue_list,
+            commands::queue::queue_move,
+            commands::clients::client_create,
+            commands::clients::client_update,
+            commands::clients::client_detail,
+            commands::templates::template_list,
+            commands::templates::template_create,
+            commands::templates::template_update,
+            commands::templates::template_duplicate,
+            commands::templates::template_delete,
+            commands::templates::template_set_default,
+            commands::preferences::preference_get,
+            commands::preferences::preference_set
         ])
         .run(tauri::generate_context!())
         .expect("ArtFlow miniDesk 启动失败");
