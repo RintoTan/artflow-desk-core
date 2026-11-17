@@ -28,6 +28,7 @@ function order(id: string, code: string, title: string, queuePosition: number): 
     queuePosition,
     plannedStartDate: null,
     plannedDeliveryDate: null,
+    deadlineState: "scheduled",
     startedAt: null,
     completedAt: null,
     cancelledAt: null,

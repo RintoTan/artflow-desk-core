@@ -1,11 +1,13 @@
 import { NavLink, Outlet } from "react-router-dom";
 
 const NAV = [
-  { to: "/", label: "数据环境", end: true },
+  { to: "/", label: "工作台", end: true },
   { to: "/orders", label: "订单" },
   { to: "/clients", label: "客户" },
   { to: "/templates", label: "流程模板" },
+  { to: "/stats", label: "历史统计" },
   { to: "/settings", label: "设置" },
+  { to: "/status", label: "数据环境" },
 ];
 
 export default function App() {

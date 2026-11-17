@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { OrderView } from "../bridge/commands";
-import { densityClass, dropIndex, filterOrders, matchesQuery } from "./ordersView";
+import { densityClass, dropIndex, filterOrders, matchesQuery, riskBadge } from "./ordersView";
 
 function order(partial: Partial<OrderView> & { id: string }): OrderView {
   return {
@@ -22,6 +22,7 @@ function order(partial: Partial<OrderView> & { id: string }): OrderView {
     queuePosition: 0,
     plannedStartDate: null,
     plannedDeliveryDate: null,
+    deadlineState: "scheduled",
     startedAt: null,
     completedAt: null,
     cancelledAt: null,
@@ -119,5 +120,42 @@ describe("列表密度与拖拽位置", () => {
     expect(dropIndex(0, 5, 3)).toBeNull();
     expect(dropIndex(-1, 0, 3)).toBeNull();
     expect(dropIndex(0, 2, 3)).toBe(2);
+  });
+});
+
+describe("风险与工作状态筛选", () => {
+  it("按交付风险筛选", () => {
+    const overdue = order({ id: "o1", deadlineState: "overdue" });
+    const today = order({ id: "o2", deadlineState: "today" });
+    const soon = order({ id: "o3", deadlineState: "dueSoon" });
+    const none = order({ id: "o4", deadlineState: "scheduled" });
+
+    expect(filterOrders([overdue, today, soon, none], { risk: "overdue" }).map((o) => o.id)).toEqual([
+      "o1",
+    ]);
+    expect(filterOrders([overdue, today, soon, none], { risk: "dueSoon" }).map((o) => o.id)).toEqual([
+      "o3",
+    ]);
+    expect(filterOrders([overdue, today, soon, none], { risk: "all" })).toHaveLength(4);
+  });
+
+  it("按排队中/制作中筛选，且终态订单不命中", () => {
+    const queued = order({ id: "q1", workState: "queued" });
+    const working = order({ id: "w1", workState: "inProgress" });
+    const done = order({ id: "d1", status: "complete", workState: "completed" });
+
+    expect(filterOrders([queued, working, done], { work: "queued" }).map((o) => o.id)).toEqual(["q1"]);
+    expect(filterOrders([queued, working, done], { work: "inProgress" }).map((o) => o.id)).toEqual([
+      "w1",
+    ]);
+  });
+
+  it("风险徽标只对活动订单显示，且 scheduled 不显示", () => {
+    expect(riskBadge(order({ id: "a", deadlineState: "overdue" }))).toBe("已逾期");
+    expect(riskBadge(order({ id: "b", deadlineState: "unscheduled" }))).toBe("未排期");
+    expect(riskBadge(order({ id: "c", deadlineState: "scheduled" }))).toBeNull();
+    expect(
+      riskBadge(order({ id: "d", status: "complete", workState: "completed", deadlineState: "overdue" })),
+    ).toBeNull();
   });
 });

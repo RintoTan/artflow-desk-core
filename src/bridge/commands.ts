@@ -33,6 +33,8 @@ export type TimezoneInfo = {
 
 export type WorkState = "queued" | "inProgress" | "completed" | "cancelled";
 
+export type DeadlineState = "overdue" | "today" | "dueSoon" | "unscheduled" | "scheduled";
+
 export type Capabilities = {
   canStartWork: boolean;
   canUndoStartWork: boolean;
@@ -73,6 +75,8 @@ export type OrderView = {
   queuePosition: number;
   plannedStartDate: string | null;
   plannedDeliveryDate: string | null;
+  /** 按工作时时区判定的交付风险；终态订单恒为 scheduled */
+  deadlineState: DeadlineState;
   startedAt: string | null;
   completedAt: string | null;
   cancelledAt: string | null;
@@ -373,6 +377,69 @@ export type VerifyReport = {
   missing: number;
   corrupt: number;
   attachments: AttachmentView[];
+};
+
+// ---------------------------------------------------------------- DEV-05
+
+export type DashboardMetrics = {
+  activeTotal: number;
+  queued: number;
+  inProgress: number;
+  dueSoon: number;
+  dueToday: number;
+  overdue: number;
+  unscheduled: number;
+  completedThisMonth: number;
+  cancelledThisMonth: number;
+  createdThisMonth: number;
+  timezone: string;
+  today: string;
+  month: string;
+};
+
+export type CompletedEventRow = {
+  eventId: number;
+  orderId: string;
+  code: string;
+  title: string;
+  occurredAt: string;
+  localTime: string;
+  stageTitle: string | null;
+};
+
+export type StatsRangeKey = "thisMonth" | "last6" | "last12" | "all";
+
+export type MonthBucket = {
+  month: string;
+  created: number;
+  completed: number;
+  cancelled: number;
+  amountCents: number;
+  knownOrders: number;
+  unknownOrders: number;
+};
+
+export type StatsReport = {
+  range: StatsRangeKey;
+  timezone: string;
+  fromMonth: string;
+  toMonth: string;
+  months: MonthBucket[];
+  totals: MonthBucket;
+  basis: string[];
+};
+
+export type ExportResult = { path: string; rows: number; bytes: number };
+
+export const statsApi = {
+  dashboard: () => invoke<DashboardMetrics>("dashboard_metrics"),
+  completedEvents: (month: string) =>
+    invoke<CompletedEventRow[]>("dashboard_completed_events", { month }),
+  report: (range: StatsRangeKey) => invoke<StatsReport>("stats_report", { range }),
+  exportSummary: (input: { path: string; range: StatsRangeKey }) =>
+    invoke<ExportResult>("export_summary_csv", { input }),
+  exportOrders: (input: { path: string; scope: "all" | "filtered"; orderIds?: string[] }) =>
+    invoke<ExportResult>("export_orders_csv", { input }),
 };
 
 export const attachmentApi = {

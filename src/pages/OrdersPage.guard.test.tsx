@@ -27,6 +27,7 @@ const order: OrderView = {
   queuePosition: 0,
   plannedStartDate: null,
   plannedDeliveryDate: null,
+  deadlineState: "scheduled",
   startedAt: null,
   completedAt: null,
   cancelledAt: null,

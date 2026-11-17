@@ -1438,3 +1438,185 @@ body:has(.row-dragging) {
   border-color: #a4402f;
   color: #fff;
 }
+
+/* ------------------------------------------------------------ 工作台与统计 */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+  gap: 10px;
+}
+
+.metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface), var(--surface-alt));
+  color: var(--text);
+  text-decoration: none;
+  transition: transform 90ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.metric-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
+
+.metric-value {
+  font-size: 26px;
+  font-weight: 640;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-label {
+  font-size: 12.5px;
+  font-weight: 560;
+}
+
+.metric-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.tone-warn {
+  border-color: #e3cf9c;
+  background: linear-gradient(180deg, #fffaef, var(--warn-soft));
+}
+
+.tone-warn .metric-value {
+  color: var(--warn);
+}
+
+.tone-danger {
+  border-color: #e7c3bc;
+  background: linear-gradient(180deg, #fff6f4, var(--danger-soft));
+}
+
+.tone-danger .metric-value {
+  color: var(--danger);
+}
+
+.tone-accent {
+  border-color: #bcd6f0;
+  background: linear-gradient(180deg, #f7fbff, var(--accent-soft));
+}
+
+.tone-accent .metric-value {
+  color: var(--accent);
+}
+
+.compact-metrics .metric-value {
+  font-size: 20px;
+}
+
+.risk-chip {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 560;
+  vertical-align: 1px;
+}
+
+.risk-overdue {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.risk-today {
+  background: #fff1e6;
+  color: #a55618;
+}
+
+.risk-dueSoon {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.risk-unscheduled {
+  background: #eef1f5;
+  color: #5f6b78;
+}
+
+.chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  height: 148px;
+  padding: 8px 4px 0;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.chart-col {
+  flex: 1 0 42px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 100%;
+  width: 100%;
+  justify-content: center;
+}
+
+.bar {
+  display: block;
+  width: 8px;
+  min-height: 2px;
+  border-radius: 3px 3px 0 0;
+}
+
+.bar-created {
+  background: #9fb6cb;
+}
+
+.bar-completed {
+  background: var(--accent);
+}
+
+.bar-cancelled {
+  background: #d9b3a8;
+}
+
+.chart-label {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.chart-legend .swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 4px;
+}
+
+.radio-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 13px;
+}

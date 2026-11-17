@@ -3,7 +3,9 @@ import { createHashRouter, RouterProvider } from "react-router-dom";
 
 import App from "./App";
 import ClientsPage from "./pages/ClientsPage";
+import DashboardPage from "./pages/DashboardPage";
 import OrdersPage from "./pages/OrdersPage";
+import StatsPage from "./pages/StatsPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import SettingsPage from "./pages/SettingsPage";
 import StatusPage from "./pages/StatusPage";
@@ -14,7 +16,9 @@ const router = createHashRouter([
     path: "/",
     element: <App />,
     children: [
-      { index: true, element: <StatusPage /> },
+      { index: true, element: <DashboardPage /> },
+      { path: "status", element: <StatusPage /> },
+      { path: "stats", element: <StatsPage /> },
       { path: "orders", element: <OrdersPage /> },
       { path: "clients", element: <ClientsPage /> },
       { path: "templates", element: <TemplatesPage /> },

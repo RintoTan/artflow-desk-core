@@ -1,0 +1,283 @@
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { save } from "@tauri-apps/plugin-dialog";
+
+import {
+  describeError,
+  statsApi,
+  type CompletedEventRow,
+  type MonthBucket,
+  type StatsRangeKey,
+  type StatsReport,
+} from "../bridge/commands";
+
+const RANGES: { key: StatsRangeKey; label: string }[] = [
+  { key: "thisMonth", label: "本月" },
+  { key: "last6", label: "近 6 个月" },
+  { key: "last12", label: "近 12 个月" },
+  { key: "all", label: "全部" },
+];
+
+function yuan(cents: number): string {
+  return `¥ ${(cents / 100).toFixed(2)}`;
+}
+
+export default function StatsPage() {
+  const [params, setParams] = useSearchParams();
+  const range = (params.get("range") as StatsRangeKey | null) ?? "thisMonth";
+  const focus = params.get("focus");
+
+  const [report, setReport] = useState<StatsReport | null>(null);
+  const [events, setEvents] = useState<CompletedEventRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    (async () => {
+      try {
+        const value = await statsApi.report(range);
+        if (alive) setReport(value);
+        if (focus === "completed") {
+          const rows = await statsApi.completedEvents(value.toMonth);
+          if (alive) setEvents(rows);
+        }
+      } catch (e) {
+        if (alive) setError(describeError(e));
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [range, focus]);
+
+  function switchRange(key: StatsRangeKey) {
+    setNotice(null);
+    setError(null);
+    const next = new URLSearchParams(params);
+    next.set("range", key);
+    if (key !== "thisMonth") next.delete("focus");
+    setParams(next, { replace: true });
+  }
+
+  async function exportSummary() {
+    setError(null);
+    setNotice(null);
+    try {
+      const path = await save({
+        title: "导出统计汇总 CSV",
+        defaultPath: `artflow-统计汇总-${range}.csv`,
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+      // 用户取消：不创建文件、不提示成功
+      if (!path) return;
+
+      setBusy(true);
+      const result = await statsApi.exportSummary({ path, range });
+      setNotice(`已导出 ${result.rows} 行到 ${result.path}`);
+    } catch (e) {
+      setError(describeError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loading) return <section className="panel">正在统计…</section>;
+  if (error && !report) {
+    return (
+      <section className="panel panel-error">
+        <h2>统计失败</h2>
+        <p className="mono">{error}</p>
+      </section>
+    );
+  }
+  if (!report) return null;
+
+  const maxBar = Math.max(1, ...report.months.map((m) => Math.max(m.created, m.completed, m.cancelled)));
+
+  return (
+    <>
+      <section className="panel">
+        <header className="panel-head">
+          <div>
+            <h2>历史统计</h2>
+            <p className="muted">
+              {report.fromMonth} ~ {report.toMonth} · {report.timezone} · 按自然月
+            </p>
+          </div>
+          <div className="attach-actions">
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => void exportSummary()}
+              disabled={busy}
+            >
+              导出汇总 CSV
+            </button>
+          </div>
+        </header>
+
+        <div className="filter-row" role="group" aria-label="统计范围">
+          {RANGES.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              className={`filter-chip${range === item.key ? " filter-chip-active" : ""}`}
+              aria-pressed={range === item.key}
+              onClick={() => switchRange(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        {error && <p className="notice notice-error">{error}</p>}
+        {notice && <p className="notice notice-ok">{notice}</p>}
+
+        <div className="metric-grid compact-metrics">
+          <div className="metric-card tone-plain">
+            <span className="metric-value">{report.totals.created}</span>
+            <span className="metric-label">新建次数</span>
+          </div>
+          <div className="metric-card tone-accent">
+            <span className="metric-value">{report.totals.completed}</span>
+            <span className="metric-label">完成次数</span>
+          </div>
+          <div className="metric-card tone-plain">
+            <span className="metric-value">{report.totals.cancelled}</span>
+            <span className="metric-label">取消次数</span>
+          </div>
+          <div className="metric-card tone-plain">
+            <span className="metric-value">{yuan(report.totals.amountCents)}</span>
+            <span className="metric-label">已知金额合计</span>
+          </div>
+          <div className="metric-card tone-plain">
+            <span className="metric-value">{report.totals.knownOrders}</span>
+            <span className="metric-label">已知金额订单</span>
+          </div>
+          <div className={`metric-card ${report.totals.unknownOrders > 0 ? "tone-warn" : "tone-plain"}`}>
+            <span className="metric-value">{report.totals.unknownOrders}</span>
+            <span className="metric-label">未知金额订单</span>
+          </div>
+        </div>
+        {report.totals.unknownOrders > 0 && (
+          <p className="muted">
+            有 {report.totals.unknownOrders} 张订单没有填写金额，它们<strong>不计入</strong>金额合计，
+            也没有被当成 0 元。
+          </p>
+        )}
+      </section>
+
+      <section className="panel">
+        <header className="panel-head compact">
+          <h2>月度趋势</h2>
+          <span className="muted">柱高表示次数，单位：次</span>
+        </header>
+
+        {report.months.every((m) => m.created + m.completed + m.cancelled === 0) ? (
+          <p className="muted">这个区间内还没有任何事件。</p>
+        ) : (
+          <>
+            <div className="chart" role="img" aria-label="每月新建、完成、取消次数">
+              {report.months.map((bucket) => (
+                <div className="chart-col" key={bucket.month}>
+                  <div className="chart-bars">
+                    <span
+                      className="bar bar-created"
+                      style={{ height: `${(bucket.created / maxBar) * 100}%` }}
+                      title={`新建 ${bucket.created}`}
+                    />
+                    <span
+                      className="bar bar-completed"
+                      style={{ height: `${(bucket.completed / maxBar) * 100}%` }}
+                      title={`完成 ${bucket.completed}`}
+                    />
+                    <span
+                      className="bar bar-cancelled"
+                      style={{ height: `${(bucket.cancelled / maxBar) * 100}%` }}
+                      title={`取消 ${bucket.cancelled}`}
+                    />
+                  </div>
+                  <span className="chart-label">{bucket.month.slice(2)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="chart-legend">
+              <span><i className="swatch bar-created" /> 新建</span>
+              <span><i className="swatch bar-completed" /> 完成</span>
+              <span><i className="swatch bar-cancelled" /> 取消</span>
+            </div>
+          </>
+        )}
+      </section>
+
+      <section className="panel">
+        <header className="panel-head compact">
+          <h2>月度明细</h2>
+          <span className="muted">{report.months.length} 个月</span>
+        </header>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>月份</th>
+              <th>新建</th>
+              <th>完成</th>
+              <th>取消</th>
+              <th>已知金额</th>
+              <th>已知订单</th>
+              <th>未知订单</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.months.map((bucket: MonthBucket) => (
+              <tr key={bucket.month}>
+                <td className="mono">{bucket.month}</td>
+                <td>{bucket.created}</td>
+                <td>{bucket.completed}</td>
+                <td>{bucket.cancelled}</td>
+                <td>{yuan(bucket.amountCents)}</td>
+                <td>{bucket.knownOrders}</td>
+                <td>{bucket.unknownOrders}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="muted">
+          金额按订单创建月份归属、取当前记录金额；修改金额会影响该月份的汇总。
+        </p>
+      </section>
+
+      {focus === "completed" && (
+        <section className="panel">
+          <header className="panel-head compact">
+            <h2>本月完成事件</h2>
+            <span className="muted">{events.length} 条</span>
+          </header>
+          {events.length === 0 ? (
+            <p className="muted">本月还没有完成事件。</p>
+          ) : (
+            <ul className="timeline">
+              {events.map((event) => (
+                <li key={event.eventId}>
+                  <span className="timeline-kind mono">{event.localTime}</span>
+                  <span className="timeline-detail">
+                    <code className="order-code">{event.code}</code> {event.title}
+                    {event.stageTitle ? ` · ${event.stageTitle}` : ""}
+                  </span>
+                  <Link className="link-btn" to={`/orders?orderId=${event.orderId}`}>
+                    查看订单
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+    </>
+  );
+}

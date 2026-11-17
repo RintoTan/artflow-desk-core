@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useBlocker } from "react-router-dom";
+import { useBlocker, useSearchParams } from "react-router-dom";
+import { save } from "@tauri-apps/plugin-dialog";
 
 import AttachmentPanel from "../components/AttachmentPanel";
 import ConfirmDialog from "../components/ConfirmDialog";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
-import { densityClass, dropIndex, filterOrders, type StatusFilter } from "../lib/ordersView";
+import {
+  densityClass,
+  dropIndex,
+  filterOrders,
+  riskBadge,
+  type RiskFilter,
+  type StatusFilter,
+  type WorkFilter,
+} from "../lib/ordersView";
 import {
   api,
   describeError,
@@ -12,6 +21,7 @@ import {
   newRequestId,
   preferenceApi,
   queueApi,
+  statsApi,
   type ClientView,
   type ListDensity,
   type CreateOrderInput,
@@ -150,6 +160,12 @@ export default function OrdersPage() {
   const [timezone, setTimezone] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
+  const [workFilter, setWorkFilter] = useState<WorkFilter>("all");
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportScope, setExportScope] = useState<"filtered" | "all">("filtered");
+  const [params] = useSearchParams();
+  const searchKey = params.toString();
   const [density, setDensity] = useState<ListDensity>("comfortable");
   const [queueRev, setQueueRev] = useState(0);
   const [dragging, setDragging] = useState<{ orderId: string; fromIndex: number } | null>(null);
@@ -254,8 +270,14 @@ export default function OrdersPage() {
   }, [selectOrder]);
 
   const visible = useMemo(
-    () => filterOrders(orders, { query, status: statusFilter }),
-    [orders, query, statusFilter],
+    () =>
+      filterOrders(orders, {
+        query,
+        status: statusFilter,
+        risk: riskFilter,
+        work: workFilter,
+      }),
+    [orders, query, statusFilter, riskFilter, workFilter],
   );
   const activeQueue = useMemo(
     () =>
@@ -305,6 +327,20 @@ export default function OrdersPage() {
       setError(describeError(e));
     }
   }
+
+  // 从工作台/统计页跳过来时带着筛选条件；URL 变化就同步到本地筛选状态。
+  useEffect(() => {
+    const nextStatus = (params.get("status") as StatusFilter | null) ?? "all";
+    const nextRisk = (params.get("risk") as RiskFilter | null) ?? "all";
+    const nextWork = (params.get("work") as WorkFilter | null) ?? "all";
+    setStatusFilter(nextStatus);
+    setRiskFilter(nextRisk);
+    setWorkFilter(nextWork);
+    const target = params.get("orderId");
+    if (target) void selectOrder(target);
+    // params 每次渲染都是新对象，用字符串做依赖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchKey]);
 
   // 指针拖拽：在 window 上收尾，指针移出列表也能结束拖动。
   useEffect(() => {
@@ -503,9 +539,19 @@ export default function OrdersPage() {
               {visible.length}/{orders.length} 张 · 活动在前
             </p>
           </div>
-          <button type="button" className="btn btn-primary btn-sm" onClick={attemptCreate}>
-            新建
-          </button>
+          <div className="attach-actions">
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => setExportOpen(true)}
+              disabled={orders.length === 0}
+            >
+              导出
+            </button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={attemptCreate}>
+              新建
+            </button>
+          </div>
         </header>
 
         <div className="list-tools">
@@ -600,7 +646,14 @@ export default function OrdersPage() {
                       <code className="order-code">{order.code}</code>
                       <span className={`chip chip-${order.status}`}>{STATUS_LABEL[order.status]}</span>
                     </span>
-                    <span className="order-row-title">{order.title}</span>
+                    <span className="order-row-title">
+                      {order.title}
+                      {riskBadge(order) && (
+                        <span className={`risk-chip risk-${order.deadlineState}`}>
+                          {riskBadge(order)}
+                        </span>
+                      )}
+                    </span>
                     <span className="order-row-meta">
                       <span className={`dot dot-${order.workState}`} />
                       {WORK_LABEL[order.workState]}
@@ -813,6 +866,60 @@ export default function OrdersPage() {
         )}
 
       </section>
+
+      <ConfirmDialog
+        open={exportOpen}
+        title="导出订单明细 CSV"
+        confirmLabel="选择保存位置"
+        busy={busy}
+        error={null}
+        onCancel={() => setExportOpen(false)}
+        onConfirm={async () => {
+          const scope = exportScope;
+          const ids = visible.map((order) => order.id);
+          setExportOpen(false);
+          try {
+            const path = await save({
+              title: "导出订单明细 CSV",
+              defaultPath: "artflow-订单明细.csv",
+              filters: [{ name: "CSV", extensions: ["csv"] }],
+            });
+            // 用户取消：不建文件、不报成功
+            if (!path) return;
+            setBusy(true);
+            const result = await statsApi.exportOrders({
+              path,
+              scope,
+              orderIds: scope === "filtered" ? ids : [],
+            });
+            setNotice(`已导出 ${result.rows} 条订单到 ${result.path}`);
+          } catch (e) {
+            setError(describeError(e));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <p>只导出业务字段，不包含客户联系方式、私人备注或任何文件路径。</p>
+        <label className="radio-row">
+          <input
+            type="radio"
+            name="export-scope"
+            checked={exportScope === "filtered"}
+            onChange={() => setExportScope("filtered")}
+          />
+          <span>当前筛选结果（{visible.length} 条）</span>
+        </label>
+        <label className="radio-row">
+          <input
+            type="radio"
+            name="export-scope"
+            checked={exportScope === "all"}
+            onChange={() => setExportScope("all")}
+          />
+          <span>全部订单（{orders.length} 条）</span>
+        </label>
+      </ConfirmDialog>
 
       <UnsavedChangesDialog
         open={dialogOpen}
