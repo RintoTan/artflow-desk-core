@@ -1,3 +1,4 @@
+pub mod attachments;
 pub mod clients;
 pub mod events;
 pub mod lifecycle;
