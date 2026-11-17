@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -147,23 +147,23 @@ describe("OrderBoard 真实交互", () => {
     });
     render(<OrderBoard {...baseProps({ orders: [atDraft], onApply, onError })} />);
 
-    await user.click(screen.getByRole("button", { name: "阶段操作" }));
-    const items = screen.getAllByRole("menuitem") as HTMLButtonElement[];
-    expect(items.length).toBeGreaterThan(0);
+    await user.click(screen.getAllByRole("button", { name: /阶段操作/ })[0]!);
+    const dialog = await screen.findByRole("alertdialog");
+    const radios = within(dialog).getAllByRole("radio") as HTMLInputElement[];
+    expect(radios.length).toBe(3);
 
-    for (const item of items) {
-      if (item.disabled) {
-        // 禁用项必须给出原因，不能让用户猜
-        expect(item.getAttribute("title") ?? "").not.toBe("");
-        await user.click(item);
-        expect(screen.queryByRole("alertdialog")).toBeNull();
+    // 不可用的目标必须禁用且写明原因，不能让用户猜
+    for (const radio of radios) {
+      if (radio.disabled) {
+        const row = radio.closest("label")!;
+        expect(row.textContent ?? "").toMatch(/无法通过单个合法动作|当前阶段/);
       }
     }
-
-    // 至少存在一条可点的合法动作，且点了会弹确认框（不是静默写入）
-    const enabled = items.filter((item) => !item.disabled);
+    const enabled = radios.filter((radio) => !radio.disabled);
     expect(enabled.length).toBeGreaterThan(0);
     await user.click(enabled[0]!);
+    // 选完目标再点确认 → 进入二次确认，仍未写入
+    await user.click(within(dialog).getByRole("button", { name: "确认调整" }));
     expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
     expect(onApply).not.toHaveBeenCalled();
   });
@@ -266,10 +266,10 @@ describe("OrderBoard 真实交互", () => {
   it("阶段操作菜单只列该订单模板里的合法目标", async () => {
     const user = userEvent.setup();
     render(<OrderBoard {...baseProps({ orders: [order()] })} />);
-    await user.click(screen.getAllByRole("button", { name: "阶段操作" })[0]!);
-    const items = screen.getAllByRole("menuitem");
-    // 3 个阶段去掉当前阶段 = 2 个候选
-    expect(items).toHaveLength(2);
-    expect(items.map((i) => i.textContent)).toEqual(["返工到「草稿」", "推进到「上色」"]);
+    await user.click(screen.getAllByRole("button", { name: /阶段操作/ })[0]!);
+    const dialog = await screen.findByRole("alertdialog");
+    const radios = within(dialog).getAllByRole("radio") as HTMLInputElement[];
+    // 只列该订单模板的阶段；跨模板阶段不会出现
+    expect(radios.map((r) => r.value)).toEqual(["草稿", "线稿", "上色"]);
   });
 });

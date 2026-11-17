@@ -795,14 +795,30 @@ export default function OrdersPage() {
         </div>
 
         <div className="orders-head-filters">
-          <input
-            ref={searchRef}
-            className="list-search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索标题 / 编号 / 客户 / 来源"
-            aria-label="搜索订单"
-          />
+          <div className="search-box">
+            <input
+              ref={searchRef}
+              className="list-search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜索标题 / 编号 / 客户 / 来源"
+              aria-label="搜索订单"
+            />
+            {query !== "" && (
+              <button
+                type="button"
+                className="search-clear"
+                aria-label="清除搜索"
+                title="清除搜索"
+                onClick={() => {
+                  setQuery("");
+                  searchRef.current?.focus();
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
           <select
             className="select-inline"
             value={sourceFilter}

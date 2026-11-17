@@ -3303,8 +3303,10 @@ body:has(.row-dragging) {
   padding-bottom: 22px;
 }
 
+/* 表格的滚动容器就是 .table-wrap（overflow-x:auto）；纵向留白交给 tbody::after，
+   否则滚到底时最后一行仍贴着边界。 */
 .table-wrap {
-  padding-bottom: 22px;
+  padding-bottom: 0;
 }
 
 .orders-detail {
@@ -3324,7 +3326,7 @@ body:has(.row-dragging) {
 /* 底部留白必须在**滚动内容内部**，否则滚到底时最后一张卡仍贴着边界。
    UI-03 只给容器加 padding，实测无效，这里改用 ::after 作为内容末尾的间隙。 */
 .board-cards::after,
-.table-scroll::after,
+.table-wrap tbody::after,
 .order-rows::after {
   content: "";
   display: block;
@@ -3565,4 +3567,109 @@ body:has(.row-dragging) {
 .main {
   /* 恢复槽位：否则卡片视图有页面滚动条、看板没有，页头宽度会在 585/570 之间跳。 */
   scrollbar-gutter: stable;
+}
+
+/* 搜索框尾部清除按钮：只在有内容时出现，不遮挡文字 */
+.search-box {
+  position: relative;
+  flex: 1 1 240px;
+  min-width: 170px;
+  display: flex;
+}
+
+.search-box .list-search {
+  flex: 1 1 auto;
+  padding-right: 30px;
+}
+
+.search-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.search-clear:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.search-clear:focus-visible {
+  outline: 2px solid var(--accent, #5a7c9b);
+  outline-offset: 1px;
+}
+
+/* 阶段选择对话框 */
+.stage-picker fieldset {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  margin: 8px 0;
+  padding: 6px;
+}
+
+.stage-picker legend {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 0 4px;
+}
+
+.stage-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.stage-picker-row.is-off {
+  color: var(--text-muted);
+}
+
+.stage-picker-name {
+  flex: 1 1 auto;
+}
+
+.stage-picker-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* 卡片操作按钮收紧：⋯ 只占 26px，不再抢占卡片宽度 */
+.board-card-more {
+  flex: 0 0 auto;
+  width: 26px;
+  padding: 0;
+}
+
+/* 宽度约束链：flex/grid 子项默认 min-width:auto，CJK 字体下会把卡片顶宽。
+   逐层显式归零，避免在 WKWebView 里出现「卡片撑破列 → 看板横向滚动」。 */
+.board-col,
+.board-cards,
+.board-card,
+.board-card-open,
+.board-card-meta,
+.board-card-foot {
+  min-width: 0;
+}
+
+.board-card-open > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.board-card-client {
+  overflow-wrap: anywhere;
 }

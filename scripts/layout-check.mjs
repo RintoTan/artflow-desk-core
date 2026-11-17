@@ -401,7 +401,7 @@ for (const [view, widths] of [
   );
 }
 
-// 底部安全距离：每类视图自己的滚动容器都要给最后一项留呼吸空间
+// 底部安全距离：测"滚到底后最后一项与视口下边界的真实距离"，不是读 padding
 {
   const targets = [
     ["cards", "rows", "卡片列表"],
@@ -417,13 +417,16 @@ for (const [view, widths] of [
       { encoding: "utf8", env: { ...process.env, PROBE_SLOT: "1", PROBE_VIEW: view } },
     );
     const line = raw.slice(raw.indexOf("VIEW "));
-    const pads = JSON.parse(line.slice(line.indexOf("{"))).geom.bottomPad ?? {};
-    const value = pads[key];
-    seen.push(`${label}=${value}`);
-    if (value === null || value === undefined) problems.push(`${label}容器没找到`);
-    else if (value < 20) problems.push(`${label}底部留白只有 ${value}px，应 ≥20px`);
+    const g = JSON.parse(line.slice(line.indexOf("{"))).geom;
+    const gap = g.bottomGap;
+    if (!gap || gap.key !== key) {
+      problems.push(`${label}没有测到真实底部距离`);
+      continue;
+    }
+    seen.push(`${label}=${gap.gap}px`);
+    if (gap.gap < 16) problems.push(`${label}滚到底只剩 ${gap.gap}px，应 ≥16px`);
   }
-  record("orders: 滚动到底保留 ≥20px 安全距离", problems, seen.join(" / "));
+  record("orders: 滚动到底保留真实安全距离", problems, seen.join(" / "));
 }
 
 // 抽屉关闭按钮：位于可见标题栏内、尺寸够点

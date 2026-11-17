@@ -781,7 +781,7 @@ if (process.env.PROBE_VIEW) {
         const map = [
           [".order-rows", "rows"],
           [".board-cards", "board"],
-          [".table-scroll", "table"],
+          [".table-wrap", "table"],
         ];
         for (const [sel, key] of map) {
           const box = document.querySelector(sel);
@@ -821,6 +821,24 @@ if (process.env.PROBE_VIEW) {
           offsetTop: Math.round(c.top - p.top),
           inside: c.left >= p.left - 1 && c.right <= p.right + 1,
         };
+      })(),
+      overflow: (() => {
+        const board = document.querySelector(".board");
+        if (!board) return [];
+        const rows = [];
+        board.querySelectorAll("*").forEach((node) => {
+          if (node.scrollWidth > node.clientWidth + 1 && node.clientWidth > 0) {
+            const cs = getComputedStyle(node);
+            rows.push({
+              cls: (node.className || node.tagName).toString().slice(0, 40),
+              cw: node.clientWidth,
+              sw: node.scrollWidth,
+              minW: cs.minWidth,
+              ovx: cs.overflowX,
+            });
+          }
+        });
+        return rows.slice(0, 8);
       })(),
       boardNav: (() => {
         const nav = document.querySelector(".board-nav");

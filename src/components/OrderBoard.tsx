@@ -47,7 +47,8 @@ export default function OrderBoard({
   const model = useMemo(() => buildBoard(orders), [orders]);
   const columns = model.columns;
 
-  const [menuFor, setMenuFor] = useState<string | null>(null);
+  /** 阶段选择对话框：替代原先绝对定位的浮层菜单（会被滚动容器裁切）。 */
+  const [picker, setPicker] = useState<{ order: OrderView; target: string | null } | null>(null);
   const [pending, setPending] = useState<{
     order: OrderView;
     plan: Extract<StageMovePlan, { kind: "advance" | "rework" }>;
@@ -150,50 +151,13 @@ export default function OrderBoard({
             <button
               type="button"
               className="board-card-more"
-              aria-expanded={menuFor === order.id}
-              aria-haspopup="menu"
-              title="选择阶段操作"
-              onClick={() => setMenuFor(menuFor === order.id ? null : order.id)}
+              aria-haspopup="dialog"
+              aria-label={`${order.code} 的阶段操作`}
+              title="阶段操作"
+              onClick={() => setPicker({ order, target: null })}
             >
-              阶段操作
+              ⋯
             </button>
-            {menuFor === order.id && (
-              <ul className="stage-menu" role="menu" aria-label={`${order.code} 的阶段操作`}>
-                {order.stages
-                  .filter((stage) => stage.id !== order.currentStageId)
-                  .map((stage) => {
-                    const plan = planStageMove(order, stage.title);
-                    const usable = plan.kind === "advance" || plan.kind === "rework";
-                    // 禁用项必须给原因：blocked 用领域理由，其余给一句人话。
-                    const reason =
-                      plan.kind === "blocked"
-                        ? plan.reason
-                        : usable
-                          ? null
-                          : "无法通过单个合法动作到达该阶段";
-                    return (
-                      <li key={stage.id} role="none">
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="stage-menu-item"
-                          disabled={!usable}
-                          title={reason ?? undefined}
-                          onClick={() => {
-                            setMenuFor(null);
-                            if (plan.kind === "advance" || plan.kind === "rework") {
-                              setPending({ order, plan });
-                            }
-                          }}
-                        >
-                          {plan.kind === "rework" ? "返工到" : "推进到"}「{stage.title}」
-                          {reason && <span className="stage-menu-reason">{reason}</span>}
-                        </button>
-                      </li>
-                    );
-                  })}
-              </ul>
-            )}
           </div>
         )}
       </article>
@@ -317,6 +281,63 @@ export default function OrderBoard({
       {columns.length === 0 && model.finished.length === 0 && (
         <p className="muted">当前筛选下没有订单。</p>
       )}
+
+      <ConfirmDialog
+        open={picker !== null}
+        title="调整制作阶段"
+        confirmLabel="确认调整"
+        confirmDisabled={!picker?.target}
+        onCancel={() => setPicker(null)}
+        onConfirm={() => {
+          if (!picker?.target) return;
+          const plan = planStageMove(picker.order, picker.target);
+          setPicker(null);
+          if (plan.kind === "advance" || plan.kind === "rework") {
+            setPending({ order: picker.order, plan });
+          } else if (plan.kind === "blocked") {
+            onError(plan.reason);
+          }
+        }}
+      >
+        {picker && (
+          <div className="stage-picker">
+            <p className="muted">
+              {picker.order.code} · {picker.order.title}
+            </p>
+            <fieldset>
+              <legend>只能在该订单自己的流程模板内调整</legend>
+              {picker.order.stages.map((stage) => {
+                const plan = planStageMove(picker.order, stage.title);
+                const usable = plan.kind === "advance" || plan.kind === "rework";
+                const current = stage.id === picker.order.currentStageId;
+                const reason =
+                  plan.kind === "blocked"
+                    ? plan.reason
+                    : usable
+                      ? null
+                      : "无法通过单个合法动作到达该阶段";
+                return (
+                  <label key={stage.id} className={`stage-picker-row${usable ? "" : " is-off"}`}>
+                    <input
+                      type="radio"
+                      name="stage-target"
+                      value={stage.title}
+                      disabled={!usable}
+                      checked={picker.target === stage.title}
+                      onChange={() => setPicker({ order: picker.order, target: stage.title })}
+                    />
+                    <span className="stage-picker-name">{stage.title}</span>
+                    <span className="stage-picker-note">
+                      {current ? "当前阶段" : (reason ?? (plan.kind === "rework" ? "返工" : "推进"))}
+                    </span>
+                  </label>
+                );
+              })}
+            </fieldset>
+            <p className="muted">确认后还会再弹一次变更确认；取消不会写入任何数据。</p>
+          </div>
+        )}
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={pending !== null}
