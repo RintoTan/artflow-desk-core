@@ -289,6 +289,102 @@ for (const [view, widths] of [
   }
 }
 
+// 三视图共享页头：切换视图不得让工具区换位置
+{
+  const boxes = [];
+  for (const view of ["cards", "board", "table"]) {
+    const raw = execFileSync(
+      process.execPath,
+      ["scripts/layout-probe.mjs", URL, "900", "/orders"],
+      { encoding: "utf8", env: { ...process.env, PROBE_SLOT: "1", PROBE_VIEW: view } },
+    );
+    const line = raw.slice(raw.indexOf("VIEW "));
+    const g = JSON.parse(line.slice(line.indexOf("{"))).geom;
+    boxes.push({ view, head: g.headBox, sw: g.switchBox });
+  }
+  const problems = [];
+  const first = boxes[0];
+  if (!first?.head || !first?.sw) problems.push("没有渲染共享页头");
+  for (const box of boxes.slice(1)) {
+    // 位置与宽度必须一致；高度允许 2px 取整差（计数文字的行高会因内容微调）。
+    if (!box.head || !first.head) {
+      problems.push(`${box.view} 没有页头`);
+    } else if (
+      box.head.x !== first.head.x ||
+      box.head.y !== first.head.y ||
+      box.head.w !== first.head.w ||
+      Math.abs(box.head.h - first.head.h) > 2
+    ) {
+      problems.push(
+        `${box.view} 页头位置变了：${JSON.stringify(box.head)} vs ${JSON.stringify(first.head)}`,
+      );
+    }
+    if (JSON.stringify(box.sw) !== JSON.stringify(first.sw)) {
+      problems.push(`${box.view} 视图切换按钮位置变了`);
+    }
+  }
+  record(
+    "orders: 共享页头位置稳定（cards/board/table）",
+    problems,
+    `页头 ${JSON.stringify(first.head)}，切换按钮 ${JSON.stringify(first.sw)}`,
+  );
+}
+
+// 表格可读性：核心列不得逐字符折行；窄容器收起次要列
+{
+  const raw = execFileSync(
+    process.execPath,
+    ["scripts/layout-probe.mjs", URL, "900", "/orders"],
+    { encoding: "utf8", env: { ...process.env, PROBE_SLOT: "1", PROBE_VIEW: "table" } },
+  );
+  const line = raw.slice(raw.indexOf("VIEW "));
+  const g = JSON.parse(line.slice(line.indexOf("{"))).geom;
+  const cells = g.tableCells ?? [];
+  const problems = [];
+  if (cells.length === 0) problems.push("表格没有渲染出数据行");
+  // 前四列 = 编号 / 客户 / 标题 / 来源，必须都在且不折行（标题允许换行）
+  for (const [index, label] of [
+    [0, "编号"],
+    [1, "客户"],
+    [3, "来源"],
+  ]) {
+    const cell = cells[index];
+    if (!cell) problems.push(`${label} 列缺失`);
+    else if (!cell.nowrap) problems.push(`${label} 列允许折行（会逐字符断开）`);
+  }
+  const code = cells[0];
+  if (code && code.w < 90) problems.push(`编号列只有 ${code.w}px，读不全`);
+  const amount = cells.find((c) => c.text.startsWith("¥"));
+  if (amount && !amount.nowrap) problems.push("金额列允许折行");
+  const date = cells.find((c) => /^\d{4}-\d{2}-\d{2}$/.test(c.text));
+  if (date && !date.nowrap) problems.push("日期列允许折行");
+  // 窄容器下次要列收起（宽度 0 表示 display:none 生效）
+  const secondary = cells.filter((c) => c.w === 0).length;
+  if (secondary === 0) problems.push("窄窗下次要列没有收起，仍与核心列抢宽度");
+  record("orders: 表格核心列不折行且次要列可收起", problems, `编号列 ${code?.w ?? 0}px，收起 ${secondary} 列`);
+}
+
+// 看板阶段导航：所有阶段都能从导航触达
+{
+  const raw = execFileSync(
+    process.execPath,
+    ["scripts/layout-probe.mjs", URL, "900", "/orders"],
+    { encoding: "utf8", env: { ...process.env, PROBE_SLOT: "1", PROBE_VIEW: "board" } },
+  );
+  const line = raw.slice(raw.indexOf("VIEW "));
+  const g = JSON.parse(line.slice(line.indexOf("{"))).geom;
+  const problems = [];
+  if (!g.boardNav) problems.push("看板没有阶段导航");
+  else if (g.boardNav.chips !== g.board.cols) {
+    problems.push(`导航 ${g.boardNav.chips} 个阶段，列 ${g.board.cols} 个，对不上`);
+  }
+  record(
+    "orders: 看板阶段导航覆盖全部阶段",
+    problems,
+    g.boardNav ? `${g.boardNav.chips} 个导航项：${g.boardNav.labels.join(" / ")}` : "无",
+  );
+}
+
 if (failures.length) {
   console.error(`\n${failures.length}/${checks} 项几何回归失败`);
   process.exit(1);

@@ -126,6 +126,8 @@ describe("UI-05 长标题", () => {
 
   it("订单页根节点带 orders-page 标记，窄屏高度规则只作用于订单页", async () => {
     await setup();
-    expect(document.querySelector(".orders-layout.orders-page")).not.toBeNull();
+    // 页头与工作区已分层：根节点是 .orders-page，工作区是它下面的 .orders-layout。
+    expect(document.querySelector(".orders-page")).not.toBeNull();
+    expect(document.querySelector(".orders-page .orders-layout")).not.toBeNull();
   });
 });

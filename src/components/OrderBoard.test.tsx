@@ -80,6 +80,16 @@ function baseProps(overrides: Partial<Parameters<typeof OrderBoard>[0]> = {}) {
   };
 }
 
+/** 阶段名现在同时出现在导航 chip 与列头，取列必须按列头定位。 */
+function columnEl(title: string): HTMLElement {
+  const cols = Array.from(document.querySelectorAll<HTMLElement>(".board-col"));
+  const hit = cols.find(
+    (col) => col.querySelector(".board-col-title")?.textContent?.trim() === title,
+  );
+  if (!hit) throw new Error(`找不到阶段列：${title}`);
+  return hit;
+}
+
 /** jsdom 没有真实 DataTransfer，手工造一个最小实现。 */
 function drop(target: HTMLElement, orderId: string) {
   const store: Record<string, string> = { "text/minidesk-order": orderId };
@@ -97,8 +107,8 @@ function drop(target: HTMLElement, orderId: string) {
 describe("OrderBoard 真实交互", () => {
   it("按阶段名分列，列头显示数量与已知金额合计", () => {
     render(<OrderBoard {...baseProps()} />);
-    expect(screen.getByText("草稿")).toBeInTheDocument();
-    expect(screen.getByText("线稿")).toBeInTheDocument();
+    expect(columnEl("草稿")).toBeTruthy();
+    expect(columnEl("线稿")).toBeTruthy();
     expect(screen.getAllByText(/1 · ¥880/)).toHaveLength(3);
   });
 
@@ -107,7 +117,7 @@ describe("OrderBoard 真实交互", () => {
     const onApply = vi.fn(async () => {});
     render(<OrderBoard {...baseProps({ onApply })} />);
 
-    drop(screen.getByText("线稿").closest(".board-col") as HTMLElement, "o1");
+    drop(columnEl("线稿"), "o1");
     const dialog = await screen.findByRole("alertdialog");
     expect(dialog).toHaveTextContent("推进阶段");
     expect(dialog).toHaveTextContent("线稿");
@@ -122,7 +132,7 @@ describe("OrderBoard 真实交互", () => {
     const onApply = vi.fn(async () => {});
     render(<OrderBoard {...baseProps({ onApply })} />);
 
-    drop(screen.getByText("线稿").closest(".board-col") as HTMLElement, "o1");
+    drop(columnEl("线稿"), "o1");
     await user.click(screen.getByRole("button", { name: "确认变更" }));
 
     expect(onApply).toHaveBeenCalledTimes(1);
@@ -139,7 +149,7 @@ describe("OrderBoard 真实交互", () => {
     const onError = vi.fn();
     render(<OrderBoard {...baseProps({ onApply, onError })} />);
 
-    drop(screen.getByText("上色").closest(".board-col") as HTMLElement, "o1");
+    drop(columnEl("上色"), "o1");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(onApply).not.toHaveBeenCalled();
     expect(onError).toHaveBeenCalledWith(expect.stringContaining("不能跳过中间阶段"));
@@ -204,7 +214,7 @@ describe("OrderBoard 真实交互", () => {
     const onApply = vi.fn(async () => {});
     render(<OrderBoard {...baseProps({ onApply })} />);
 
-    drop(screen.getByText("线稿").closest(".board-col") as HTMLElement, "o1");
+    drop(columnEl("线稿"), "o1");
     await screen.findByRole("alertdialog");
     await user.keyboard("{Escape}");
 

@@ -133,6 +133,21 @@ const fixtures = {
     },
   ],
   list_order_events: [],
+  dashboard: {
+    activeTotal: 4,
+    queued: 1,
+    inProgress: 3,
+    dueSoon: 1,
+    dueToday: 0,
+    overdue: 1,
+    unscheduled: 0,
+    completedThisMonth: 2,
+    cancelledThisMonth: 1,
+    createdThisMonth: 4,
+    timezone: "Asia/Shanghai",
+    today: "2026-11-17",
+    month: "2026-11",
+  },
   client_tag_list: [{ id: "t1", name: "长期客户", clientCount: 1 }],
   attachment_list: [],
 };
@@ -662,11 +677,13 @@ if (process.env.PROBE_VIEW) {
     const value = await send("Runtime.evaluate", { expression, returnByValue: true });
     return value.result?.result?.value;
   };
+  const viewLabel =
+    process.env.PROBE_VIEW === "board" ? "看板" : process.env.PROBE_VIEW === "table" ? "表格" : "卡片";
   const clicked = await run(`(() => {
     const box = document.querySelector('[aria-label="切换订单视图"]');
     if (!box) return null;
     const target = Array.from(box.querySelectorAll("button")).find(
-      (b) => b.textContent.trim() === ${JSON.stringify(process.env.PROBE_VIEW === "board" ? "看板" : "表格")}
+      (b) => b.textContent.trim() === ${JSON.stringify(viewLabel)}
     );
     if (!target) return null;
     target.click();
@@ -710,6 +727,37 @@ if (process.env.PROBE_VIEW) {
           }
         : { exists: false },
       writeCalls,
+      headBox: (() => {
+        const head = document.querySelector(".orders-head");
+        if (!head) return null;
+        const r = head.getBoundingClientRect();
+        return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+      })(),
+      switchBox: (() => {
+        const sw = document.querySelector(".view-switch");
+        if (!sw) return null;
+        const r = sw.getBoundingClientRect();
+        return { x: Math.round(r.x), y: Math.round(r.y) };
+      })(),
+      tableCells: (() => {
+        const row = document.querySelector(".order-table tbody tr");
+        if (!row) return null;
+        return Array.from(row.querySelectorAll("td")).map((td) => {
+          const style = getComputedStyle(td);
+          return {
+            text: (td.textContent || "").trim().slice(0, 12),
+            lines: Math.round(td.getBoundingClientRect().height / parseFloat(style.lineHeight || "16")),
+            nowrap: style.whiteSpace === "nowrap",
+            w: Math.round(td.getBoundingClientRect().width),
+          };
+        });
+      })(),
+      boardNav: (() => {
+        const nav = document.querySelector(".board-nav");
+        if (!nav) return null;
+        const chips = Array.from(nav.querySelectorAll(".board-nav-chip"));
+        return { chips: chips.length, labels: chips.map((c) => c.textContent.trim()) };
+      })(),
       cards: document.querySelectorAll(".order-row").length,
       chips: Array.from(document.querySelectorAll(".view-switch button")).map((b) => b.textContent.trim()),
     };
