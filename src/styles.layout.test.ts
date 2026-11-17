@@ -111,6 +111,86 @@ describe("UI 规范：控件与排版", () => {
   it("导航图标有固定 24px 盒子，文字起点不随图标外形移动", () => {
     expect(rule(".nav-icon-box")).toMatch(/width:\s*24px/);
     expect(rule(".nav-icon-box")).toMatch(/height:\s*24px/);
-    expect(rule(".nav-item")).toMatch(/gap:\s*10px/);
+    expect(rule(".nav-item")).toMatch(/column-gap:\s*10px/);
+  });
+});
+
+describe("DEV-06B-UI-POLISH 规则守卫", () => {
+  /* 这一组只证明"规则写成了什么"，不证明看起来对。
+     真实几何由 npm run layout:check 在无头 Chrome 里量。 */
+
+  it("导航行是 24px 图标列 + 10px 间距 + 文字列，文字起点由列决定", () => {
+    const item = rule(".nav-item");
+    expect(item).toMatch(/display:\s*grid/);
+    expect(item).toMatch(/grid-template-columns:\s*24px minmax\(0,\s*1fr\)/);
+    expect(item).toMatch(/column-gap:\s*10px/);
+    expect(item).toMatch(/align-items:\s*center/);
+    // 旧的 display:block 会把列布局整个废掉
+    expect(item).not.toMatch(/display:\s*block/);
+  });
+
+  it("折叠态只剩 24px 一列并整体居中，图标盒与命中区同心", () => {
+    const collapsed = blockAt(".shell-sidebar-collapsed .nav-item");
+    expect(collapsed).toMatch(/grid-template-columns:\s*24px;/);
+    expect(collapsed).toMatch(/justify-content:\s*center/);
+    expect(collapsed).toMatch(/padding-inline:\s*0/);
+  });
+
+  it("侧栏底部组把折叠按钮和版本信息绑在一起，按钮不再单独贴底", () => {
+    expect(rule(".sidebar-bottom")).toMatch(/margin-top:\s*auto/);
+    expect(rule(".sidebar-bottom")).toMatch(/flex:\s*0 0 auto/);
+    expect(rule(".sidebar-collapse")).not.toMatch(/margin-top:\s*auto/);
+    // 40px 的旧覆盖会让展开态命中高度偷偷变矮
+    expect(css).not.toMatch(/\n\.sidebar-collapse\s*\{[^}]*min-height:\s*40px/);
+    expect(rule(".sidebar-foot")).toMatch(/border-top:\s*1px solid var\(--border\)/);
+  });
+
+  it("外壳网格行可以收缩，矮窗口里底部按钮不会被顶到窗口外", () => {
+    expect(rule(".shell")).toMatch(/grid-template-rows:\s*minmax\(0,\s*1fr\)/);
+  });
+
+  it("导航项太多时自己滚动，不会把底部按钮挤出去", () => {
+    const nav = rule("nav");
+    expect(nav).toMatch(/min-height:\s*0/);
+    expect(nav).toMatch(/overflow-y:\s*auto/);
+  });
+
+  it("订单页只给列表体确定高度，卡片高度由内容决定", () => {
+    const narrow = blockAt("@container workspace (max-width: 780px)");
+    expect(narrow).toMatch(/\.orders-page\.orders-layout\s*\{[^}]*grid-template-rows:\s*max-content auto/);
+    const list = /\.orders-page \.orders-list\s*\{([^}]*)\}/.exec(narrow)?.[1] ?? "";
+    expect(list).toMatch(/height:\s*auto/);
+    expect(list).toMatch(/max-height:\s*none/);
+    // 裁剪 + 确定高度正是上一轮"列表压住详情"的成因
+    expect(list).toMatch(/overflow:\s*visible/);
+
+    const rows = /\.orders-page \.order-rows\s*\{([^}]*)\}/.exec(narrow)?.[1] ?? "";
+    expect(rows).toMatch(/34dvh/);
+    // 矮窗口的第二约束：不能让卡片占满整屏
+    expect(rows).toMatch(/60dvh - 190px/);
+  });
+
+  it("客户与模板页不再被订单列表的高度规则影响", () => {
+    const narrow = blockAt("@container workspace (max-width: 780px)");
+    // 订单页专属选择器必须带 .orders-page 前缀
+    const scoped = narrow.match(/\.orders-page \.order-rows/g) ?? [];
+    expect(scoped.length).toBe(1);
+    expect(narrow).toMatch(/^\s*\.orders-list\s*\{[^}]*height:\s*42vh/m);
+  });
+
+  it("已删除按窗口宽度瞎猜的 980px 单栏规则", () => {
+    expect(css).not.toContain("@media (max-width: 980px)");
+  });
+
+  it("长标题气泡：固定定位、不拦截指针、可断行，且两种主题都有反向配色", () => {
+    const tip = rule(".title-tooltip");
+    expect(tip).toMatch(/position:\s*fixed/);
+    expect(tip).toMatch(/pointer-events:\s*none/);
+    expect(tip).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(tip).toMatch(/white-space:\s*normal/);
+    expect(css).toMatch(/--tooltip-bg:/);
+    expect(css).toMatch(/--tooltip-fg:/);
+    const dark = blockAt('[data-theme="dark"]');
+    expect(dark).toMatch(/--tooltip-bg:/);
   });
 });

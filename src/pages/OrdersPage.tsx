@@ -4,6 +4,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 
 import AttachmentPanel from "../components/AttachmentPanel";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { TruncatedTitle } from "../components/TitleTooltip";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import {
   densityClass,
@@ -604,7 +605,7 @@ export default function OrdersPage() {
   }
 
   return (
-    <div className="orders-layout">
+    <div className="orders-layout orders-page">
       <aside className="orders-list panel">
         <header className="panel-head compact">
           <div>
@@ -727,14 +728,14 @@ export default function OrdersPage() {
                       <code className="order-code">{order.code}</code>
                       <span className={`chip chip-${order.status}`}>{STATUS_LABEL[order.status]}</span>
                     </span>
-                    <span className="order-row-title" title={order.title}>
+                    <TruncatedTitle className="order-row-title" text={order.title}>
                       {order.title}
                       {riskBadge(order) && (
                         <span className={`risk-chip risk-${order.deadlineState}`}>
                           {riskBadge(order)}
                         </span>
                       )}
-                    </span>
+                    </TruncatedTitle>
                     <span className="order-row-meta">
                       <span className={`dot dot-${order.workState}`} />
                       {WORK_LABEL[order.workState]}

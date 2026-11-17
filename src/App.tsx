@@ -317,6 +317,8 @@ export default function App() {
               to={item.to}
               end={item.end}
               title={item.label}
+              /* 折叠后文字被隐藏，必须有独立可访问名 */
+              aria-label={item.label}
               aria-current={undefined}
               className={({ isActive }) => (isActive ? "nav-item nav-item-active" : "nav-item")}
             >
@@ -328,33 +330,37 @@ export default function App() {
           ))}
         </nav>
 
-        <button
-          type="button"
-          className="sidebar-collapse"
-          onClick={() => setCollapsed((value) => !value)}
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? "展开侧边栏" : "折叠侧边栏"}
-          title={collapsed ? "展开侧边栏" : "折叠侧边栏"}
-        >
-          <span className="nav-icon-box">
-            <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                d={collapsed ? "M9 5l7 7-7 7" : "M15 5l-7 7 7 7"}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </span>
-          <span className="nav-label">折叠</span>
-        </button>
+        {/* 底部组：折叠按钮 + 分隔线 + 版本信息。三者一起贴底，
+            按钮不会单独漂在侧栏中下部。 */}
+        <div className="sidebar-bottom">
+          <button
+            type="button"
+            className="sidebar-collapse"
+            onClick={() => setCollapsed((value) => !value)}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "展开侧边栏" : "折叠侧边栏"}
+            title={collapsed ? "展开侧边栏" : "折叠侧边栏"}
+          >
+            <span className="nav-icon-box">
+              <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d={collapsed ? "M9 5l7 7-7 7" : "M15 5l-7 7 7 7"}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            <span className="nav-label">{collapsed ? "展开" : "折叠"}</span>
+          </button>
 
-        <footer className="sidebar-foot">
-          <span>{hasDraft ? "有未保存的修改" : "DEV-06A 关窗保护"}</span>
-          <span className="muted">未完成 v1.0</span>
-        </footer>
+          <footer className="sidebar-foot">
+            <span>{hasDraft ? "有未保存的修改" : "DEV-06A 关窗保护"}</span>
+            <span className="muted">未完成 v1.0</span>
+          </footer>
+        </div>
       </aside>
 
       <main className="main">

@@ -29,6 +29,10 @@
   --viewer-bg: #0b1016;
   --viewer-text: #e7eff7;
   --viewer-muted: #93a8bc;
+  /* 应用内提示气泡：与页面底色反向，两种主题下都有足够对比 */
+  --tooltip-bg: #22303e;
+  --tooltip-fg: #f2f7fc;
+  --tooltip-shadow: 0 8px 24px rgba(12, 22, 33, 0.28);
   --text: #16283c;
   --text-muted: #5a7189;
   --accent: #2c6fb5;
@@ -95,6 +99,9 @@
   --chip-today-text: #e0a878;
   --chip-neutral-bg: #25313d;
   --chip-neutral-text: #a9b8c7;
+  --tooltip-bg: #e8eff7;
+  --tooltip-fg: #10171f;
+  --tooltip-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
   color-scheme: dark;
 }
 
@@ -118,6 +125,9 @@ body {
 .shell {
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
+  /* 行也要能收缩：auto 行会被侧栏内容撑到 500px 以上，
+     结果折叠按钮和版本信息被顶到窗口外面（实测 400px 高时按钮在 y=424）。 */
+  grid-template-rows: minmax(0, 1fr);
   height: 100dvh;
   transition: grid-template-columns 160ms ease;
 }
@@ -126,8 +136,18 @@ body {
   grid-template-columns: 68px minmax(0, 1fr);
 }
 
-.sidebar-collapse {
+/* 侧栏底部组：折叠按钮 + 分隔线 + 版本信息，一起贴在侧栏底部。
+   之前按钮和版本区各自 margin-top:auto，flex 会把剩余空间平分给两个
+   auto margin，结果按钮停在半腰（实测离底部 207px）。 */
+.sidebar-bottom {
   margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.sidebar-collapse {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -167,6 +187,7 @@ body {
 }
 
 .shell-sidebar-collapsed .nav-item {
+  grid-template-columns: 24px;
   justify-content: center;
   padding-inline: 0;
 }
@@ -183,12 +204,23 @@ body {
   height: 20px;
 }
 
-/* 命中区域：折叠后只剩图标，必须仍然够大（>=44×44） */
+/* 导航行 = 固定 24px 图标列 + 10px 间距 + 文字列。
+   用 grid 而不是 flex+gap：图标外形或名称长短都不能改变文字起点，
+   行高也不会随文字行数变化（之前是 block，靠 inline 布局，
+   实测图标盒比行中心高 2px、文字起点紧贴图标盒 0px）。 */
 .nav-item {
-  min-height: 44px;
-  display: flex;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  column-gap: 10px;
   align-items: center;
-  gap: 10px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.35;
+  text-decoration: none;
+  transition: background 120ms ease, color 120ms ease;
 }
 
 /* 图标盒固定 24×24：不同形状的图标（齿轮 vs 列表）视觉重心不同，
@@ -217,10 +249,6 @@ body {
 .shell-sidebar-collapsed .sidebar-collapse {
   min-width: 44px;
   min-height: 44px;
-}
-
-.sidebar-collapse {
-  min-height: 40px;
 }
 
 /* ------------------------------------------------------------ 侧边栏 */
@@ -264,16 +292,12 @@ nav {
   display: flex;
   flex-direction: column;
   gap: 2px;
-}
-
-.nav-item {
-  display: block;
-  padding: 9px 12px;
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-size: 13.5px;
-  text-decoration: none;
-  transition: background 120ms ease, color 120ms ease;
+  /* 导航项很多时自己滚动，绝不把底部按钮挤出可见区域。
+     2px 内边距 + 负外边距是为了让焦点描边不被裁掉。 */
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px;
+  margin: -2px;
 }
 
 .nav-item:hover {
@@ -286,12 +310,12 @@ nav {
   font-weight: 600;
 }
 
+/* 分隔线在"按钮"和"版本信息"之间，共同组成侧栏底部组 */
 .sidebar-foot {
-  margin-top: auto;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 10px 8px 0;
+  padding: 8px 8px 0;
   border-top: 1px solid var(--border);
   font-size: 11px;
   color: var(--text-muted);
@@ -584,14 +608,17 @@ code.mono {
   .shell {
     grid-template-columns: 72px minmax(0, 1fr);
   }
-  .brand strong,
-  .brand small,
-  .sidebar-foot,
-  .nav-item {
-    font-size: 0;
+  /* 窄到一定程度只能留图标：直接隐藏文字，而不是把字号压到 0
+     再靠 ::first-letter 漏出一个字（那会让文字框仍然占位）。 */
+  .brand-text,
+  .nav-label,
+  .sidebar-foot {
+    display: none;
   }
-  .nav-item::first-letter {
-    font-size: 13px;
+  .nav-item {
+    grid-template-columns: 24px;
+    justify-content: center;
+    padding-inline: 0;
   }
   .sidebar {
     padding: 16px 8px;
@@ -651,6 +678,37 @@ code.mono {
     min-height: 220px;
   }
 
+  /* 订单页例外：42vh 是"整张卡片"的预算，而卡片的表头/搜索/筛选/说明
+     是固定开销（实测 198px）。在 800px 高的窗口里 320px 的卡片只剩下 122px
+     给列表体，一屏连 1.5 行都放不下，而且继续加大 vh 只会把卡片撑得更高。
+     所以订单页改成：卡片高度由内容决定（不裁剪），只给"列表体"一个确定高度。 */
+  /* 第一行必须显式 max-content。留 auto 时，这张"高度由内容决定"的卡片
+     只会贡献 34px（实测：auto → 行高 34px，max-content → 458.5px），
+     卡片自己的内容照样按 459px 画出来，于是压在详情上。 */
+  .orders-page.orders-layout {
+    grid-template-rows: max-content auto;
+  }
+
+  .orders-page .orders-list {
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    overflow: visible;
+    padding: 16px 18px 16px;
+  }
+
+  .orders-page .panel-head.compact {
+    margin-bottom: 8px;
+  }
+
+  .orders-page .order-rows {
+    flex: 0 0 auto;
+    /* 两个约束取小：34dvh 给"更多订单"，60dvh-190px 防止矮窗口里
+       卡片占满整屏（190px 是本页卡片的固定开销：内边距 + 表头 + 搜索 + 筛选 + 说明）。 */
+    height: max(180px, min(34dvh, calc(60dvh - 190px)));
+    max-height: none;
+  }
+
   .orders-detail {
     min-width: 0;
   }
@@ -662,6 +720,10 @@ code.mono {
     height: 34vh;
     max-height: 34vh;
     min-height: 180px;
+  }
+
+  .orders-page .order-rows {
+    height: max(160px, min(30dvh, calc(58dvh - 190px)));
   }
 
   .form-grid {
@@ -683,6 +745,24 @@ code.mono {
       height: 42vh;
       max-height: 42vh;
       min-height: 220px;
+    }
+
+    .orders-page.orders-layout {
+      grid-template-rows: max-content auto;
+    }
+
+    .orders-page .orders-list {
+      height: auto;
+      max-height: none;
+      min-height: 0;
+      overflow: visible;
+      padding: 16px 18px 16px;
+    }
+
+    .orders-page .order-rows {
+      flex: 0 0 auto;
+      height: max(180px, min(34dvh, calc(60dvh - 190px)));
+      max-height: none;
     }
   }
 }
@@ -752,6 +832,27 @@ code.mono {
   font-size: 13.5px;
   font-weight: 560;
   line-height: 1.35;
+}
+
+/* 长标题提示气泡：portal 到 body 且 position:fixed，
+   .main / .order-rows 的 overflow 裁不到它。 */
+.title-tooltip {
+  position: fixed;
+  z-index: 60;
+  max-width: min(420px, calc(100vw - 16px));
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--tooltip-bg);
+  color: var(--tooltip-fg);
+  box-shadow: var(--tooltip-shadow);
+  font-size: 12.5px;
+  line-height: 1.5;
+  /* 长中文、中英混排、连续英文都能换行 */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  /* 气泡不接收指针事件：不挡点击、拖动与悬停 */
+  pointer-events: none;
 }
 
 .order-row-meta {
@@ -1165,15 +1266,10 @@ code.mono {
   font-size: 13px;
 }
 
-@media (max-width: 980px) {
-  .orders-layout {
-    grid-template-columns: 1fr;
-  }
-  .orders-list {
-    position: static;
-    max-height: 40dvh;
-  }
-}
+/* 旧的 `@media (max-width: 980px)` 单栏规则已删除：它按窗口宽判断，
+   而真正该看的是"内容区还剩多宽"（侧栏可折叠，窗口没变）。
+   它还会把 .orders-list 的 max-height 改成 40dvh，盖掉容器查询里的确定高度，
+   并且只给 max-height 不给 height —— 正是列表压住详情的那一类组合。 */
 
 /* ------------------------------------------------------------ 模态确认 */
 /* 层级：内容 < 图片查看器 < 模态确认框。
