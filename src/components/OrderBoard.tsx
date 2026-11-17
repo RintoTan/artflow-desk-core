@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 
+import { useElementWidth } from "../lib/useElementWidth";
+
 import type { OrderView } from "../bridge/commands";
 import { advanceBlockedReason, buildBoard, planStageMove, type StageMovePlan } from "../lib/board";
 import ConfirmDialog from "./ConfirmDialog";
@@ -47,7 +49,30 @@ export default function OrderBoard({
   const columns = model.columns;
   const columnCount = columns.length;
   const boardRef = useRef<HTMLDivElement | null>(null);
+  const [wrapRef, wrapWidth] = useElementWidth<HTMLDivElement>();
   const [currentKey, setCurrentKey] = useState<string | null>(null);
+
+  /**
+   * 聚焦式看板（方案 B）：一次只展示当前阶段 + 相邻阶段。
+   * 880–900px 下 2 列，宽屏 3 列 —— 不再要求用户长距离横向拖动。
+   */
+  // 按实测宽度决定一次看几列：窄到放不下两列时就只放一列，
+  // 这样 530px 这类极窄窗口也不会逼出横向滚动。
+  const COL_PITCH = 212; // 200px 列宽 + 12px 间距
+  // 宽度还没测到（首帧 / 测试环境）时先按 3 列渲染，测量完成后立刻收敛。
+  const perView =
+    wrapWidth === 0 ? 3 : Math.max(1, Math.min(3, Math.floor((wrapWidth + 12) / COL_PITCH)));
+
+  const startIndex = Math.max(
+    0,
+    Math.min(
+      (currentKey ? columns.findIndex((c) => c.key === currentKey) : 0) < 0
+        ? 0
+        : columns.findIndex((c) => c.key === currentKey),
+      Math.max(0, columns.length - perView),
+    ),
+  );
+  const visibleColumns = columns.slice(startIndex, startIndex + perView);
 
   /** 把某个阶段列滚到视野内，并把它标成"当前位置"。 */
   function goToColumn(key: string) {
@@ -86,7 +111,13 @@ export default function OrderBoard({
   function handleDrop(event: React.DragEvent, title: string) {
     event.preventDefault();
     setOverColumn(null);
-    const orderId = event.dataTransfer.getData("text/minidesk-order") || dragging;
+    // WebKit（WKWebView）只保证 text/plain 可读，自定义 MIME 会静默返回空串，
+    // 所以用 text/plain + 前缀，并且保留 dragging 状态作为兜底。
+    const raw =
+      event.dataTransfer?.getData("text/plain") ||
+      event.dataTransfer?.getData("text/minidesk-order") ||
+      "";
+    const orderId = raw.startsWith("minidesk-order:") ? raw.slice("minidesk-order:".length) : raw || dragging;
     setDragging(null);
     if (!orderId) return;
     const order = orders.find((item) => item.id === orderId);
@@ -102,7 +133,7 @@ export default function OrderBoard({
   }
 
   return (
-    <div className="board-wrap">
+    <div className="board-wrap" ref={wrapRef}>
       {columns.length > 1 && (
         <div className="board-nav" aria-label="阶段导航">
           <button
@@ -159,12 +190,13 @@ export default function OrderBoard({
           if (bestKey) setCurrentKey(bestKey);
         }}
       >
-        {columns.map((column) => (
+        {visibleColumns.map((column) => (
           <section
             key={column.key}
             role="listitem"
             data-col={column.key}
             className={`board-col${overColumn === column.key ? " board-col-over" : ""}`}
+            onDragEnter={() => setOverColumn(column.key)}
             onDragOver={(event) => {
               if (busy) return;
               event.preventDefault();
@@ -193,17 +225,26 @@ export default function OrderBoard({
                 <article
                   key={order.id}
                   className={`board-card${dragging === order.id ? " board-card-dragging" : ""}`}
-                  draggable={!busy}
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData("text/minidesk-order", order.id);
-                    event.dataTransfer.effectAllowed = "move";
-                    setDragging(order.id);
-                  }}
-                  onDragEnd={() => {
-                    setDragging(null);
-                    setOverColumn(null);
-                  }}
                 >
+                  <div
+                    className="board-card-grip"
+                    role="button"
+                    tabIndex={-1}
+                    aria-label={`拖动 ${order.code} 到其它阶段`}
+                    title="按住这里拖动到目标阶段"
+                    draggable={!busy}
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData("text/plain", `minidesk-order:${order.id}`);
+                      event.dataTransfer.effectAllowed = "move";
+                      setDragging(order.id);
+                    }}
+                    onDragEnd={() => {
+                      setDragging(null);
+                      setOverColumn(null);
+                    }}
+                  >
+                    ⠿
+                  </div>
                   <button
                     type="button"
                     className="board-card-open"
