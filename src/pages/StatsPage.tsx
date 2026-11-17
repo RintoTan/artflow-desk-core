@@ -5,6 +5,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 
 import { placeTooltip, type TooltipPlacement } from "../components/TitleTooltip";
 import { axisMaxOf, axisTicks, barPercent, compactCount, labelsEveryBar } from "../lib/chart";
+import { useElementWidth } from "../lib/useElementWidth";
 import {
   describeError,
   statsApi,
@@ -13,6 +14,35 @@ import {
   type StatsRangeKey,
   type StatsReport,
 } from "../bridge/commands";
+
+/** 单排容纳 12 个月所需的最小内容宽度：12×42 + 11×10 + 8 ≈ 622，留点余量取 640。 */
+const SINGLE_ROW_MIN_WIDTH = 640;
+/** 两排时每排的月份数。 */
+const MONTHS_PER_ROW = 6;
+/** 列宽小于这个值时，只标每列最大值，免得数字比柱子还宽。 */
+const EVERY_BAR_MIN_COLUMN = 56;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const rows: T[][] = [];
+  for (let i = 0; i < items.length; i += size) rows.push(items.slice(i, i + size));
+  return rows;
+}
+
+function ChartAxis({ ticks, axisMax }: { ticks: number[]; axisMax: number }) {
+  return (
+    <div className="chart-axis" aria-hidden="true">
+      {ticks.map((tick) => (
+        <span
+          key={tick}
+          className="chart-tick"
+          style={{ bottom: `${barPercent(tick, axisMax)}%` }}
+        >
+          {compactCount(tick)}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const SERIES: { key: "created" | "completed" | "cancelled"; label: string; of: (m: MonthBucket) => number }[] = [
   { key: "created", label: "新建", of: (m) => m.created },
@@ -47,6 +77,8 @@ export default function StatsPage() {
   const [tipPos, setTipPos] = useState<{ top: number; left: number; placement: TooltipPlacement } | null>(null);
   const tipRef = useRef<HTMLDivElement | null>(null);
   const tipAnchor = useRef<HTMLElement | null>(null);
+  // 按图表自己的内容宽度决定单排还是两排，不看窗口宽度
+  const [attachFrame, frameWidth] = useElementWidth<HTMLDivElement>();
 
   const showTip = useCallback((bucket: MonthBucket, el: HTMLElement) => {
     tipAnchor.current = el;
@@ -157,7 +189,13 @@ export default function StatsPage() {
   const peak = Math.max(0, ...report.months.map((m) => Math.max(m.created, m.completed, m.cancelled)));
   const ticks = axisTicks(peak);
   const axisMax = axisMaxOf(ticks);
-  const everyBarLabeled = labelsEveryBar(report.months.length);
+  // 宽度未知（首帧 / 非浏览器环境）时按单排处理：桌面端是常态
+  const mode: "single" | "split" =
+    frameWidth > 0 && frameWidth < SINGLE_ROW_MIN_WIDTH ? "split" : "single";
+  const perRow = mode === "single" ? report.months.length : Math.min(MONTHS_PER_ROW, report.months.length);
+  const columnWidth = frameWidth > 0 ? (frameWidth - 46) / Math.max(1, perRow) : Number.POSITIVE_INFINITY;
+  // 两排时每排只有 6 个月，但仍要列够宽才逐柱标数字
+  const everyBar = labelsEveryBar(perRow) && columnWidth >= EVERY_BAR_MIN_COLUMN;
 
   return (
     <>
@@ -242,79 +280,67 @@ export default function StatsPage() {
           <p className="muted">这个区间内还没有任何事件。</p>
         ) : (
           <>
-            <div className="chart-frame">
-              {/* Y 轴在滚动容器之外：看近 12 个月时横向滚动，刻度不动 */}
-              <div className="chart-axis" aria-hidden="true">
-                {ticks.map((tick) => (
-                  <span
-                    key={tick}
-                    className="chart-tick"
-                    style={{ bottom: `${barPercent(tick, axisMax)}%` }}
-                  >
-                    {compactCount(tick)}
-                  </span>
-                ))}
-              </div>
-              <div className="chart-scroll">
-                <div
-                  className="chart"
-                  role="group"
-                  aria-label={`每月新建、完成、取消次数，共 ${report.months.length} 个月`}
-                >
-                  <div className="chart-grid" aria-hidden="true">
-                    {ticks.map((tick) => (
-                      <span
-                        key={tick}
-                        className="chart-grid-line"
-                        style={{ bottom: `${barPercent(tick, axisMax)}%` }}
-                      />
-                    ))}
-                  </div>
-                  {report.months.map((bucket) => {
-                    const columnPeak = Math.max(bucket.created, bucket.completed, bucket.cancelled);
-                    const active = tip?.bucket.month === bucket.month;
-                    return (
-                      <div
-                        key={bucket.month}
-                        className={`chart-col${active ? " chart-col-active" : ""}`}
-                        tabIndex={0}
-                        aria-label={`${bucket.month}：新建 ${bucket.created}、完成 ${bucket.completed}、取消 ${bucket.cancelled}`}
-                        onPointerEnter={(event) => showTip(bucket, event.currentTarget)}
-                        onPointerLeave={hideTip}
-                        onFocus={(event) => showTip(bucket, event.currentTarget)}
-                        onBlur={hideTip}
-                      >
-                        <div className="chart-bars">
-                          {SERIES.map((series) => {
-                            const value = series.of(bucket);
-                            const showLabel =
-                              value > 0 && (everyBarLabeled || value === columnPeak);
-                            return (
-                              <span className="bar-slot" key={series.key}>
-                                {showLabel && (
-                                  <span
-                                    className="bar-value"
-                                    style={{ bottom: `calc(${barPercent(value, axisMax)}% + 3px)` }}
-                                  >
-                                    {compactCount(value)}
-                                  </span>
-                                )}
-                                <span
-                                  className={
-                                    value === 0 ? "bar bar-zero" : `bar bar-${series.key}`
-                                  }
-                                  style={value === 0 ? undefined : { height: `${barPercent(value, axisMax)}%` }}
-                                />
-                              </span>
-                            );
-                          })}
-                        </div>
-                        <span className="chart-label">{bucket.month.slice(2)}</span>
+            <div className="chart-frame" ref={attachFrame} data-mode={mode}>
+              {(mode === "single" ? [report.months] : chunk(report.months, MONTHS_PER_ROW)).map(
+                (rowMonths, rowIndex) => (
+                  <div className="chart-row" key={rowIndex}>
+                    <ChartAxis ticks={ticks} axisMax={axisMax} />
+                    <div className="chart-scroll">
+                    <div className="chart" role="group" aria-label={`每月新建、完成、取消次数，第 ${rowIndex + 1} 段`}>
+                      <div className="chart-grid" aria-hidden="true">
+                        {ticks.map((tick) => (
+                          <span
+                            key={tick}
+                            className="chart-grid-line"
+                            style={{ bottom: `${barPercent(tick, axisMax)}%` }}
+                          />
+                        ))}
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
+                      {rowMonths.map((bucket) => {
+                        const columnPeak = Math.max(bucket.created, bucket.completed, bucket.cancelled);
+                        const active = tip?.bucket.month === bucket.month;
+                        return (
+                          <div
+                            key={bucket.month}
+                            className={`chart-col${active ? " chart-col-active" : ""}`}
+                            tabIndex={0}
+                            aria-label={`${bucket.month}：新建 ${bucket.created}、完成 ${bucket.completed}、取消 ${bucket.cancelled}`}
+                            onPointerEnter={(event) => showTip(bucket, event.currentTarget)}
+                            onPointerLeave={hideTip}
+                            onFocus={(event) => showTip(bucket, event.currentTarget)}
+                            onBlur={hideTip}
+                          >
+                            <div className="chart-bars">
+                              {SERIES.map((series) => {
+                                const value = series.of(bucket);
+                                const showLabel = value > 0 && (everyBar || value === columnPeak);
+                                return (
+                                  <span className="bar-slot" key={series.key}>
+                                    {showLabel && (
+                                      <span
+                                        className="bar-value"
+                                        style={{ bottom: `calc(${barPercent(value, axisMax)}% + 3px)` }}
+                                      >
+                                        {compactCount(value)}
+                                      </span>
+                                    )}
+                                    <span
+                                      className={value === 0 ? "bar bar-zero" : `bar bar-${series.key}`}
+                                      style={value === 0 ? undefined : { height: `${barPercent(value, axisMax)}%` }}
+                                    />
+                                  </span>
+                                );
+                              })}
+                            </div>
+                            <span className="chart-label">{bucket.month.slice(2)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    </div>
+                  </div>
+                ),
+              )}
             </div>
             <div className="chart-legend">
               <span><i className="swatch bar-created" /> 新建</span>

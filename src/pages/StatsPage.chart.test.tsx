@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { MonthBucket, StatsReport } from "../bridge/commands";
 
@@ -47,6 +47,19 @@ vi.mock("../bridge/commands", async () => {
   };
 });
 
+/** 安装一个假的 ResizeObserver：用指定宽度回调一次，模拟窄容器 */
+function installWidth(width: number) {
+  class FakeObserver {
+    constructor(private cb: ResizeObserverCallback) {}
+    observe() {
+      this.cb([{ contentRect: { width } }] as unknown as ResizeObserverEntry[], {} as ResizeObserver);
+    }
+    disconnect() {}
+    unobserve() {}
+  }
+  (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = FakeObserver;
+}
+
 async function setup(report: StatsReport) {
   REPORT = report;
   const { default: StatsPage } = await import("./StatsPage");
@@ -62,6 +75,57 @@ async function setup(report: StatsReport) {
 function chart() {
   return document.querySelector(".chart")!;
 }
+
+describe("窄容器下的两排模式", () => {
+  const months = Array.from({ length: 12 }, (_, i) =>
+    bucket(`2026-${String(i + 1).padStart(2, "0")}`, i + 2, 1, 0),
+  );
+
+  afterEach(() => {
+    delete (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver;
+  });
+
+  it("窄容器切成两排，每排六个月，且不横向滚动", async () => {
+    installWidth(430);
+    await setup(reportOf(months));
+    const frame = document.querySelector(".chart-frame")!;
+    expect(frame.getAttribute("data-mode")).toBe("split");
+    const rows = frame.querySelectorAll(".chart-row");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.querySelectorAll(".chart-col")).toHaveLength(6);
+    expect(rows[1]!.querySelectorAll(".chart-col")).toHaveLength(6);
+    // 顺序从旧到新，不重不漏
+    const labels = Array.from(frame.querySelectorAll(".chart-label")).map((n) => n.textContent);
+    expect(labels).toEqual(months.map((m) => m.month.slice(2)));
+  });
+
+  it("两排共用同一刻度范围，柱高可直接比较", async () => {
+    installWidth(430);
+    await setup(reportOf(months));
+    const axes = Array.from(document.querySelectorAll(".chart-axis")).map((axis) =>
+      Array.from(axis.querySelectorAll(".chart-tick")).map((n) => n.textContent),
+    );
+    expect(axes).toHaveLength(2);
+    expect(axes[0]).toEqual(axes[1]);
+    // 两排共享刻度：跨排的柱高之比必须等于数值之比
+    const created = Array.from(document.querySelectorAll<HTMLElement>(".bar-created")).map((bar) =>
+      Number.parseFloat(bar.style.height || "0"),
+    );
+    // months[5].created = 7，months[11].created = 13
+    expect(created[5]! / created[11]!).toBeCloseTo(7 / 13, 3);
+    // 两排都不应出现"各自归一化"导致的 100%
+    expect(Math.max(...created)).toBeCloseTo((13 / 20) * 100, 3);
+  });
+
+  it("宽容器仍是单排十二个月", async () => {
+    installWidth(900);
+    await setup(reportOf(months));
+    const frame = document.querySelector(".chart-frame")!;
+    expect(frame.getAttribute("data-mode")).toBe("single");
+    expect(frame.querySelectorAll(".chart-row")).toHaveLength(1);
+    expect(frame.querySelectorAll(".chart-col")).toHaveLength(12);
+  });
+});
 
 describe("月度趋势图", () => {
   it("Y 轴在滚动容器之外，且刻度是 0/中值/上界", async () => {
