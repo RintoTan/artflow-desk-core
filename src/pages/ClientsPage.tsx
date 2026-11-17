@@ -1,17 +1,26 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import { usePageShortcuts } from "../lib/shortcuts";
 import { useUnsavedGuard } from "../lib/unsavedRegistry";
 import {
+  api,
   clientApi,
+  clientTagApi,
   describeError,
   isConflict,
   type ClientDetail,
+  type ClientTag,
   type ClientView,
 } from "../bridge/commands";
 
 type Draft = { displayName: string; contact: string; note: string };
+
+/** 金额展示：NULL 表示未知，绝不显示成 0。 */
+function formatKnownAmount(cents: number): string {
+  return `¥${(cents / 100).toFixed(2).replace(/\.00$/, "")}`;
+}
 
 function draftFrom(client: ClientView): Draft {
   return {
@@ -42,6 +51,13 @@ export default function ClientsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pendingSwitch, setPendingSwitch] = useState<{ id: string } | { create: true } | null>(null);
+
+  const [allTags, setAllTags] = useState<ClientTag[]>([]);
+  const [tagFilter, setTagFilter] = useState<string>("all");
+  const [newTagName, setNewTagName] = useState("");
+  const [tagBusy, setTagBusy] = useState(false);
+  const [timezone, setTimezone] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   const dirty = detail !== null && draft !== null && !sameDraft(draft, draftFrom(detail.client));
   const creatingDirty = creating && newName.trim() !== "";
@@ -90,13 +106,125 @@ export default function ClientsPage() {
     }
   }, []);
 
+  /** 最近下单时间按工作时时区格式化，不能用 UTC 直接截日期。 */
+  const formatMoment = useCallback(
+    (value: string | null) => {
+      if (!value) return "—";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      try {
+        return new Intl.DateTimeFormat("zh-CN", {
+          timeZone: timezone ?? undefined,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(date);
+      } catch {
+        return date.toLocaleDateString("zh-CN");
+      }
+    },
+    [timezone],
+  );
+
+  const refreshTags = useCallback(async () => {
+    const [tags, list] = await Promise.all([clientTagApi.list(), clientApi.list()]);
+    setAllTags(tags);
+    setClients(list);
+    if (selectedId) {
+      const next = await clientApi.detail(selectedId);
+      setDetail(next);
+    }
+  }, [selectedId]);
+
+  const runTag = useCallback(
+    async (action: () => Promise<void>) => {
+      setTagBusy(true);
+      setError(null);
+      try {
+        await action();
+      } catch (e) {
+        setError(describeError(e));
+      } finally {
+        setTagBusy(false);
+      }
+    },
+    [],
+  );
+
+  const addTagToClient = useCallback(
+    (tagId: string) => {
+      if (!selectedId) return;
+      void runTag(async () => {
+        const tags = await clientTagApi.link(selectedId, tagId);
+        setDetail((current) =>
+          current ? { ...current, client: { ...current.client, tags } } : current,
+        );
+        setAllTags(await clientTagApi.list());
+      });
+    },
+    [runTag, selectedId],
+  );
+
+  const removeTagFromClient = useCallback(
+    (tagId: string) => {
+      if (!selectedId) return;
+      void runTag(async () => {
+        const tags = await clientTagApi.unlink(selectedId, tagId);
+        setDetail((current) =>
+          current ? { ...current, client: { ...current.client, tags } } : current,
+        );
+        setAllTags(await clientTagApi.list());
+      });
+    },
+    [runTag, selectedId],
+  );
+
+  const createTag = useCallback(() => {
+    const name = newTagName.trim();
+    if (name === "") return;
+    void runTag(async () => {
+      const tag = await clientTagApi.create(name);
+      setNewTagName("");
+      setAllTags(await clientTagApi.list());
+      if (selectedId) {
+        const tags = await clientTagApi.link(selectedId, tag.id);
+        setDetail((current) =>
+          current ? { ...current, client: { ...current.client, tags } } : current,
+        );
+        setAllTags(await clientTagApi.list());
+      }
+    });
+  }, [newTagName, runTag, selectedId]);
+
+  const deleteTag = useCallback(
+    (tagId: string) => {
+      void runTag(async () => {
+        await clientTagApi.remove(tagId);
+        await refreshTags();
+        if (tagFilter === tagId) setTagFilter("all");
+      });
+    },
+    [refreshTags, runTag, tagFilter],
+  );
+
+  const visibleClients = useMemo(() => {
+    if (tagFilter === "all") return clients;
+    return clients.filter((client) => client.tags.some((tag) => tag.id === tagFilter));
+  }, [clients, tagFilter]);
+
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const list = await clientApi.list();
+        const [list, tags, status] = await Promise.all([
+          clientApi.list(),
+          clientTagApi.list(),
+          api.status(),
+        ]);
         if (!alive) return;
         setClients(list);
+        setAllTags(tags);
+        setTimezone(status.workingTimezone);
         if (list[0]) await select(list[0].id);
       } catch (e) {
         if (alive) setError(describeError(e));
@@ -202,6 +330,22 @@ export default function ClientsPage() {
           </button>
         </header>
 
+        <div className="list-tools">
+          <select
+            className="select-inline"
+            value={tagFilter}
+            onChange={(e) => setTagFilter(e.target.value)}
+            aria-label="按标签筛选客户"
+          >
+            <option value="all">所有标签</option>
+            {allTags.map((tag) => (
+              <option key={tag.id} value={tag.id}>
+                {tag.name}（{tag.clientCount}）
+              </option>
+            ))}
+          </select>
+        </div>
+
         {clients.length === 0 ? (
           <div className="empty">
             <p>还没有客户档案。</p>
@@ -209,7 +353,7 @@ export default function ClientsPage() {
           </div>
         ) : (
           <ul className="order-rows">
-            {clients.map((client) => (
+            {visibleClients.map((client) => (
               <li key={client.id}>
                 <button
                   type="button"
@@ -222,6 +366,15 @@ export default function ClientsPage() {
                     {client.activeCount > 0 ? ` · 活动中 ${client.activeCount}` : ""}
                     {client.completedCount > 0 ? ` · 已完成 ${client.completedCount}` : ""}
                   </span>
+                  {client.tags.length > 0 && (
+                    <span className="tag-row">
+                      {client.tags.map((tag) => (
+                        <span key={tag.id} className="tag-chip">
+                          {tag.name}
+                        </span>
+                      ))}
+                    </span>
+                  )}
                 </button>
               </li>
             ))}
@@ -342,6 +495,134 @@ export default function ClientsPage() {
                   还原修改
                 </button>
               </div>
+            </section>
+
+            <section className="panel">
+              <header className="panel-head compact">
+                <h2>客户概览</h2>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => navigate(`/orders?client=${encodeURIComponent(detail.client.id)}`)}
+                >
+                  查看该客户的订单
+                </button>
+              </header>
+              <dl className="stat-row">
+                <div>
+                  <dt>当前关联订单</dt>
+                  <dd>{detail.client.orderCount}</dd>
+                  <p className="muted">
+                    活动中 {detail.client.activeCount} · 已完成 {detail.client.completedCount}
+                  </p>
+                </div>
+                <div>
+                  <dt>已知委托金额</dt>
+                  <dd>{formatKnownAmount(detail.client.knownAmountCents)}</dd>
+                  <p className="muted">金额未知的订单不计入，也不算 0 元</p>
+                </div>
+                <div>
+                  <dt>最近下单</dt>
+                  <dd>{formatMoment(detail.client.lastOrderAt)}</dd>
+                  <p className="muted">取现存订单里最晚的一次创建时间</p>
+                </div>
+              </dl>
+              <p className="muted stat-note">
+                以上都是按现存订单实时统计：完成与已取消的订单仍然计入；
+                订单被永久删除后会随剩余订单重算。这里没有收款事实，所以不叫「实收」。
+              </p>
+            </section>
+
+            <section className="panel">
+              <header className="panel-head compact">
+                <h2>标签</h2>
+                <span className="muted">手工维护，不自动生成等级</span>
+              </header>
+
+              <div className="tag-row">
+                {detail.client.tags.length === 0 && (
+                  <span className="muted">还没有标签</span>
+                )}
+                {detail.client.tags.map((tag) => (
+                  <span key={tag.id} className="tag-chip">
+                    {tag.name}
+                    <button
+                      type="button"
+                      className="tag-remove"
+                      aria-label={`移除标签 ${tag.name}`}
+                      disabled={tagBusy}
+                      onClick={() => removeTagFromClient(tag.id)}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+
+              <div className="tag-editor">
+                <select
+                  className="select-inline"
+                  value=""
+                  aria-label="添加已有标签"
+                  disabled={tagBusy || allTags.length === 0}
+                  onChange={(e) => {
+                    if (e.target.value) addTagToClient(e.target.value);
+                  }}
+                >
+                  <option value="">添加已有标签…</option>
+                  {allTags
+                    .filter((tag) => !detail.client.tags.some((mine) => mine.id === tag.id))
+                    .map((tag) => (
+                      <option key={tag.id} value={tag.id}>
+                        {tag.name}
+                      </option>
+                    ))}
+                </select>
+                <input
+                  className="list-search"
+                  value={newTagName}
+                  onChange={(e) => setNewTagName(e.target.value)}
+                  maxLength={20}
+                  placeholder="新建标签，例如 长期客户"
+                  aria-label="新建标签名称"
+                  disabled={tagBusy}
+                />
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={tagBusy || newTagName.trim() === ""}
+                  onClick={createTag}
+                >
+                  新建并添加
+                </button>
+              </div>
+
+              {allTags.length > 0 && (
+                <details className="tag-manage">
+                  <summary>管理全部标签</summary>
+                  <ul>
+                    {allTags.map((tag) => (
+                      <li key={tag.id}>
+                        <span>{tag.name}</span>
+                        <span className="muted">{tag.clientCount} 位客户</span>
+                        <button
+                          type="button"
+                          className="link-btn"
+                          disabled={tagBusy || tag.clientCount > 0}
+                          title={
+                            tag.clientCount > 0
+                              ? "仍有客户使用，请先移除关联"
+                              : "删除这个标签"
+                          }
+                          onClick={() => deleteTag(tag.id)}
+                        >
+                          删除
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
             </section>
 
             <section className="panel">

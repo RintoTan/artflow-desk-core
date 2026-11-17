@@ -67,6 +67,8 @@ export type OrderView = {
   clientId: string | null;
   clientName: string | null;
   commissionType: string | null;
+  /** 接稿渠道；NULL = 未设置（旧订单不会被回填） */
+  source: string | null;
   amountCents: number | null;
   note: string | null;
   status: OrderStatus;
@@ -114,6 +116,7 @@ export type CreateOrderInput = {
   title: string;
   client: ClientChoice;
   commissionType?: string | null;
+  source?: string | null;
   amountCents?: number | null;
   plannedStartDate?: string | null;
   plannedDeliveryDate?: string | null;
@@ -128,6 +131,7 @@ export type UpdateDetailsInput = {
   title: string;
   clientId: string | null;
   commissionType: string | null;
+  source: string | null;
   amountCents: number | null;
   plannedStartDate: string | null;
   plannedDeliveryDate: string | null;
@@ -249,8 +253,20 @@ export type ClientView = {
   orderCount: number;
   activeCount: number;
   completedCount: number;
+  /** 已知委托金额合计（分）；NULL 金额不计入，也不当成 0 */
+  knownAmountCents: number;
+  /** 最近一次下单时间（UTC RFC3339），按工作时时区格式化后显示 */
+  lastOrderAt: string | null;
+  tags: ClientTag[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type ClientTag = {
+  id: string;
+  name: string;
+  /** 使用该标签的客户数 */
+  clientCount: number;
 };
 
 export type ClientOrderBrief = {
@@ -311,6 +327,16 @@ export const clientApi = {
     note?: string | null;
   }) => invoke<ClientView>("client_update", { input }),
   detail: (clientId: string) => invoke<ClientDetail>("client_detail", { clientId }),
+};
+
+export const clientTagApi = {
+  list: () => invoke<ClientTag[]>("client_tag_list"),
+  create: (name: string) => invoke<ClientTag>("client_tag_create", { name }),
+  remove: (tagId: string) => invoke<null>("client_tag_delete", { tagId }),
+  link: (clientId: string, tagId: string) =>
+    invoke<ClientTag[]>("client_tag_link", { clientId, tagId }),
+  unlink: (clientId: string, tagId: string) =>
+    invoke<ClientTag[]>("client_tag_unlink", { clientId, tagId }),
 };
 
 export const templateApi = {
@@ -381,6 +407,10 @@ export type AttachmentView = {
   displayName: string | null;
   note: string | null;
   tag: string | null;
+  /** null = 尚未分类；reference = 参考素材；final = 成品 */
+  role: "reference" | "final" | null;
+  /** 是否允许出现在本机默认画廊 */
+  galleryVisible: boolean;
   mimeType: string;
   byteSize: number;
   sha256: string;
@@ -479,6 +509,17 @@ export const statsApi = {
     invoke<ExportResult>("export_orders_csv", { input }),
 };
 
+export type UpdateAttachmentMetaInput = {
+  attachmentId: string;
+  displayName?: string | null;
+  note?: string | null;
+  tag?: string | null;
+  /** 省略 = 不改；null = 回到未分类 */
+  role?: "reference" | "final" | null;
+  /** 省略 = 不改 */
+  galleryVisible?: boolean;
+};
+
 export const attachmentApi = {
   list: (orderId: string) => invoke<AttachmentView[]>("attachment_list", { orderId }),
   import: (input: { orderId: string; sourcePaths: string[]; tag?: string | null }) =>
@@ -489,10 +530,6 @@ export const attachmentApi = {
     invoke<ThumbReport>("attachment_rebuild_thumbs", { orderId }),
   repair: (input: { attachmentId: string; sourcePath: string }) =>
     invoke<AttachmentView>("attachment_repair", { input }),
-  updateMeta: (input: {
-    attachmentId: string;
-    displayName?: string | null;
-    note?: string | null;
-    tag?: string | null;
-  }) => invoke<AttachmentView>("attachment_update_meta", { input }),
+  updateMeta: (input: UpdateAttachmentMetaInput) =>
+    invoke<AttachmentView>("attachment_update_meta", { input }),
 };

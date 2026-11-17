@@ -12,6 +12,8 @@ function attachment(partial: Partial<AttachmentView>): AttachmentView {
     displayName: null,
     note: null,
     tag: null,
+    role: null,
+    galleryVisible: false,
     mimeType: "image/png",
     byteSize: 2048,
     sha256: "abc",

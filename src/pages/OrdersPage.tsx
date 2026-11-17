@@ -3,6 +3,8 @@ import { useBlocker, useSearchParams } from "react-router-dom";
 import { save } from "@tauri-apps/plugin-dialog";
 
 import AttachmentPanel from "../components/AttachmentPanel";
+import OrderBoard from "../components/OrderBoard";
+import OrderTable from "../components/OrderTable";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { ScheduleOverview } from "../components/ScheduleOverview";
 import { TruncatedTitle } from "../components/TitleTooltip";
@@ -14,9 +16,11 @@ import {
   filterOrders,
   riskBadge,
   type RiskFilter,
+  type SourceFilter,
   type StatusFilter,
   type WorkFilter,
 } from "../lib/ordersView";
+import type { StageMovePlan } from "../lib/board";
 import { usePageShortcuts } from "../lib/shortcuts";
 import { useUnsavedGuard } from "../lib/unsavedRegistry";
 import {
@@ -109,10 +113,13 @@ function useTimeFormatter(timezone: string | null) {
 
 // ---------------------------------------------------------------- 类型
 
+type ViewMode = "cards" | "board" | "table";
+
 type Draft = {
   title: string;
   clientId: string;
   commissionType: string;
+  source: string;
   amount: string;
   startDate: string;
   deliveryDate: string;
@@ -124,6 +131,7 @@ function draftFrom(order: OrderView): Draft {
     title: order.title,
     clientId: order.clientId ?? "",
     commissionType: order.commissionType ?? "",
+    source: order.source ?? "",
     amount: centsToYuan(order.amountCents),
     startDate: order.plannedStartDate ?? "",
     deliveryDate: order.plannedDeliveryDate ?? "",
@@ -136,6 +144,7 @@ function sameDraft(a: Draft, b: Draft): boolean {
     a.title === b.title &&
     a.clientId === b.clientId &&
     a.commissionType === b.commissionType &&
+    a.source === b.source &&
     a.amount === b.amount &&
     a.startDate === b.startDate &&
     a.deliveryDate === b.deliveryDate &&
@@ -170,6 +179,11 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
   const [workFilter, setWorkFilter] = useState<WorkFilter>("all");
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  const [viewMode, setViewMode] = useState<ViewMode>("cards");
+  /** 从客户页跳进来时的稳定 ID 过滤；null = 不按客户过滤 */
+  const [clientFilter, setClientFilter] = useState<string | null>(null);
+  const [boardCommit, setBoardCommit] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportScope, setExportScope] = useState<"filtered" | "all">("filtered");
   const [params] = useSearchParams();
@@ -304,12 +318,14 @@ export default function OrdersPage() {
     let alive = true;
     (async () => {
       try {
-        const [list, clientList, templateList, status, queue, densityValue] = await Promise.all([
+        const [list, clientList, templateList, status, queue, viewValue, densityValue] =
+          await Promise.all([
           api.listOrders(),
           api.listClients(),
           templateApi.list(),
           api.status(),
           queueApi.list(),
+          preferenceApi.get("orders_view_mode"),
           preferenceApi.get("list_density"),
         ]);
         if (!alive) return;
@@ -320,6 +336,14 @@ export default function OrdersPage() {
         setQueueRev(queue.revision);
         if (densityValue === "compact" || densityValue === "comfortable") {
           setDensity(densityValue);
+        }
+        if (viewValue === "cards" || viewValue === "board" || viewValue === "table") {
+          setViewMode(viewValue);
+        }
+        // 从客户页按客户 ID 跳进来：用稳定的 clientId 过滤，不靠名称猜。
+        const clientParam = params.get("client");
+        if (clientParam) {
+          setClientFilter(clientParam);
         }
         // 从工作台/统计页带着 orderId 跳进来时，必须选中那一张，
         // 不能因为"默认选第一张"把它覆盖掉（S3 的根因就是这个覆盖）。
@@ -346,15 +370,88 @@ export default function OrdersPage() {
     return now ?? 0;
   }, [timezone]);
 
-  const visible = useMemo(
-    () =>
-      filterOrders(orders, {
-        query,
-        status: statusFilter,
-        risk: riskFilter,
-        work: workFilter,
-      }),
-    [orders, query, statusFilter, riskFilter, workFilter],
+  const changeView = useCallback(async (next: ViewMode) => {
+    setViewMode(next);
+    try {
+      await preferenceApi.set("orders_view_mode", next);
+    } catch {
+      // 偏好写失败只影响下次默认值，不打断当前操作。
+    }
+  }, []);
+
+  /**
+   * 看板拖拽的落地：只调用已有的合法业务动作。
+   * 这里**不写** current_stage_id，也不碰开工/完成/队列。
+   */
+  const applyStageMove = useCallback(
+    async (order: OrderView, plan: StageMovePlan) => {
+      if (plan.kind !== "advance" && plan.kind !== "rework") return;
+      setBusy(true);
+      setError(null);
+      setBoardCommit(`${order.code} · ${order.currentStageTitle} → ${plan.targetStageTitle}`);
+      try {
+        const latest = await api.getOrder(order.id);
+        if (plan.kind === "advance") {
+          await api.advanceStage({
+            orderId: latest.id,
+            expectedRevision: latest.revision,
+            requestId: newRequestId("board-advance"),
+          });
+        } else {
+          await api.reworkStage({
+            orderId: latest.id,
+            expectedRevision: latest.revision,
+            targetStageId: plan.targetStageId,
+            requestId: newRequestId("board-rework"),
+          });
+        }
+        await loadList();
+        if (selectedId === order.id) {
+          await selectOrder(order.id);
+        }
+        setNotice(`${order.code} 已${plan.kind === "advance" ? "推进" : "返工"}到「${plan.targetStageTitle}」`);
+      } catch (e) {
+        // 冲突时刷新数据并放弃本次拖动结果，不做部分写入。
+        if (isConflict(e)) {
+          await loadList();
+          await selectOrder(order.id).catch(() => {});
+          setError("订单已被修改，看板已刷新；请确认最新阶段后重新拖动。");
+        } else {
+          setError(describeError(e));
+        }
+      } finally {
+        setBoardCommit(null);
+        setBusy(false);
+      }
+    },
+    [loadList, selectOrder, selectedId],
+  );
+
+  const visible = useMemo(() => {
+    const filtered = filterOrders(orders, {
+      query,
+      status: statusFilter,
+      risk: riskFilter,
+      work: workFilter,
+      source: sourceFilter,
+    });
+    return clientFilter === null
+      ? filtered
+      : filtered.filter((order) => order.clientId === clientFilter);
+  }, [orders, query, statusFilter, riskFilter, workFilter, sourceFilter, clientFilter]);
+
+  /** 来源是自由文本：筛选项从现有订单里取，去重后排序，不预置枚举。 */
+  const sourceOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const order of orders) {
+      if (order.source) names.add(order.source);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [orders]);
+
+  const clientFilterName = useMemo(
+    () => clients.find((client) => client.id === clientFilter)?.displayName ?? null,
+    [clients, clientFilter],
   );
   const activeQueue = useMemo(
     () =>
@@ -462,6 +559,7 @@ export default function OrdersPage() {
         title: draft.title,
         clientId: draft.clientId === "" ? null : draft.clientId,
         commissionType: draft.commissionType.trim() === "" ? null : draft.commissionType,
+        source: draft.source.trim() === "" ? null : draft.source.trim(),
         amountCents,
         plannedStartDate: draft.startDate === "" ? null : draft.startDate,
         plannedDeliveryDate: draft.deliveryDate === "" ? null : draft.deliveryDate,
@@ -614,7 +712,14 @@ export default function OrdersPage() {
   }
 
   return (
-    <div className="orders-layout orders-page">
+    <div className={`orders-layout orders-page view-${viewMode}`}>
+      {/* 来源是自由文本，只用已有来源做输入建议，避免同义重复 */}
+      <datalist id="order-source-options">
+        {sourceOptions.map((name) => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
+      {viewMode === "cards" ? (
       <aside className="orders-list panel">
         <header className="panel-head compact">
           <div>
@@ -624,6 +729,7 @@ export default function OrdersPage() {
             </p>
           </div>
           <div className="attach-actions">
+            <ViewSwitch value={viewMode} onChange={(next) => void changeView(next)} />
             <button
               type="button"
               className="btn btn-sm"
@@ -657,6 +763,32 @@ export default function OrdersPage() {
             {density === "compact" ? "紧凑" : "舒适"}
           </button>
         </div>
+
+        <div className="filter-row" role="group" aria-label="按来源筛选">
+          <select
+            className="select-inline"
+            value={sourceFilter}
+            onChange={(e) => setSourceFilter(e.target.value)}
+            aria-label="按来源筛选"
+          >
+            <option value="all">所有来源</option>
+          <option value="">未设置</option>
+            <option value="">未设置</option>
+            {sourceOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+        {clientFilter && (
+          <p className="filter-note">
+            只显示客户「{clientFilterName ?? "（未知）"}」的订单
+            <button type="button" className="link-btn" onClick={() => setClientFilter(null)}>
+              清除
+            </button>
+          </p>
+        )}
 
         <div className="filter-row" role="group" aria-label="按状态筛选">
           {(
@@ -796,6 +928,98 @@ export default function OrdersPage() {
           </p>
         ) : null}
       </aside>
+      ) : (
+      <section className="orders-wide panel">
+        <header className="panel-head compact">
+          <div>
+            <h2>{viewMode === "board" ? "看板" : "表格"}</h2>
+            <p className="muted">
+              {visible.length}/{orders.length} 张 · 与卡片视图同一份数据与筛选
+            </p>
+          </div>
+          <div className="attach-actions">
+            <ViewSwitch value={viewMode} onChange={(next) => void changeView(next)} />
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => setExportOpen(true)}
+              disabled={orders.length === 0}
+            >
+              导出
+            </button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={attemptCreate}>
+              新建
+            </button>
+          </div>
+        </header>
+
+        <div className="list-tools">
+          <input
+            className="list-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索标题 / 编号 / 客户 / 来源"
+            aria-label="搜索订单"
+          />
+          <select
+            className="select-inline"
+            value={sourceFilter}
+            onChange={(e) => setSourceFilter(e.target.value)}
+            aria-label="按来源筛选"
+          >
+            <option value="all">所有来源</option>
+          <option value="">未设置</option>
+            <option value="">未设置</option>
+            {sourceOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <select
+            className="select-inline"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+            aria-label="按状态筛选"
+          >
+            <option value="all">全部状态</option>
+            <option value="active">活动</option>
+            <option value="complete">已完成</option>
+            <option value="cancelled">已取消</option>
+          </select>
+        </div>
+
+        {clientFilter && (
+          <p className="filter-note">
+            只显示客户「{clientFilterName ?? "（未知）"}」的订单
+            <button type="button" className="link-btn" onClick={() => setClientFilter(null)}>
+              清除
+            </button>
+          </p>
+        )}
+        {boardCommit && <p className="muted list-hint">正在应用：{boardCommit}</p>}
+
+        {viewMode === "board" ? (
+          <OrderBoard
+            orders={visible}
+            busy={busy}
+            onOpen={(orderId) => void attemptSelect(orderId)}
+            onApply={applyStageMove}
+            formatMoney={formatMoney}
+            formatDate={(value) => (value ? value : "未排期")}
+            onError={setError}
+          />
+        ) : (
+          <OrderTable
+            orders={visible}
+            selectedId={selectedId}
+            onOpen={(orderId) => void attemptSelect(orderId)}
+            formatMoney={formatMoney}
+            formatDate={(value) => (value ? value : "未排期")}
+          />
+        )}
+      </section>
+      )}
 
       <section className="orders-detail">
         {error && (
@@ -1034,6 +1258,35 @@ export default function OrdersPage() {
 
 // ---------------------------------------------------------------- 子组件
 
+function ViewSwitch({
+  value,
+  onChange,
+}: {
+  value: ViewMode;
+  onChange: (next: ViewMode) => void;
+}) {
+  const items: [ViewMode, string][] = [
+    ["cards", "卡片"],
+    ["board", "看板"],
+    ["table", "表格"],
+  ];
+  return (
+    <div className="view-switch" role="group" aria-label="切换订单视图">
+      {items.map(([key, label]) => (
+        <button
+          key={key}
+          type="button"
+          className={`filter-chip${value === key ? " filter-chip-active" : ""}`}
+          aria-pressed={value === key}
+          onClick={() => onChange(key)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ActionBar({
   order,
   busy,
@@ -1230,6 +1483,18 @@ function DetailsForm({
           disabled={disabled}
           maxLength={80}
           placeholder="例如 半身立绘"
+        />
+      </label>
+
+      <label className="field">
+        <span>来源</span>
+        <input
+          value={draft.source}
+          onChange={(e) => patch({ source: e.target.value })}
+          disabled={disabled}
+          maxLength={40}
+          list="order-source-options"
+          placeholder="例如 米画师 / 画加 / 私信"
         />
       </label>
 
@@ -1571,6 +1836,7 @@ function CreateOrderPanel({
   }, [defaultTemplateId, templateId]);
   const [newClientName, setNewClientName] = useState("");
   const [commissionType, setCommissionType] = useState("");
+  const [source, setSource] = useState("");
   const [amount, setAmount] = useState("");
   const [startDate, setStartDate] = useState("");
   const [deliveryDate, setDeliveryDate] = useState("");
@@ -1592,6 +1858,7 @@ function CreateOrderPanel({
         title,
         client,
         commissionType: commissionType.trim() === "" ? null : commissionType,
+        source: source.trim() === "" ? null : source.trim(),
         amountCents: yuanToCents(amount),
         plannedStartDate: startDate === "" ? null : startDate,
         plannedDeliveryDate: deliveryDate === "" ? null : deliveryDate,
@@ -1715,6 +1982,18 @@ function CreateOrderPanel({
             onChange={(e) => setCommissionType(e.target.value)}
             maxLength={80}
             disabled={busy}
+          />
+        </label>
+
+        <label className="field">
+          <span>来源</span>
+          <input
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            maxLength={40}
+            disabled={busy}
+            list="order-source-options"
+            placeholder="例如 米画师 / 画加 / 私信"
           />
         </label>
 

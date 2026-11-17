@@ -4,6 +4,8 @@
   --bg-grad: radial-gradient(1200px 520px at 12% -10%, #e6f0fb 0%, transparent 62%),
     radial-gradient(900px 420px at 100% 0%, #eef4fb 0%, transparent 58%);
   --surface: #ffffff;
+  /* 次级表面：表格悬停、看板列底、标签底 */
+  --surface-soft: rgba(24, 40, 56, 0.035);
   --surface-alt: #edf3fa;
   --border: #d3e0ee;
   --border-strong: #b7cbe0;
@@ -75,6 +77,7 @@
   --bg-grad: radial-gradient(1200px 520px at 12% -10%, #172432 0%, transparent 62%),
     radial-gradient(900px 420px at 100% 0%, #131c25 0%, transparent 58%);
   --surface: #182028;
+  --surface-soft: rgba(255, 255, 255, 0.05);
   --surface-alt: #1f2a34;
   --border: #2b3947;
   --border-strong: #3b4d5e;
@@ -2505,3 +2508,450 @@ body:has(.row-dragging) {
   border-color: #3b4d5e;
   color: var(--viewer-text);
 }
+
+/* ---------------------------------------------------------------- DEV-06D-1
+   订单三视图（卡片 / 看板 / 表格）、来源筛选、客户标签与统计。
+
+   布局约束：看板与表格整块占满内容宽（不再挤在 320px 列表列里），
+   横向滚动**只发生在面板内部**，页面本身不允许出现横向溢出。
+   ------------------------------------------------------------------------ */
+
+.orders-layout.view-board,
+.orders-layout.view-table {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: max-content auto;
+}
+
+.orders-wide {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.view-switch {
+  display: inline-flex;
+  gap: 4px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-soft, transparent);
+}
+
+.view-switch .filter-chip {
+  border: none;
+  background: transparent;
+}
+
+.view-switch .filter-chip-active {
+  background: var(--accent-soft, rgba(90, 124, 155, 0.18));
+  color: var(--text);
+}
+
+.select-inline {
+  height: var(--control-h);
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  max-width: 100%;
+}
+
+.filter-note {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+}
+
+/* --- 看板 --- */
+
+.board-wrap {
+  min-width: 0;
+}
+
+.board {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.board-col {
+  flex: 0 0 200px;
+  min-width: 180px;
+  max-width: 260px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft, rgba(0, 0, 0, 0.02));
+  padding: 8px;
+  min-height: 120px;
+}
+
+.board-col-over {
+  border-color: var(--accent, #5a7c9b);
+  background: var(--accent-soft, rgba(90, 124, 155, 0.12));
+}
+
+.board-col-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.board-col-title {
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-col-stat {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.board-unknown {
+  font-style: normal;
+  opacity: 0.8;
+}
+
+.board-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 44dvh;
+  overflow-y: auto;
+}
+
+.board-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: grab;
+}
+
+.board-card-dragging {
+  opacity: 0.5;
+}
+
+.board-card-open {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 8px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.board-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.board-card-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.board-card-amount {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.board-card-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.board-card-tags {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.board-empty {
+  font-size: 12px;
+  text-align: center;
+  padding: 12px 0;
+}
+
+.board-strip {
+  margin-top: 12px;
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+
+.board-strip h3 {
+  font-size: 13px;
+  margin: 0 0 4px;
+}
+
+.board-strip-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 12px;
+}
+
+.board-hint {
+  font-size: 12px;
+  margin: 10px 0 0;
+}
+
+/* 确认框：必须是应用内模态，不能依赖 window.confirm */
+.board-confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 22, 30, 0.45);
+  padding: 16px;
+}
+
+.board-confirm-body {
+  width: min(460px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  padding: 18px 20px;
+  box-shadow: var(--shadow);
+}
+
+.board-confirm-body h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.board-confirm-body p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.board-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* --- 表格 --- */
+
+.table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.order-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.order-table caption {
+  text-align: left;
+  font-size: 12px;
+  padding: 0 0 8px;
+}
+
+.order-table th {
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-strong);
+  padding: 0;
+  white-space: nowrap;
+}
+
+.order-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.order-table tbody tr {
+  cursor: pointer;
+}
+
+.order-table tbody tr:hover {
+  background: var(--surface-soft, rgba(0, 0, 0, 0.03));
+}
+
+.order-table tbody tr.row-active {
+  background: var(--accent-soft, rgba(90, 124, 155, 0.12));
+}
+
+.order-table tbody tr:focus-visible {
+  outline: 2px solid var(--accent, #5a7c9b);
+  outline-offset: -2px;
+}
+
+.th-btn {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.th-btn-active {
+  color: var(--text);
+}
+
+.order-table .num,
+.board-col-stat {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.order-table th.num .th-btn {
+  width: 100%;
+  text-align: right;
+}
+
+.title-cell {
+  max-width: 240px;
+}
+
+.table-title {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.table-sub {
+  margin-left: 6px;
+  font-size: 11px;
+}
+
+.schedule-cell {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- 客户标签与统计 --- */
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft, rgba(0, 0, 0, 0.02));
+  font-size: 11px;
+}
+
+.tag-remove {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+}
+
+.tag-remove:hover {
+  color: var(--danger, #b4402f);
+}
+
+.tag-editor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.tag-manage {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.tag-manage ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tag-manage li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin: 0;
+}
+
+.stat-row dt {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.stat-row dd {
+  margin: 2px 0 0;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-row p {
+  margin: 2px 0 0;
+  font-size: 11px;
+}
+
+.stat-note {
+  font-size: 11px;
+  margin: 10px 0 0;
+  line-height: 1.6;
+}
+
+

@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import type { OrderView } from "../bridge/commands";
-import { densityClass, dropIndex, filterOrders, matchesQuery, riskBadge } from "./ordersView";
+import {
+  densityClass,
+  dropIndex,
+  filterOrders,
+  matchesQuery,
+  matchesSource,
+  riskBadge,
+} from "./ordersView";
 
 function order(partial: Partial<OrderView> & { id: string }): OrderView {
   return {
@@ -10,6 +17,7 @@ function order(partial: Partial<OrderView> & { id: string }): OrderView {
     clientId: null,
     clientName: null,
     commissionType: null,
+    source: null,
     amountCents: null,
     note: null,
     status: "active",
@@ -157,5 +165,25 @@ describe("风险与工作状态筛选", () => {
     expect(
       riskBadge(order({ id: "d", status: "complete", workState: "completed", deadlineState: "overdue" })),
     ).toBeNull();
+  });
+
+  it("来源筛选是精确匹配，未设置只能靠 all 命中", () => {
+    const a = order({ id: "a", source: "米画师" });
+    const b = order({ id: "b", source: "画加" });
+    const c = order({ id: "c", source: null });
+
+    expect(matchesSource(a, "all")).toBe(true);
+    expect(matchesSource(a, "米画师")).toBe(true);
+    expect(matchesSource(a, "米")).toBe(false);
+    // "" 专指"未设置"：能筛出未填来源的订单，但不会连带命中别的来源。
+    expect(matchesSource(c, "")).toBe(true);
+    expect(matchesSource(a, "")).toBe(false);
+    expect(filterOrders([a, b, c], { source: "画加" }).map((o) => o.id)).toEqual(["b"]);
+    expect(filterOrders([a, b, c], { source: "all" })).toHaveLength(3);
+  });
+
+  it("搜索也会匹配来源", () => {
+    const a = order({ id: "a", title: "双人插画", source: "B站工坊" });
+    expect(matchesQuery(a, "b站")).toBe(true);
   });
 });
