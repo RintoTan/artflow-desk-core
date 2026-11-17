@@ -81,3 +81,36 @@ describe("导航命中区域", () => {
     expect(rule(".nav-icon")).toMatch(/height:\s*20px/);
   });
 });
+
+describe("UI 规范：控件与排版", () => {
+  it("按钮与输入框共用同一控件高度令牌", () => {
+    expect(css).toMatch(/--control-h:\s*34px/);
+    expect(rule(".btn")).toMatch(/min-height:\s*var\(--control-h\)/);
+    expect(rule(".field input")).toMatch(/min-height:\s*var\(--control-h\)/);
+  });
+
+  it("输入框跟随容器宽度，长标题不会撑破表单", () => {
+    expect(rule(".field input")).toMatch(/width:\s*100%/);
+    expect(rule(".field input")).toMatch(/min-width:\s*0/);
+    expect(rule(".field")).toMatch(/min-width:\s*0/);
+  });
+
+  it("列表标题两行截断，详情标题可断行", () => {
+    expect(rule(".order-row-title")).toMatch(/-webkit-line-clamp:\s*2/);
+    expect(rule(".order-row-title")).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(rule(".detail-title")).toMatch(/overflow-wrap:\s*anywhere/);
+  });
+
+  it("折叠按钮是低权重 ghost 样式，但保留命中高度", () => {
+    const collapse = rule(".sidebar-collapse");
+    expect(collapse).toMatch(/background:\s*transparent/);
+    expect(collapse).toMatch(/border:\s*1px solid transparent/);
+    expect(collapse).toMatch(/min-height:\s*44px/);
+  });
+
+  it("导航图标有固定 24px 盒子，文字起点不随图标外形移动", () => {
+    expect(rule(".nav-icon-box")).toMatch(/width:\s*24px/);
+    expect(rule(".nav-icon-box")).toMatch(/height:\s*24px/);
+    expect(rule(".nav-item")).toMatch(/gap:\s*10px/);
+  });
+});

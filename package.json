@@ -14,7 +14,8 @@
     "qa:clean": "AF_MINIDESK_QA_SCENARIO=clean tauri dev --config src-tauri/tauri.qa.conf.json",
     "qa:seed": "cargo run --manifest-path src-tauri/Cargo.toml --bin qa_seed -- --scenario seeded",
     "qa:seed:clean": "cargo run --manifest-path src-tauri/Cargo.toml --bin qa_seed -- --scenario clean",
-    "qa:rebuild": "cargo run --manifest-path src-tauri/Cargo.toml --bin qa_seed -- --scenario seeded --rebuild"
+    "qa:rebuild": "cargo run --manifest-path src-tauri/Cargo.toml --bin qa_seed -- --scenario seeded --rebuild",
+    "layout:check": "node scripts/layout-check.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.4",
