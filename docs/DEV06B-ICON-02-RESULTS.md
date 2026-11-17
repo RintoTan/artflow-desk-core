@@ -169,7 +169,9 @@ app_settings 中 ui.icon_variant 行数：0（本轮从未写入正式库）
 ## 9. 本地 Git 提交（未推送）
 
 ```text
-（提交后补）
+16e1038 docs: DEV-06B-ICON-02 report (six SVGs, theme linkage, 32px notes)
+69f1663 feat(ui): switch icon artwork with the effective appearance
+31529e7 assets: light and dark variants of the three icons
 ```
 
 ## 10. 最短 macOS 实机验收
