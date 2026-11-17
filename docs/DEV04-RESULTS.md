@@ -249,12 +249,19 @@ npm run build     → built in 90ms
 ## 15. Git
 
 ```text
-feat(media): image validation, webp thumbnails and asset protocol
-feat(domain): attachment import, list, remove, verify, repair and meta editing
-feat(commands): attachment surface (40 total)
-feat(ui): attachment grid, image viewer and repair flow
-test: attachment coverage (16 rust + 6 frontend)
-docs: DEV04 results
+b018b96  feat(media): image validation, webp thumbnails and asset protocol
+a9648f9  feat(domain): attachment import, remove, verify, repair and meta editing
+4e855c0  feat(commands): attachment surface (40 commands total)
+9f5c623  test: attachment coverage (16 cases)
+abb9eeb  feat(ui): attachment grid, image viewer and repair flow
+2e7a262  docs: DEV03-FIX acceptance and DEV04 results
+705c640  chore: plugin-dialog dependency for the image picker   ← 提交信息写错了
+f0bd21a  chore: remove throwaway webp capability probe
 ```
+
+`705c640` 是我误操作：它实际只加了 `src-tauri/examples/webp_probe.rs`（验证 image crate
+能否编码 WebP 的探针），提交信息却写成了依赖变更。该探针已在下一条提交删除
+（`f0bd21a`），代码树里不残留；错误信息保留在历史里没有改写。
+`plugin-dialog` 从 DEV-01 起就在依赖中，本轮没有新增前端依赖。
 
 未推送远程。未进入 DEV-05。
