@@ -2,8 +2,8 @@
 
 - 日期：2026-11-17
 - 工程：`/Users/rinto/Documents/ChatGPT/ArtFlow-miniDesk`
-- 范围：**仅** 应用内未保存修改确认 UI。DEV-03 的队列排单、客户管理、全局模板**未开始**。
-- 状态：修复完成，前端测试 17/17 通过；Rust 侧无改动，160/160 保持通过。
+- 范围：DEV02-UI-01（未保存确认模态）+ DEV-03 主体（活动队列、客户档案、流程模板、搜索筛选与列表密度）
+- 状态：**DEV02-UI-01 已验收通过（4/4）并关闭**。前端测试 17 个、Rust 测试 160 个是修复当时的自动化证据，本轮未重新运行。
 
 ---
 
@@ -121,6 +121,27 @@ cargo test       → 160 passed / 0 failed（Rust 侧本轮无改动）
    作为 DEV-02 遗留项记录，正式无障碍审查留给后续。
 4. 遮罩点击不关闭对话框（有意设计，避免误触丢弃草稿）。
 
+## 4.5 验收结论（用户实机操作）
+
+2026-11-17，用户在 macOS 实机完成 4 项验证，**全部通过**：
+
+| # | 验证项 | 结果 |
+|---|---|---|
+| 1 | 弹窗居中显示，背景遮罩正常 | PASS |
+| 2 | 弹窗打开后按 Enter 安全返回编辑并保留草稿 | PASS |
+| 3 | 按 Esc 关闭弹窗并保留草稿 | PASS |
+| 4 | 连续 Tab 焦点始终限制在弹窗内部 | PASS |
+
+**DEV02-UI-01 正式关闭。**
+
+三点必须说清楚：
+
+1. 该结论来自**用户实际操作**，不是我的自动化观察。我本机没有辅助功能与录屏权限，无法点击或截图。
+2. 第 1 节列出的 17 个前端用例与 160 个 Rust 用例是修复提交时的自动化证据，
+   **本轮没有重新运行**，不能算作这次验收的证明。
+3. Enter 行为经用户确认可用：默认焦点在「继续编辑」，回车即安全返回。
+   这条没有专门的自动化断言，现在的证据只有用户操作。
+
 ## 5. 需要用户确认
 
 请在有未保存修改时切换订单或点导航，确认：
@@ -142,3 +163,178 @@ docs: DEV-03 report for DEV02-UI-01
 ```
 
 未推送远程。DEV-03 的队列、客户、模板功能未开始。
+
+---
+
+# 第二部分：DEV-03 主体开发
+
+## 7. 执行摘要
+
+四项 DEV-03 功能全部落地，**Rust 194 / 前端 25 个测试全部通过**。
+**本轮没有修改数据库结构**，因此没有触发代际迁移——用户的两份实机测试订单原样保留。
+
+| 功能 | 状态 |
+|---|---|
+| 活动队列：插入位置、拖拽、上下移、`queue_revision` 冲突保护 | 已实现 |
+| 客户档案：新建、编辑、改名、关联订单历史 | 已实现 |
+| 全局流程模板：新建、编辑、复制、删除、设默认、1–20 阶段 | 已实现 |
+| 订单搜索、状态筛选、列表密度模式 | 已实现 |
+| 拖拽排序的人工操作验证 | **未验证**（见第 12 节） |
+
+## 8. 数据保护
+
+**没有 schema 变更。** DEV-03 需要的全部结构在 v1/v2 就已存在：
+
+| 需求 | 既有结构 |
+|---|---|
+| 客户 | `clients`（v1） |
+| 模板与阶段 | `stage_templates` / `stage_template_steps`（v1） |
+| 队列版本 | `queue_state`（v2） |
+| 列表密度 | `app_settings.list_density`（v1 播种） |
+| 搜索筛选 | 纯前端，无需持久化 |
+
+因此本轮**不产生新的 generation，不执行 VACUUM INTO，不切换指针**。
+
+实测（应用真实启动后）：
+
+```text
+[minidesk] env ready … generation=gen-e05d7ce65b8d40c0a0d23bedf18476ee schema=v2 first_run=false
+generations 数量：2（与 DEV-02 结束时一致，未新增）
+订单：AF-2026-0002 / AF-2026-0001，状态与队列位置均未变化
+```
+
+这是有意的选择：能在不改结构的前提下实现，就不要动用户的数据目录。
+
+## 9. 活动队列
+
+### 9.1 实现
+
+`domain/queue.rs`：
+
+- `list` / `snapshot`：按 `queue_position` 读活动订单（终态不在队列里）。
+- `move_order(input)`：`BEGIN IMMEDIATE` → 校验 `queue_state.revision` → 读出活动 ID 序列 →
+  移除并插入到目标位 → 重写 0..n 连续位置 → bump `queue_state.revision`。
+- `shift(order_id, delta)`：上移/下移共用实现，落到同一个 `move_order`。
+- `insert_new(tx, order_id, position)`：建单时按指定位置插入并整体重排。
+
+### 9.2 关键性质
+
+| 性质 | 保障方式 |
+|---|---|
+| 排序不改订单版本 | 只 `UPDATE orders SET queue_position`，不动 `revision`；有测试断言 |
+| 排序冲突独立 | 只比 `queue_state.revision`，资料编辑不会因此冲突 |
+| 位置连续 | 每次变更后整体重写 0..n |
+| 越界夹取 | `to_index` 夹到 `[0, len-1]`，不报错也不乱序 |
+| 终态订单不在队列 | 查询带 `status = 'active'`；对终态排序返回 `INVALID` |
+| 建单插队也受保护 | 指定 `queueInsertPosition` 时必须同时给 `expectedQueueRevision`，否则 `INVALID`/`CONFLICT` |
+
+重新打开订单也改为走 `queue::insert_new`，保证重开后位置连续（上一版是 `MAX+1`，
+会在终态订单留下的空洞上继续增长，实测用户数据里就出现了位置 1、2 而 0 空缺）。
+
+### 9.3 测试
+
+`tests/queue.rs` 11 个用例：追加、按索引移动并重排、上移/下移、越界夹取、
+过期队列版本冲突、排序不 bump 订单版本、终态离开队列、单元素无操作、
+建单插队、建单时队列版本冲突（且不建单）、重开入队尾。
+
+## 10. 客户档案
+
+`domain/clients.rs` + `commands/clients.rs`：
+
+- `create` / `update`：名称 trim、长度限制、空白字段归一为 NULL。
+- `update` 用 `revision` 乐观锁；**内容完全一致时不 bump**，避免重试误报冲突。
+- `detail`：客户资料 + 关联订单（含当前阶段名）+ 按状态计数。
+- 改名后订单显示立刻更新——订单读取 `LEFT JOIN clients` 取最新名称，不做冗余存储。
+- 同名客户不合并：由稳定 ID 决定身份，名称只用于显示。
+
+`tests/clients.rs` 8 个用例。
+
+## 11. 全局流程模板
+
+`domain/templates.rs` + `commands/templates.rs`：
+
+| 规则 | 实现 |
+|---|---|
+| 1–20 个阶段 | `clean_steps` 校验，超出返回 `INVALID` |
+| 同模板内不允许重名 | 领域层校验 + `UNIQUE(template_id, title)` 兜底 |
+| 阶段稳定 ID | 编辑时按传入 `stepId` 保留，新增才生成 |
+| 唯一默认模板 | `is_default` 唯一部分索引 + 事务内先清后设 |
+| 删除默认必须先另选 | `replacementDefaultId` 必填，否则 `INVALID` |
+| 至少保留一个模板 | `remove` 检查总数 |
+| 复制模板 | 复制阶段标题但生成**新** step ID |
+| 改模板不追溯订单 | 订单创建时复制阶段；有测试断言订单不受影响 |
+
+顺带修了一个真实缺陷：`create_order` 之前用硬编码常量 `DEFAULT_TEMPLATE_ID` 兜底，
+而不是读数据库里 `is_default = 1` 的模板。切换默认模板后新建订单仍用旧模板——已改为查库。
+
+`tests/templates.rs` 15 个用例。
+
+## 12. 搜索、筛选与列表密度
+
+- `src/lib/ordersView.ts`：纯函数 `matchesQuery` / `filterOrders` / `densityClass` / `dropIndex`。
+- 搜索匹配标题、编号、客户名，大小写与空白不敏感。
+- 状态筛选：全部 / 活动 / 已完成 / 已取消。
+- 只影响展示，不修改队列（有测试断言输入数组未被改动）。
+- 列表密度 `comfortable` / `compact`，通过 `preference_set("list_density")` 持久化；
+  后端只接受这两个值，其他键一律 `DENIED`。
+
+`src/lib/ordersView.test.ts` 8 个用例。
+
+## 13. 测试与实测
+
+```text
+cargo test        → 194 passed / 0 failed
+npm run test      → 25 passed（4 个测试文件）
+npx tsc --noEmit  → 通过
+npm run build     → 362.87 kB / gzip 111.42 kB
+```
+
+| 套件 | 用例 |
+|---|---|
+| schema / migrations / numbering / timezone / lock / environment / media / zip_safety | 15 / 10 / 15 / 9 / 10 / 10 / 8 / 11 |
+| commands（33 项白名单） | 10 |
+| order_create / order_details / lifecycle / workflow_edit / idempotency | 11 / 7 / 23 / 13 / 8 |
+| **queue / clients / templates（本轮新增）** | **11 / 8 / 15** |
+| 前端：对话框 / 离页保护 / 视图逻辑 / 冒烟 | 10 / 6 / 8 / 1 |
+
+命令白名单从 20 项扩到 **33 项**，新增 13 项全部逐条登记并通过负向测试。
+
+## 14. 未实现 / 未验证
+
+1. **拖拽排序我没有实测过。** 没有辅助功能与录屏权限，无法真的拖。
+   逻辑有 `dropIndex` 单测与 `queue_move` 集成测试，但"鼠标能不能拖起来"需要你确认。
+   上移/下移按钮走的是同一条 `queue_move` 路径，键盘可用。
+2. **整个新 UI 我没有点击验证**（客户页、模板页、搜索框、密度切换、列表拖拽）。
+3. 队列位置存在历史空洞（用户数据里是 1、2，缺 0）。不影响功能，
+   下一次重排会自动整理为 0..n；我没有在启动时做隐式修复。
+4. 客户**不支持删除**（规格未要求；删除会牵扯订单关联语义，留给后续决策）。
+5. 模板改名不校验全局重名（规格只要求同模板内阶段名唯一）。
+6. 搜索与筛选是会话内状态，不持久化（符合 D-00-18）。
+7. 列表密度只持久化在后端，前端首次读取失败会回退 `comfortable` 且不提示。
+8. 桌面窗口关闭保护仍未实现（DEV-06）。
+
+## 15. 需要用户验证（约 3 分钟）
+
+1. **队列**：订单页有两张活动订单时，点某一行的 ↑ 或 ↓，确认顺序变化、编号不变；
+   再试着把一行拖到另一行上，确认顺序按拖放位置变化。
+2. **客户**：客户页新建一位客户 → 改名 → 回到订单页，确认关联订单显示新名字。
+3. **模板**：模板页新建一个 2 阶段模板 → 设为默认 → 回订单页新建订单，
+   确认新订单用的是这个 2 阶段流程；再删除默认模板，确认提示需要另选。
+4. **搜索/密度**：搜索框输入编号片段，确认只剩匹配项；点右上「舒适/紧凑」，
+   重启应用确认密度被记住。
+
+## 16. Git
+
+本轮提交（计划）：
+
+```text
+feat(domain): activity queue with insert position, drag reorder and queue revision
+feat(domain): client profiles with revision-guarded edits and order history
+feat(domain): global stage templates with unique default and safe deletion
+feat(commands): queue, client, template and preference surfaces (33 total)
+feat(ui): search, status filter, density switch and queue reordering
+test: queue, clients and templates coverage (34 new cases)
+docs: DEV-03 results
+```
+
+未推送远程。未进入 DEV-04。
