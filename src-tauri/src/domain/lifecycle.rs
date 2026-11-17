@@ -8,6 +8,7 @@ use serde::Serialize;
 
 use crate::domain::events::{self, NewEvent};
 use crate::domain::orders::{self, OrderView};
+use crate::domain::queue;
 use crate::error::{AppError, AppResult};
 use crate::store::timezone;
 
@@ -585,22 +586,20 @@ pub fn reopen_order(conn: &mut Connection, input: LifecycleInput) -> AppResult<O
     let previous_status = facts.status.clone();
 
     let now = timezone::now_timestamp();
-    // 保留当前阶段与有效开工记录；清空终态时间；回到活动队列末尾。
-    let tail: i64 = tx.query_row(
-        "SELECT COALESCE(MAX(queue_position), -1) + 1 FROM orders WHERE status = ?1",
-        [STATUS_ACTIVE],
-        |r| r.get(0),
-    )?;
+    // 保留当前阶段与有效开工记录；清空终态时间。
+    // 队列位置交给 queue::insert_new 统一追加并重排，保持活动队列位置连续。
     let changed = tx.execute(
         "UPDATE orders
          SET status = ?1, completed_at = NULL, cancelled_at = NULL,
-             queue_position = ?2, revision = revision + 1, updated_at = ?3
-         WHERE id = ?4 AND revision = ?5",
-        params![STATUS_ACTIVE, tail, now, input.order_id, input.expected_revision],
+             revision = revision + 1, updated_at = ?2
+         WHERE id = ?3 AND revision = ?4",
+        params![STATUS_ACTIVE, now, input.order_id, input.expected_revision],
     )?;
     if changed != 1 {
         return Err(AppError::conflict("重新打开被并发修改阻断，请刷新后重试"));
     }
+
+    queue::insert_new(&tx, &input.order_id, None)?;
 
     events::append(
         &tx,

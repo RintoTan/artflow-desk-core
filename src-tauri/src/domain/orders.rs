@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::domain::events::{self, NewEvent};
 use crate::domain::lifecycle::{self, Capabilities, WorkState};
 use crate::domain::numbering;
+use crate::domain::queue;
 use crate::error::{AppError, AppResult};
 use crate::store::highwater::HighWater;
 use crate::store::settings;
@@ -49,15 +50,6 @@ pub struct OrderView {
     pub created_at: String,
     pub updated_at: String,
     pub capabilities: Capabilities,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ClientSummary {
-    pub id: String,
-    pub display_name: String,
-    pub contact: Option<String>,
-    pub order_count: i64,
 }
 
 // ---------------------------------------------------------------- 校验
@@ -258,25 +250,6 @@ pub fn count_orders(conn: &Connection) -> AppResult<i64> {
     Ok(conn.query_row("SELECT COUNT(*) FROM orders", [], |r| r.get(0))?)
 }
 
-pub fn list_clients(conn: &Connection) -> AppResult<Vec<ClientSummary>> {
-    let mut stmt = conn.prepare(
-        "SELECT c.id, c.display_name, c.contact,
-                (SELECT COUNT(*) FROM orders o WHERE o.client_id = c.id)
-         FROM clients c ORDER BY c.display_name, c.id",
-    )?;
-    let rows = stmt
-        .query_map([], |r| {
-            Ok(ClientSummary {
-                id: r.get(0)?,
-                display_name: r.get(1)?,
-                contact: r.get(2)?,
-                order_count: r.get(3)?,
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
-}
-
 // ---------------------------------------------------------------- 创建
 
 #[derive(Debug, Clone, Deserialize)]
@@ -313,6 +286,10 @@ pub struct CreateOrderInput {
     pub note: Option<String>,
     pub template_id: Option<String>,
     pub request_id: Option<String>,
+    /// 插入到活动队列的第几位；None = 追加到末尾。
+    pub queue_insert_position: Option<i64>,
+    /// 指定插入位置时必须提供当前队列版本，用于并发保护。
+    pub expected_queue_revision: Option<i64>,
 }
 
 pub fn create_order(
@@ -370,10 +347,19 @@ pub fn create_order(
         }
     };
 
+    // 未指定模板时使用数据库中标记为默认的那一个（不是硬编码常量）。
     let template_id = match &input.template_id {
         Some(id) if !id.trim().is_empty() => id.trim().to_string(),
-        _ => settings::get(conn, "default_template_id")?
-            .unwrap_or_else(|| settings::DEFAULT_TEMPLATE_ID.to_string()),
+        _ => {
+            let fallback: Option<String> = conn
+                .query_row(
+                    "SELECT id FROM stage_templates WHERE is_default = 1",
+                    [],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            fallback.unwrap_or_else(|| settings::DEFAULT_TEMPLATE_ID.to_string())
+        }
     };
 
     let mut step_stmt = conn.prepare(
@@ -386,6 +372,18 @@ pub fn create_order(
     drop(step_stmt);
     if steps.is_empty() {
         return Err(AppError::not_found("所选制作流程模板不存在或没有阶段"));
+    }
+
+    if input.queue_insert_position.is_some() {
+        let expected = input
+            .expected_queue_revision
+            .ok_or_else(|| AppError::invalid("指定插入位置时必须同时提供队列版本"))?;
+        let actual = queue::revision(conn)?;
+        if actual != expected {
+            return Err(AppError::conflict(format!(
+                "队列顺序已被修改（当前版本 {actual}，你基于 {expected}）。请刷新后重试。"
+            )));
+        }
     }
 
     let now = timezone::now_timestamp();
@@ -412,6 +410,7 @@ pub fn create_order(
         _ => None,
     };
 
+    // 先落一个临时位置，随后由 queue::insert_new 统一重排为连续位置。
     let queue_position: i64 = tx.query_row(
         "SELECT COALESCE(MAX(queue_position), -1) + 1 FROM orders WHERE status = 'active'",
         [],
@@ -457,6 +456,8 @@ pub fn create_order(
             params![order_id, step_id, step_title, position],
         )?;
     }
+
+    queue::insert_new(&tx, &order_id, input.queue_insert_position)?;
 
     events::append(
         &tx,
