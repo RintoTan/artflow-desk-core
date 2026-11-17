@@ -192,9 +192,10 @@ cargo test                → 282 passed / 0 failed
 ## 8. Git 提交
 
 ```text
-<fix(layout)>    单栏降级与 sticky 解除
-<feat(nav)>      Lucide 风格图标与 44px 命中区域
-<test/docs>      布局规则守卫与报告
+097185f feat(nav): one icon family at 20px with a 44px hit area
+abb56db fix(layout): stack the two-column pages when the workspace is narrow
+2838051 test(layout): guard the stacked layout rules and icon hit areas
+9d1a7c9 docs: DEV-06B layout fix report and acceptance status
 ```
 
 ---
