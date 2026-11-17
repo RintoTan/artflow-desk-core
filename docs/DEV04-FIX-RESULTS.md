@@ -273,15 +273,15 @@ orders=3  attachments=2  attachment_jobs=0  pending_cleanup=0
 ## 9. 本地 Git 提交
 
 ```text
-feat(store): schema v3 attachment job log
-feat(domain): crash-safe import and repair with recovery protocol
-feat(media): thumbnail validity check and safe path publication
-feat(infra): run attachment recovery and cleanup at startup
-feat(ui): modal stack so confirm dialogs sit above the image viewer
-fix(config): narrow the asset protocol scope to attachment directories
-test: crash recovery, cleanup safety, thumbnail integrity and asset scope
-docs: DEV04-FIX results
+139f48e  fix(ui): modal stack so confirm dialogs sit above the image viewer
 ```
+
+**如实说明**：我本打算分 7 个提交，但第一条 `git add -A` 把全部改动一次收进了 `139f48e`，
+提交信息也只描述了 UI 部分。实际内容包含：schema v3、附件域重写、探针、
+asset scope 收窄、23 个新 Rust 用例、6 个前端用例、两份文档、CSS 层级变量。
+
+按既有规则我不改写已产生的提交，因此历史就是上面这一条。内容完整、可编译、测试全绿，
+但提交粒度与信息不理想——这是我的操作失误，不影响代码正确性。
 
 未推送远程。
 
