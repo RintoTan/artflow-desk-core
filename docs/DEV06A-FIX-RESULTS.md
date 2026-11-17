@@ -2,9 +2,48 @@
 
 - 日期：2026-11-17
 - 工程：`/Users/rinto/Documents/ChatGPT/ArtFlow-miniDesk`（`master`，未推送）
-- 结论：`DEV06A-CLOSE-01` **根因已定位到框架源码并修复**（换掉绑定 `terminate:` 的默认 Quit）；
-  `DEV06A-SAFE-01` **确认是真实缺陷，已修复**（逐份保存而非只存一份）。
-  两项都**未经真实 Cmd+Q 按键验证**，等你实机复测。
+- 最新状态（2026-11-17 收尾轮）：
+
+| 问题 | 状态 |
+|---|---|
+| `DEV06A-CLOSE-01` Cmd+Q 绕过保护 | **已修复并通过用户实机 R1/R2/R3** |
+| `DEV06A-SAFE-01` 多草稿只处理一份 | 底层防御已修复；**UI 实际不可形成双草稿**，有 5 条页面集成测试证明；建议关闭 |
+| `DEV06A-KEY-01` 光标移出可视区不滚动 | **已修复**（`scrollIntoView({block:"nearest"})`），等用户实机确认 |
+| `DEV06A-DOCK-01` Dock 退出绕过保护 | **OPEN / P1 发布阻断**，见 `DEV06A-DOCK-TECH-NOTE.md` |
+
+  本轮不再要求用户重复 R1～R3；需要复测的只有 KEY-01 与（若批准）DOCK-01。
+
+---
+
+## 0. 收尾轮新增：本轮用户的完整实机验收
+
+| 编号 | 项目 | 结果 |
+|---|---|---|
+| A | 红色按钮 → 取消后保留草稿 | **PASS** |
+| B | 红色按钮 → 放弃后不创建订单 | **PASS** |
+| C | 红色按钮 → 保存后关闭，重启数据存在 | **PASS** |
+| E | 已有订单编辑 → 保存并关闭 | **PASS** |
+| F1 | Cmd+F 聚焦订单搜索框 | **PASS** |
+| F2 | 方向键移动光标，Enter 打开订单 | **PASS**（附带滚动缺陷 KEY-01） |
+| F3 | Cmd+N 打开新建面板，不重复叠加 | **PASS** |
+| F4 | 中文输入法选词不触发列表操作 | **PASS** |
+| G1 | Cmd+S 保存订单，切页后仍存在 | **PASS** |
+| G2 | 新建客户草稿触发关窗保护，取消后保留 | **PASS**（仅此路径，不代表客户页全部行为） |
+| G3 | 新建模板草稿触发关窗保护，取消后保留 | **PASS**（仅此路径，不代表模板页全部行为） |
+| R1 | Cmd+Q 弹确认框，取消后保留草稿 | **PASS** |
+| R2 | Cmd+Q 放弃修改，重启后未创建 | **PASS** |
+| R3 | Cmd+Q 保存并关闭，重启后订单存在且不重复 | **PASS** |
+| R4 | 双草稿同时保存 | **NOT RUN** —— 见第 0.1 节 |
+| D | （历史）Cmd+Q 直接退出 | **FAIL → 已由 R1/R2/R3 覆盖修复** |
+
+### 0.1 R4 为什么是 NOT RUN 而不是 FAIL
+
+用户按计划先改订单标题（不保存），再点「新建订单」时，**应用立即弹出离页保护并阻止打开新建面板**。
+这是设计行为，不是缺陷：`attemptCreate()` 在 `dirty` 时会先走 `setManualNav({kind:"create"})`。
+
+因此原测试前提（两份草稿同时存在）在现有 UI 下**无法通过正常操作形成**。
+按裁定记为 **NOT RUN — 现有 UI 离页保护阻止形成测试前提**，不判 FAIL、也不擅自判 PASS。
+底层全局多草稿防御仍然保留并有测试（第 3 节），只是"用户能否真的制造出双草稿"这一环由 UI 拦住了。
 
 ---
 
@@ -127,6 +166,26 @@ await finishClose(kind);   // 全部成功才关
 5. 保存过程中若某份 guard 随组件卸载（例如新建成功后自动关闭面板），循环会跳过它，
    不会对已消失的表单重复提交。
 
+### 3.2.1 UI 实际可达性（本轮新增证据）
+
+结论：**在现有 UI 下，订单详情 dirty 时根本无法打开新建面板**，所以双草稿不可达。
+这不是推测——`src/pages/OrdersPage.unsaved.test.tsx` 用真实页面组件跑了 5 条路径：
+
+| 用例 | 断言 |
+|---|---|
+| 详情 dirty → 点「新建」 | 弹离页保护；**没有**出现「新建订单」面板；标题仍是改后的值 |
+| 选「继续编辑」 | 弹框关闭；改后标题仍在；没有新建面板；`updateOrderDetails` 未调用 |
+| 选「放弃修改」 | 才打开新建面板；改后标题消失；关掉面板重开订单，标题是已保存原文；未调用保存 |
+| 选「保存并离开」 | `updateOrderDetails` 被调用 1 次，然后才出现新建面板 |
+| 保存失败（CONFLICT） | 错误显示在框内；新建面板不出现；草稿仍在 |
+
+因此 R4 无法执行是"被 UI 拦住"，而非保护失效。
+其它页面同理：切换页面会先经过 `useBlocker`，而客户页/模板页/设置页各自是独立路由，
+不存在同一路由内两个表单同时 dirty 的路径。
+
+**但 `dirtyGuards()` 的全局防御继续保留**：将来若出现同页双表单（例如详情内嵌抽屉），
+底层已经能逐份处理，不需要重新设计。
+
 ### 3.3 明确的行为契约
 
 | 情况 | 行为 |
@@ -138,15 +197,74 @@ await finishClose(kind);   // 全部成功才关
 
 ---
 
+## 3A. KEY-01：订单列表键盘光标自动滚动
+
+### 3A.1 问题
+
+连续按 ↓ 时蓝色光标会移出可视区，列表不跟随滚动。原因是光标只改状态，没有任何滚动逻辑，
+而订单列表是一个**独立滚动容器**（`.order-rows { overflow-y: auto }`），不是整页。
+
+### 3A.2 实现
+
+```tsx
+// 光标移动才滚动一次；数据刷新导致的重新渲染不会滚动。
+useEffect(() => {
+  if (!cursorId) { lastScrolledCursor.current = null; return; }
+  if (lastScrolledCursor.current === cursorId) return;
+  lastScrolledCursor.current = cursorId;
+  rowRefs.current.get(cursorId)?.scrollIntoView({ block: "nearest" });
+}, [cursorId]);
+```
+
+- 滚动容器由 `scrollIntoView` 自己找最近的可滚动祖先，也就是 `.order-rows`，不涉及整页。
+- `block: "nearest"` 表示"已经可见就不动"，所以不会每按一下就居中，也不会和鼠标滚轮打架。
+- 每行用 `ref` 登记到 `rowRefs`，按**订单 id** 查找，不按下标——数据顺序变化不会滚错行。
+- 光标所在行被搜索/筛选过滤掉时，`cursorId` 自动清空，不会指向已不存在的订单。
+
+### 3A.3 测试（`OrdersPage.keyboard.test.tsx`，新增 5 条）
+
+| 用例 | 断言 |
+|---|---|
+| 光标移动时滚动该行 | `scrollIntoView` 被调用 1 次，参数 `{block:"nearest"}`，目标是"第二张订单"那一行 |
+| 连续移动 | 每次光标变化各滚一次，目标分别是第二、第三行；停在同一行再按 ↓ 不产生额外滚动 |
+| 滚动不碰详情与队列 | `getOrder` 仍只调用 1 次；`queueApi.move` 未调用 |
+| 筛选过滤掉光标行 | 光标被清除，行数变为 1，剩余行没有光标样式 |
+| 模态打开时 | 不滚动、光标不动 |
+
+> jsdom 没有 `scrollIntoView`，已在 `src/test/setup.ts` 补默认实现，
+> 否则任何滚动代码在组件测试里都会抛 TypeError。
+
+**真实窗口滚动仍标 NOT VERIFIED**，等你按一次方向键确认。
+
+---
+
+## 3B. DOCK-01：Dock 退出的技术结论
+
+完整评估见 **[`DEV06A-DOCK-TECH-NOTE.md`](DEV06A-DOCK-TECH-NOTE.md)**，结论摘要：
+
+- Dock 右键「退出」由 AppKit 直接发 `terminate:`；`tao 0.37.2`（已是最新稳定版）、
+  `tauri-runtime-wry 2.12.3`、`tauri 2.12.5` 都**没有** `applicationShouldTerminate:`，
+  所以拦不住，也没有"升级依赖即可解决"的路径。
+- 唯一有效方案是 unsafe 给 NSApp delegate 动态加方法，本轮**未实施**（需要批准）。
+- 我尝试用 `osascript -e 'quit app "ArtFlow miniDesk QA"'` 做实测复现，**未成功**：
+  dev 二进制不是注册的可脚本应用，事件很可能根本没送达，所以这条实验**不作为证据**。
+  Dock 路径的判断来自框架源码。
+- 因此 **DEV-06A 不能宣称"所有退出方式都已保护"**，DOCK-01 保持 P1 阻断。
+
+---
+
 ## 4. 自动化测试与结果
 
 ```text
 cargo test                → 280 passed / 0 failed
 cargo check --all-targets → 通过，0 warning
-npm run test              → 122 passed / 0 failed（17 个文件）
+npm run test              → 132 passed / 0 failed（18 个文件）
 npx tsc --noEmit          → 通过
-npm run build             → ✓ built in 119ms
+npm run build             → ✓ built in 122ms
 ```
+
+本轮新增 10 条：SAFE-01 页面可达性 5 条（`OrdersPage.unsaved.test.tsx`）、
+KEY-01 滚动 5 条（`OrdersPage.keyboard.test.tsx`）。
 
 本轮新增/扩充：
 

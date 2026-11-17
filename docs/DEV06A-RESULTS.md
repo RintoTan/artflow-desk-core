@@ -2,10 +2,17 @@
 
 - 日期：2026-11-17
 - 工程：`/Users/rinto/Documents/ChatGPT/ArtFlow-miniDesk`（`master`，未推送）
-- 状态：**未通过验收。** 用户实机 D（Cmd+Q 保护）FAIL，已立项 `DEV06A-CLOSE-01` 修复；
-  另立项 `DEV06A-SAFE-01`（多草稿可能只处理一份），确认存在并已修复。
-  两项修复的结论与新的测试流程见 **[`DEV06A-FIX-RESULTS.md`](DEV06A-FIX-RESULTS.md)**。
-  在用户重新实机通过前，本阶段不得标记 PASS，也不进入 DEV-06B。
+- 状态：**核心保护已通过用户实机验收，但 DEV-06A 仍未整体关闭**——
+  `DEV06A-DOCK-01`（Dock 退出绕过保护）保持 P1 阻断，`DEV06A-KEY-01`（列表滚动）待用户确认。
+
+| 编号 | 事项 | 状态 |
+|---|---|---|
+| CLOSE-01 | Cmd+Q 绕过保护 | 已修复，用户 R1/R2/R3 实机 PASS |
+| SAFE-01 | 多草稿只处理一份 | 底层已修复；UI 不可形成双草稿（5 条页面测试证明）；建议关闭 |
+| KEY-01 | 光标移出可视区 | 已修复，待用户确认 |
+| DOCK-01 | Dock 退出 | **OPEN / P1**，见 `DEV06A-DOCK-TECH-NOTE.md` |
+
+用户实机总表见 `DEV06A-FIX-RESULTS.md` 第 0 节。
 - 前置：QA-01 已归档关闭（见第 1 节）。
 
 ---
@@ -205,7 +212,14 @@ Rust 侧的 `ExitRequested` 拦截有独立单元测试。真正的红色按钮�
 
 ---
 
-## 9. 仍需你在真实窗口确认（NOT VERIFIED）
+## 9. 实机验收结果（2026-11-17 更新）
+
+已由用户实机 PASS：A、B、C、E、F1、F2、F3、F4、G1、G2、G3、R1、R2、R3。
+R4 为 **NOT RUN**（UI 离页保护使双草稿无法形成，见 `DEV06A-FIX-RESULTS.md` 第 0.1 节）。
+
+仍待确认：KEY-01 的真实滚动、DOCK-01（未修复，需授权）。
+
+以下为当初的 NOT VERIFIED 清单，保留作为历史记录：
 
 我无法点击 macOS 窗口（`osascript` 返回 -1728，`screencapture` 取不到窗口），
 以下全部需要你实机确认。操作说明见第 11 节。
