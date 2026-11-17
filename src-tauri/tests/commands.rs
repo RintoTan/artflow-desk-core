@@ -35,6 +35,13 @@ const APPROVED: &[&str] = &[
     "template_set_default",
     "preference_get",
     "preference_set",
+    "attachment_list",
+    "attachment_import",
+    "attachment_remove",
+    "attachment_verify",
+    "attachment_rebuild_thumbs",
+    "attachment_repair",
+    "attachment_update_meta",
 ];
 
 /// 解析 `generate_handler![...]` 并取每项最后一段标识符。

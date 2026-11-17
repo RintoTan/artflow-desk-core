@@ -74,7 +74,14 @@ pub fn run() {
             commands::templates::template_delete,
             commands::templates::template_set_default,
             commands::preferences::preference_get,
-            commands::preferences::preference_set
+            commands::preferences::preference_set,
+            commands::attachments::attachment_list,
+            commands::attachments::attachment_import,
+            commands::attachments::attachment_remove,
+            commands::attachments::attachment_verify,
+            commands::attachments::attachment_rebuild_thumbs,
+            commands::attachments::attachment_repair,
+            commands::attachments::attachment_update_meta
         ])
         .run(tauri::generate_context!())
         .expect("ArtFlow miniDesk 启动失败");
