@@ -61,12 +61,21 @@ export function placeTooltip(
   trigger: { x: number; y: number; w: number; h: number },
   size: { w: number; h: number },
   viewport: { width: number; height: number },
+  /** 优先方向；放不下时翻到另一侧。图表用 "top"，免得盖住月份标签。 */
+  prefer: TooltipPlacement = "bottom",
 ): { top: number; left: number; placement: TooltipPlacement } {
   const below = trigger.y + trigger.h + GAP;
   const above = trigger.y - GAP - size.h;
-  // 优先放下方；下方放不下且上方放得下才翻上去。
+  const fitsBelow = below + size.h <= viewport.height - EDGE;
+  const fitsAbove = above >= EDGE;
   const placement: TooltipPlacement =
-    below + size.h <= viewport.height - EDGE || above < EDGE ? "bottom" : "top";
+    prefer === "top"
+      ? fitsAbove || !fitsBelow
+        ? "top"
+        : "bottom"
+      : fitsBelow || !fitsAbove
+        ? "bottom"
+        : "top";
   const rawTop = placement === "bottom" ? below : above;
   const maxTop = Math.max(EDGE, viewport.height - EDGE - size.h);
   const top = Math.min(Math.max(rawTop, EDGE), maxTop);

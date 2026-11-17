@@ -4,7 +4,9 @@ import { save } from "@tauri-apps/plugin-dialog";
 
 import AttachmentPanel from "../components/AttachmentPanel";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { OrderScheduleBar } from "../components/OrderScheduleBar";
 import { TruncatedTitle } from "../components/TitleTooltip";
+import { buildWindow, localDayIndex } from "../lib/scheduleBar";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import {
   densityClass,
@@ -336,6 +338,14 @@ export default function OrdersPage() {
       alive = false;
     };
   }, [selectOrder]);
+
+  // 排期轨道的窗口：今天前后各 45 天，所有订单共用。
+  // 用工作时区的日历日，避免"UTC 今天"和"本地今天"差一天。
+  const scheduleToday = useMemo(() => {
+    const now = localDayIndex(new Date().toISOString(), timezone);
+    return now ?? 0;
+  }, [timezone]);
+  const scheduleWindow = useMemo(() => buildWindow(scheduleToday), [scheduleToday]);
 
   const visible = useMemo(
     () =>
@@ -738,9 +748,17 @@ export default function OrdersPage() {
                     </TruncatedTitle>
                     <span className="order-row-meta">
                       <span className={`dot dot-${order.workState}`} />
-                      {WORK_LABEL[order.workState]}
-                      {order.currentStageTitle ? ` · ${order.currentStageTitle}` : ""}
-                      {order.clientName ? ` · ${order.clientName}` : ""}
+                      <span className="order-row-meta-text">
+                        {WORK_LABEL[order.workState]}
+                        {order.currentStageTitle ? ` · ${order.currentStageTitle}` : ""}
+                        {order.clientName ? ` · ${order.clientName}` : ""}
+                      </span>
+                      <OrderScheduleBar
+                        order={order}
+                        window={scheduleWindow}
+                        today={scheduleToday}
+                        timeZone={timezone}
+                      />
                     </span>
                   </button>
                   {canReorder && activeQueue.length > 1 && (

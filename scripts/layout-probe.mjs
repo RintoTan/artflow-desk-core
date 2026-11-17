@@ -141,7 +141,7 @@ function order(id, code, title, position) {
     amountCents: 88000,
     note: "探针数据",
     status: "active",
-    workState: "working",
+    workState: "inProgress",
     currentStageId: "s2",
     currentStageTitle: "线稿",
     currentStageIndex: 1,
@@ -195,6 +195,45 @@ fixtures.list_orders = [
   ),
 ];
 fixtures.get_order = (args) => fixtures.list_orders.find((item) => item.id === args?.orderId) ?? fixtures.list_orders[0];
+
+// 月度趋势图：12 个月，含零值月份与大值月份，用来量轴、标签与滚动。
+// PROBE_MONTHS=6 时只给半年，验证"6 个月内逐柱标签"的分支。
+{
+  const months = Number(process.env.PROBE_MONTHS ?? 12);
+  const data = [];
+  for (let i = months - 1; i >= 0; i -= 1) {
+    const d = new Date(Date.UTC(2026, 10, 1));
+    d.setUTCMonth(d.getUTCMonth() - i);
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    const seed = (i * 7) % 11;
+    data.push({
+      month: key,
+      created: i === 0 ? 10 : i % 3 === 0 ? 0 : seed,
+      completed: i === 1 ? 6 : i % 4 === 0 ? 0 : Math.max(0, seed - 3),
+      cancelled: i % 5 === 0 ? 2 : 0,
+      amountCents: 0,
+      knownOrders: 0,
+      unknownOrders: 0,
+    });
+  }
+  fixtures.stats_report = {
+    range: "last12",
+    timezone: "Asia/Shanghai",
+    fromMonth: data[0].month,
+    toMonth: data[data.length - 1].month,
+    months: data,
+    totals: {
+      month: `${data[0].month}~${data[data.length - 1].month}`,
+      created: data.reduce((n, m) => n + m.created, 0),
+      completed: data.reduce((n, m) => n + m.completed, 0),
+      cancelled: data.reduce((n, m) => n + m.cancelled, 0),
+      amountCents: 0,
+      knownOrders: 0,
+      unknownOrders: 0,
+    },
+    basis: [],
+  };
+}
 
 // 设置页会读图标变体；给它一个稳定值，截图才有意义。
 fixtures.ui_icon_get = { variant: "orbit", storedVariant: null, defaultVariant: "orbit" };
@@ -452,6 +491,72 @@ const expression = `(() => {
         foot: fr,
         gapToFoot: br && fr ? Math.round(fr.y - br.bottom) : null,
         gapToBottom: br && sr ? Math.round(sr.bottom - br.bottom) : null,
+      };
+    })(),
+    // 图表：轴是否固定、标签密度、零值是否伪装成柱子
+    chart: (() => {
+      const axis = document.querySelector(".chart-axis");
+      const scroll = document.querySelector(".chart-scroll");
+      const chart = document.querySelector(".chart");
+      if (!axis || !scroll || !chart) return null;
+      const rect = (n) => {
+        const r = n.getBoundingClientRect();
+        return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+      };
+      const axisBefore = rect(axis);
+      const overflowBefore = scroll.scrollWidth > scroll.clientWidth;
+      const previous = scroll.scrollLeft;
+      scroll.scrollLeft = 240;
+      const axisAfter = rect(axis);
+      scroll.scrollLeft = previous;
+      const zeroBars = chart.querySelectorAll(".bar-zero").length;
+      const realBars = chart.querySelectorAll(".bar:not(.bar-zero)").length;
+      const labels = Array.from(chart.querySelectorAll(".bar-value")).map((n) => n.textContent);
+      return {
+        axis: axisBefore,
+        axisAfter,
+        axisMoved: axisBefore.x !== axisAfter.x,
+        axisHeight: axisBefore.h,
+        plotHeight: Math.round(chart.querySelector(".chart-bars")?.getBoundingClientRect().height ?? 0),
+        ticks: Array.from(axis.querySelectorAll(".chart-tick")).map((n) => n.textContent),
+        months: chart.querySelectorAll(".chart-col").length,
+        labels,
+        zeroBars,
+        zeroBarHeight: Math.round(
+          Array.from(chart.querySelectorAll(".bar-zero")).reduce(
+            (max, n) => Math.max(max, n.getBoundingClientRect().height),
+            0,
+          ),
+        ),
+        realBars,
+        scrollable: overflowBefore,
+        scrollW: scroll.scrollWidth,
+        clientW: scroll.clientWidth,
+        focusable: chart.querySelectorAll('.chart-col[tabindex="0"]').length,
+        firstAria: chart.querySelector(".chart-col")?.getAttribute("aria-label") ?? null,
+      };
+    })(),
+
+    // 排期轨道：行高是否被撑大、轨道是否真的渲染、窄屏是否降级成文字
+    sched: (() => {
+      const bar = document.querySelector(".order-row-meta .sched");
+      const row = document.querySelector(".order-row");
+      const text = document.querySelector(".order-row-meta .sched-text");
+      const band = bar?.querySelector(".sched-band");
+      const rr = (n) => {
+        if (!n) return null;
+        const r = n.getBoundingClientRect();
+        return { x: Math.round(r.x), w: Math.round(r.width), h: Math.round(r.height) };
+      };
+      return {
+        rowH: row ? Math.round(row.getBoundingClientRect().height) : null,
+        bar: rr(bar),
+        band: rr(band),
+        barDisplay: bar ? getComputedStyle(bar).display : null,
+        textDisplay: text ? getComputedStyle(text).display : null,
+        text: text ? text.textContent : null,
+        marks: bar ? bar.querySelectorAll(".sched-mark").length : 0,
+        overflowMarks: bar ? bar.querySelectorAll('[data-overflow]').length : 0,
       };
     })(),
     navBox: (() => {

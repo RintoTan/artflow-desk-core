@@ -99,6 +99,62 @@ for (const route of ROUTES) {
   }
 }
 
+// 订单页排期轨道：不涨行高、窄屏降级成文字
+{
+  const wide = runProbe({ width: 900, route: "/orders" }).data;
+  const problems = [];
+  if (wide.sched?.rowH !== 78) problems.push(`行高 ${wide.sched?.rowH} ≠ 78`);
+  if (!wide.sched?.bar || wide.sched.bar.w < 90) problems.push(`轨道宽 ${wide.sched?.bar?.w}`);
+  if (wide.sched?.barDisplay === "none") problems.push("900px 下轨道被隐藏了");
+  if ((wide.rowsBox?.visibleRows ?? 0) < 3) {
+    problems.push(`900px 一屏只有 ${wide.rowsBox?.visibleRows} 条完整订单`);
+  }
+  if (wide.overlapArea > 0) problems.push(`重叠 ${wide.overlapArea}px²`);
+  record(
+    "orders schedule @900",
+    problems,
+    `行高 ${wide.sched?.rowH}，轨道 ${wide.sched?.bar?.w}×${wide.sched?.bar?.h}，可见 ${wide.rowsBox?.visibleRows} 条`,
+  );
+
+  const narrow = runProbe({ width: 530, route: "/orders" }).data;
+  const narrowProblems = [];
+  if (narrow.sched?.barDisplay !== "none") narrowProblems.push("530px 下轨道没有隐藏");
+  if (narrow.sched?.textDisplay === "none") narrowProblems.push("530px 下没有降级文字");
+  if (narrow.sched?.rowH !== 78) narrowProblems.push(`行高 ${narrow.sched?.rowH} ≠ 78`);
+  if ((narrow.rowsBox?.visibleRows ?? 0) < 3) {
+    narrowProblems.push(`530px 一屏只有 ${narrow.rowsBox?.visibleRows} 条`);
+  }
+  record(
+    "orders schedule @530",
+    narrowProblems,
+    `轨道隐藏、文字「${narrow.sched?.text}」，行高 ${narrow.sched?.rowH}`,
+  );
+}
+
+// 统计图：轴固定、刻度可读、零值不画成柱子
+for (const width of [1400, 900, 530]) {
+  const { data } = runProbe({ width, route: "/stats" });
+  const c = data.chart;
+  const problems = [];
+  if (!c) problems.push("没有找到图表");
+  else {
+    if (c.axisMoved) problems.push("横向滚动时 Y 轴动了");
+    const ticks = c.ticks.map(Number);
+    if (!ticks.length) problems.push("没有刻度");
+    if (ticks.some((n, i) => !Number.isInteger(n) || n < 0 || (i > 0 && n <= ticks[i - 1]))) {
+      problems.push(`刻度不是递增非负整数：${c.ticks.join(",")}`);
+    }
+    if (c.zeroBarHeight > 3) problems.push(`零值高 ${c.zeroBarHeight}px，像有值的柱子`);
+    if (c.focusable !== c.months) problems.push(`可聚焦列 ${c.focusable} ≠ 月份 ${c.months}`);
+    if (c.labels.length === 0) problems.push("没有数值标签");
+  }
+  record(
+    `stats chart @${width}`,
+    problems,
+    c ? `刻度 ${c.ticks.join("/")}，${c.months} 个月，${c.labels.length} 个标签，零值 ${c.zeroBarHeight}px，滚动 ${c.scrollable ? "是" : "否"}` : "-",
+  );
+}
+
 // 折叠侧栏：图标盒必须正好落在 44×44 命中区的中心
 {
   const { data } = runProbe({ width: 1400, route: "/orders", env: { PROBE_COLLAPSED: "1" } });

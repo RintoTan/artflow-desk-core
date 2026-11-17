@@ -30,6 +30,13 @@
   --viewer-text: #e7eff7;
   --viewer-muted: #93a8bc;
   /* 应用内提示气泡：与页面底色反向，两种主题下都有足够对比 */
+  /* 图表三根柱子：对白色面板都 ≥ 4.4:1，不再是原来的 2.1 / 1.9 */
+  --chart-created: #5a7c9b;
+  --chart-completed: #2c6fb5;
+  --chart-cancelled: #a9614a;
+  --chart-grid: #e4edf5;
+  --sched-track: #dbe6f1;
+  --sched-band: #a9cdec;
   --tooltip-bg: #22303e;
   --tooltip-fg: #f2f7fc;
   --tooltip-shadow: 0 8px 24px rgba(12, 22, 33, 0.28);
@@ -99,6 +106,12 @@
   --chip-today-text: #e0a878;
   --chip-neutral-bg: #25313d;
   --chip-neutral-text: #a9b8c7;
+  --chart-created: #93aec6;
+  --chart-completed: #5b9fe0;
+  --chart-cancelled: #c48a72;
+  --chart-grid: #24303a;
+  --sched-track: #2b3742;
+  --sched-band: #365d84;
   --tooltip-bg: #e8eff7;
   --tooltip-fg: #10171f;
   --tooltip-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
@@ -725,6 +738,17 @@ code.mono {
     min-height: 180px;
   }
 
+  /* 530px：图形轨道让位给一行日期文字，行高一点不变。
+     选择器带 .orders-page 是为了压过后面那条基础 .sched-text 规则
+     （同权重时后者在文件里更靠后，会把这里覆盖掉）。 */
+  .orders-page .sched {
+    display: none;
+  }
+
+  .orders-page .sched-text {
+    display: inline;
+  }
+
   .orders-page .order-rows {
     height: max(160px, min(30dvh, calc(58dvh - 190px)));
   }
@@ -864,6 +888,138 @@ code.mono {
   gap: 6px;
   font-size: 11.5px;
   color: var(--text-muted);
+}
+
+/* 订单行排期轨道（只读）。放在元信息行右侧，不新增行高。
+   令牌在深浅两套里各有一份，语义色复用既有风险色，不新造一套。 */
+.orders-page .order-row-meta-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sched {
+  position: relative;
+  flex: 0 0 auto;
+  width: 96px;
+  height: 14px;
+  margin-left: auto;
+}
+
+.sched-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 6px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--sched-track);
+}
+
+.sched-band {
+  position: absolute;
+  top: 5px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--sched-band);
+}
+
+/* 今天：一条细竖线，压在所有标记之上，但用低对比避免抢视线 */
+.sched-today {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 1px;
+  margin-left: -0.5px;
+  background: var(--text-faint);
+  opacity: 0.75;
+}
+
+.sched-mark {
+  position: absolute;
+  top: 3px;
+  width: 2px;
+  height: 8px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text-muted);
+}
+
+/* 计划开始：细灰竖条（比交付条矮一点），只在没有区间时单独出现 */
+.sched-mark-planStart {
+  top: 4px;
+  height: 6px;
+  background: var(--text-faint);
+}
+
+/* 计划交付：竖条，颜色取后端 deadlineState（终态为中性） */
+.sched-mark-delivery.tone-overdue { background: var(--danger); }
+.sched-mark-delivery.tone-today { background: var(--chip-today-text); }
+.sched-mark-delivery.tone-dueSoon { background: var(--warn); }
+.sched-mark-delivery.tone-scheduled { background: var(--accent); }
+.sched-mark-delivery.tone-unscheduled { background: var(--text-faint); }
+.sched-mark-delivery.tone-neutral { background: var(--text-muted); }
+
+/* 实际开工：空心圆 —— 与"计划"的竖条在形状上就分开 */
+.sched-mark-started {
+  top: 4.5px;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border: 1.5px solid var(--text-muted);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+/* 完成：实心点；取消：空心方 —— 三种实际事件形状互不相同 */
+.sched-mark-completed {
+  top: 4.5px;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.sched-mark-cancelled {
+  top: 4.5px;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border: 1.5px solid var(--text-faint);
+  border-radius: 1px;
+  background: transparent;
+}
+
+/* 越界：钳在边缘，加一个小箭头告诉用户"日期在窗口外" */
+.sched-mark[data-overflow="left"]::before,
+.sched-mark[data-overflow="right"]::before {
+  content: "";
+  position: absolute;
+  top: 2.5px;
+  width: 0;
+  height: 0;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+}
+
+.sched-mark[data-overflow="left"]::before {
+  left: -4px;
+  border-right: 4px solid var(--text-faint);
+}
+
+.sched-mark[data-overflow="right"]::before {
+  right: -4px;
+  border-left: 4px solid var(--text-faint);
+}
+
+/* 窄窗口只留文字，不占额外高度 */
+.sched-text {
+  display: none;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .dot {
@@ -1898,14 +2054,66 @@ body:has(.row-dragging) {
   color: var(--chip-neutral-text);
 }
 
+/* 图表框架：左列是 Y 轴（不滚动），右列才是滚动区。
+   三个高度常量集中在这里，轴与绘图区靠它们对齐。 */
+.chart-frame {
+  --plot-h: 118px;
+  --label-h: 16px;
+  --pad-top: 14px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 6px;
+  align-items: end;
+}
+
+.chart-axis {
+  position: relative;
+  height: var(--plot-h);
+  margin-bottom: var(--label-h);
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tick {
+  position: absolute;
+  right: 0;
+  transform: translateY(50%);
+  line-height: 1;
+}
+
+.chart-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
 .chart {
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: 10px;
-  height: 148px;
-  padding: 8px 4px 0;
+  width: max-content;
+  min-width: 100%;
+  height: calc(var(--plot-h) + var(--label-h) + var(--pad-top));
+  padding: var(--pad-top) 4px 0;
   border-bottom: 1px solid var(--border);
-  overflow-x: auto;
+}
+
+.chart-grid {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: var(--pad-top);
+  height: var(--plot-h);
+  pointer-events: none;
+}
+
+.chart-grid-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--chart-grid);
 }
 
 .chart-col {
@@ -1913,40 +2121,117 @@ body:has(.row-dragging) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
   height: 100%;
-  justify-content: flex-end;
+  border-radius: 6px;
+  outline-offset: 2px;
+}
+
+.chart-col:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.chart-col-active {
+  background: var(--accent-soft);
+}
+
+/* 数值气泡：与长标题气泡同一套定位思路（portal + fixed），
+   但内容永远是三行数字，不涉及任何截断判断。 */
+.chart-tooltip {
+  position: fixed;
+  z-index: 60;
+  display: grid;
+  gap: 3px;
+  min-width: 104px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--tooltip-bg);
+  color: var(--tooltip-fg);
+  box-shadow: var(--tooltip-shadow);
+  font-size: 11.5px;
+  line-height: 1.45;
+  pointer-events: none;
+}
+
+.chart-tooltip-title {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chart-tooltip-row b {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tooltip .swatch {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
 }
 
 .chart-bars {
   display: flex;
   align-items: flex-end;
   gap: 3px;
-  height: 100%;
+  height: var(--plot-h);
   width: 100%;
   justify-content: center;
 }
 
+.bar-slot {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 10px;
+  height: 100%;
+}
+
 .bar {
   display: block;
-  width: 8px;
-  min-height: 2px;
+  width: 100%;
   border-radius: 3px 3px 0 0;
 }
 
+/* 数值标签：绝对定位在柱顶上方 3px，向上溢出到预留的 padding 里 */
+.bar-value {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9.5px;
+  line-height: 1;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* 0 值：一根贴底的灰色短线，明确不是"有高度的柱子" */
+.bar-zero {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--border);
+}
+
 .bar-created {
-  background: #9fb6cb;
+  background: var(--chart-created);
 }
 
 .bar-completed {
-  background: var(--accent);
+  background: var(--chart-completed);
 }
 
 .bar-cancelled {
-  background: #d9b3a8;
+  background: var(--chart-cancelled);
 }
 
 .chart-label {
+  height: var(--label-h);
+  line-height: var(--label-h);
   font-size: 10.5px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;

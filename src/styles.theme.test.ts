@@ -101,8 +101,16 @@ describe("主题令牌完整性", () => {
         for (const hit of found) used.add(hit[1] ?? "");
       }
     }
+    // 局部定义也算数：--plot-h 之类是图表组件自己的尺寸常量，
+    // 故意不放进 :root（改了它只影响图表）。这里只拦"用了但根本没定义"。
+    const localTokens = new Set(
+      [...css.matchAll(/(--[a-z0-9-]+)\s*:/gi)].map((hit) => hit[1] ?? ""),
+    );
     for (const token of used) {
-      expect(lightTokens.has(token) || darkTokens.has(token), `${token} 未定义`).toBe(true);
+      expect(
+        lightTokens.has(token) || darkTokens.has(token) || localTokens.has(token),
+        `${token} 未定义`,
+      ).toBe(true);
     }
   });
 });
