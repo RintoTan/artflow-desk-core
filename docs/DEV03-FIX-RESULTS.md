@@ -208,10 +208,12 @@ templates=1  clients=1  generations=2
 ## 8. Git 提交记录
 
 ```text
-fix(ui): pointer-handle drag for the activity queue
-fix(ui): replace window.confirm with an in-app confirm dialog
-test(ui): drag reorder and template deletion coverage (15 cases)
-docs: DEV03-FIX results
+58982b5  fix(ui): pointer-handle drag for the activity queue
+4e99779  fix(ui): replace window.confirm with an in-app confirm dialog
+d5800db  docs: DEV03-FIX results
 ```
+
+新增用例随对应修复一起提交（拖拽 6 例在 58982b5，删除确认 9 例在 4e99779），
+没有单独的测试提交。
 
 未推送远程。未进入 DEV-04。
