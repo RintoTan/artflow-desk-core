@@ -82,7 +82,6 @@ vi.mock("../bridge/commands", async () => {
       }),
       updateOrderDetails,
     },
-    templateApi: { list: async () => [] },
     queueApi: {
       list: async () => ({ revision: 0, entries: [] }),
       move: async () => ({ revision: 1, entries: [] }),
