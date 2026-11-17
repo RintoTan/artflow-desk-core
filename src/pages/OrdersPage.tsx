@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useBlocker } from "react-router-dom";
 
+import ConfirmDialog from "../components/ConfirmDialog";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import { densityClass, dropIndex, filterOrders, type StatusFilter } from "../lib/ordersView";
 import {
@@ -150,7 +151,8 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [density, setDensity] = useState<ListDensity>("comfortable");
   const [queueRev, setQueueRev] = useState(0);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragging, setDragging] = useState<{ orderId: string; fromIndex: number } | null>(null);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -302,6 +304,28 @@ export default function OrdersPage() {
       setError(describeError(e));
     }
   }
+
+  // 指针拖拽：在 window 上收尾，指针移出列表也能结束拖动。
+  useEffect(() => {
+    if (!dragging) return;
+    const finish = () => {
+      const target = hoverIndex;
+      const from = dragging.fromIndex;
+      const orderId = dragging.orderId;
+      setDragging(null);
+      setHoverIndex(null);
+      if (target === null) return;
+      const next = dropIndex(from, target, activeQueue.length);
+      if (next === null) return;
+      void applyQueueMove(orderId, next);
+    };
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+    return () => {
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+    };
+  });
 
   // ---------------------------------------------------------------- 动作
 
@@ -536,24 +560,36 @@ export default function OrdersPage() {
               return (
                 <li
                   key={order.id}
-                  draggable={canReorder && busy === false}
-                  onDragStart={() => setDragIndex(queueIndex)}
-                  onDragOver={(e) => {
-                    if (!canReorder) return;
-                    e.preventDefault();
+                  onPointerEnter={() => {
+                    if (!dragging || !canReorder) return;
+                    setHoverIndex(queueIndex);
                   }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (dragIndex === null) return;
-                    const target = queueIndex;
-                    const next = dropIndex(dragIndex, target, activeQueue.length);
-                    setDragIndex(null);
-                    if (next === null) return;
-                    void applyQueueMove(order.id, next);
-                  }}
-                  onDragEnd={() => setDragIndex(null)}
-                  className={dragIndex === queueIndex && queueIndex >= 0 ? "row-dragging" : undefined}
+                  className={[
+                    dragging?.orderId === order.id ? "row-dragging" : "",
+                    dragging && hoverIndex === queueIndex && dragging.orderId !== order.id
+                      ? "row-drop-target"
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ") || undefined}
                 >
+                  {canReorder && (
+                    <button
+                      type="button"
+                      className="drag-handle"
+                      aria-label={`拖动 ${order.code} 调整队列位置`}
+                      title="按住拖到目标位置"
+                      disabled={busy}
+                      onPointerDown={(event) => {
+                        if (busy) return;
+                        event.preventDefault();
+                        setDragging({ orderId: order.id, fromIndex: queueIndex });
+                        setHoverIndex(queueIndex);
+                      }}
+                    >
+                      ⠿
+                    </button>
+                  )}
                   <button
                     type="button"
                     className={`order-row${order.id === selectedId ? " order-row-active" : ""}`}
@@ -599,9 +635,21 @@ export default function OrdersPage() {
           </ul>
         )}
 
-        {statusFilter === "all" && query === "" && activeQueue.length > 1 && (
-          <p className="muted list-hint">拖动行、或用 ↑ ↓ 调整活动队列顺序；排序不影响订单编号。</p>
+        {dragging && hoverIndex !== null && (
+          <p className="drag-hint">
+            松开后放到第 {hoverIndex + 1} 位
+            {hoverIndex === dragging.fromIndex ? "（当前位置，不会改变顺序）" : ""}
+          </p>
         )}
+        {statusFilter === "complete" || statusFilter === "cancelled" ? (
+          <p className="muted list-hint">
+            当前筛选下不显示活动队列，拖拽与 ↑ ↓ 已禁用；切到「全部」或「活动」后可调整顺序。
+          </p>
+        ) : activeQueue.length > 1 ? (
+          <p className="muted list-hint">
+            按住行首的 ⠿ 拖到目标位置，或用 ↑ ↓ 调整顺序；排序不影响订单编号。
+          </p>
+        ) : null}
       </aside>
 
       <section className="orders-detail">
@@ -1038,6 +1086,12 @@ function StagePanel({
   const [newTitle, setNewTitle] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [stageToDelete, setStageToDelete] = useState<{
+    id: string;
+    title: string;
+    replacementId: string;
+    isCurrent: boolean;
+  } | null>(null);
 
   const locked = !order.capabilities.canEditWorkflow;
 
@@ -1160,20 +1214,12 @@ function StagePanel({
                         onClick={() => {
                           const fallback = order.stages.find((s) => s.id !== stage.id);
                           if (!fallback) return;
-                          const choice =
-                            stage.isCurrent && !window.confirm(
-                              `「${stage.title}」是当前阶段。删除后当前阶段将改为「${fallback.title}」。继续？`,
-                            );
-                          if (choice) return;
-                          void guarded("已删除阶段", () =>
-                            api.workflowRemoveStage({
-                              orderId: order.id,
-                              expectedRevision: order.revision,
-                              stageId: stage.id,
-                              replacementStageId: stage.isCurrent ? fallback.id : null,
-                              requestId: newRequestId("remove-stage"),
-                            }),
-                          );
+                          setStageToDelete({
+                            id: stage.id,
+                            title: stage.title,
+                            replacementId: fallback.id,
+                            isCurrent: stage.isCurrent,
+                          });
                         }}
                       >
                         删除
@@ -1186,6 +1232,42 @@ function StagePanel({
           </li>
         ))}
       </ol>
+
+      <ConfirmDialog
+        open={stageToDelete !== null}
+        title="确认删除这个阶段？"
+        danger
+        confirmLabel="确认删除"
+        busy={busy}
+        onCancel={() => setStageToDelete(null)}
+        onConfirm={async () => {
+          const target = stageToDelete;
+          if (!target) return;
+          setStageToDelete(null);
+          await guarded("已删除阶段", () =>
+            api.workflowRemoveStage({
+              orderId: order.id,
+              expectedRevision: order.revision,
+              stageId: target.id,
+              replacementStageId: target.isCurrent ? target.replacementId : null,
+              requestId: newRequestId("remove-stage"),
+            }),
+          );
+        }}
+      >
+        {stageToDelete && (
+          <>
+            <p>
+              即将删除阶段 <strong>「{stageToDelete.title}」</strong>。
+            </p>
+            <p>
+              {stageToDelete.isCurrent
+                ? "这是当前阶段，删除后当前阶段会改为同一流程里的下一个阶段。"
+                : "已发生的历史事件保留当时的阶段名称，不会因为删除而失真。"}
+            </p>
+          </>
+        )}
+      </ConfirmDialog>
 
       {!locked && (
         <div className="stage-add">
