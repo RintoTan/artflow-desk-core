@@ -727,7 +727,7 @@ export default function OrdersPage() {
                       <code className="order-code">{order.code}</code>
                       <span className={`chip chip-${order.status}`}>{STATUS_LABEL[order.status]}</span>
                     </span>
-                    <span className="order-row-title">
+                    <span className="order-row-title" title={order.title}>
                       {order.title}
                       {riskBadge(order) && (
                         <span className={`risk-chip risk-${order.deadlineState}`}>

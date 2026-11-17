@@ -320,7 +320,9 @@ export default function App() {
               aria-current={undefined}
               className={({ isActive }) => (isActive ? "nav-item nav-item-active" : "nav-item")}
             >
-              <NavIcon name={item.icon} />
+              <span className="nav-icon-box">
+                <NavIcon name={item.icon} />
+              </span>
               <span className="nav-label">{item.label}</span>
             </NavLink>
           ))}
@@ -334,16 +336,18 @@ export default function App() {
           aria-label={collapsed ? "展开侧边栏" : "折叠侧边栏"}
           title={collapsed ? "展开侧边栏" : "折叠侧边栏"}
         >
-          <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d={collapsed ? "M9 5l7 7-7 7" : "M15 5l-7 7 7 7"}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <span className="nav-icon-box">
+            <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d={collapsed ? "M9 5l7 7-7 7" : "M15 5l-7 7 7 7"}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
           <span className="nav-label">折叠</span>
         </button>
 
