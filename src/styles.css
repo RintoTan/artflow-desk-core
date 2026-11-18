@@ -2822,6 +2822,14 @@ body:has(.row-dragging) {
   flex: 0 0 auto;
 }
 
+/* 矮窗口（≤560px 高）里吸底保存栏会盖住半个模块，改为随内容走。 */
+@media (max-height: 560px) {
+  .settings-savebar {
+    position: static;
+    backdrop-filter: none;
+  }
+}
+
 @container workspace (max-width: 640px) {
   .settings-savebar {
     flex-direction: column;
