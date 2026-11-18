@@ -242,6 +242,64 @@ fixtures.list_orders = [
 ];
 fixtures.get_order = (args) => fixtures.list_orders.find((item) => item.id === args?.orderId) ?? fixtures.list_orders[0];
 
+// 工作台指标：时间线探针与任何走 "/" 的截图都需要它，否则页面会停在错误态。
+fixtures.dashboard_metrics = {
+  activeTotal: 5,
+  queued: 2,
+  inProgress: 3,
+  dueSoon: 1,
+  dueToday: 1,
+  overdue: 1,
+  unscheduled: 2,
+  completedThisMonth: 1,
+  cancelledThisMonth: 0,
+  createdThisMonth: 3,
+  timezone: "Asia/Shanghai",
+  today: "2026-11-18",
+  month: "2026-11",
+};
+
+// PROBE_TIMELINE=1 时补齐时间线要覆盖的分支：跨月、仅开始、完全未排期、终态。
+// 默认不开，避免影响订单列表/详情既有截图与断言。
+if (process.env.PROBE_TIMELINE === "1") {
+  fixtures.list_orders = fixtures.list_orders.map((item, index) => ({
+    ...item,
+    plannedStartDate: ["2026-11-10", "2026-10-20", "2026-11-02", "2026-12-01"][index] ?? item.plannedStartDate,
+    plannedDeliveryDate: ["2026-11-20", "2026-11-17", "2026-12-18", "2027-01-15"][index] ?? item.plannedDeliveryDate,
+    deadlineState: ["dueSoon", "overdue", "scheduled", "scheduled"][index] ?? item.deadlineState,
+  }));
+  fixtures.list_orders.push({
+    ...fixtures.list_orders[0],
+    id: "o5",
+    code: "AF-2026-0005",
+    title: "已完成的委托",
+    status: "complete",
+    workState: "completed",
+    plannedStartDate: "2026-10-01",
+    plannedDeliveryDate: "2026-10-15",
+    completedAt: "2026-10-14T09:20:00.000Z",
+    deadlineState: "scheduled",
+  });
+  fixtures.list_orders.push({
+    ...fixtures.list_orders[0],
+    id: "o6",
+    code: "AF-2026-0006",
+    title: "两个日期都没填的委托",
+    plannedStartDate: null,
+    plannedDeliveryDate: null,
+    deadlineState: "unscheduled",
+  });
+  fixtures.list_orders.push({
+    ...fixtures.list_orders[0],
+    id: "o7",
+    code: "AF-2026-0007",
+    title: "只填了开始日期",
+    plannedStartDate: "2026-11-24",
+    plannedDeliveryDate: null,
+    deadlineState: "unscheduled",
+  });
+}
+
 // 月度趋势图：12 个月，含零值月份与大值月份，用来量轴、标签与滚动。
 // PROBE_MONTHS=6 时只给半年，验证"6 个月内逐柱标签"的分支。
 {
@@ -311,6 +369,11 @@ window.__TAURI_INTERNALS__ = {
   metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
 };
 window.isTauri = true;
+${process.env.PROBE_CONTAINER ? `document.addEventListener("DOMContentLoaded", () => {
+  const style = document.createElement("style");
+  style.textContent = ".main-inner { width: ${process.env.PROBE_CONTAINER}px !important; padding-inline: 0 !important; }";
+  document.head.appendChild(style);
+});` : ""}
 ${process.env.PROBE_COLLAPSED === "1" ? `try { window.localStorage.setItem("minidesk.sidebar", "collapsed"); } catch {}` : ""}
 `;
 
@@ -727,10 +790,99 @@ const expression = `(() => {
             : null,
       };
     })(),
+    timelineGeom: (() => {
+      const frame = document.querySelector(".timeline-frame");
+      if (!frame) {
+        return {
+          present: false,
+          empty: document.querySelector(".timeline-empty")?.textContent?.trim().slice(0, 60) ?? null,
+        };
+      }
+      const rect = (el) => {
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height), top: Math.round(b.top * 100) / 100 };
+      };
+      const infos = [...document.querySelectorAll(".timeline-info")];
+      const rows = [...document.querySelectorAll(".timeline-row")];
+      const deltas = infos.map((el, i) =>
+        rows[i] ? Math.abs(el.getBoundingClientRect().top - rows[i].getBoundingClientRect().top) : 999,
+      );
+      const scroller = document.querySelector(".timeline-scroll");
+      const canvas = document.querySelector(".timeline-canvas");
+      const corner = document.querySelector(".timeline-corner");
+      const axis = document.querySelector(".timeline-axis");
+      const legend = [...document.querySelectorAll(".timeline-legend li")];
+      const bars = [...document.querySelectorAll(".timeline-bar")];
+      const firstTick = document.querySelector(".timeline-tier-2 .timeline-tick");
+      const firstBar = bars[0] ?? null;
+      return {
+        present: true,
+        infoCount: infos.length,
+        rowCount: rows.length,
+        maxRowTopDelta: deltas.length ? Math.round(Math.max(...deltas) * 100) / 100 : null,
+        cornerBottom: corner ? Math.round(corner.getBoundingClientRect().bottom * 100) / 100 : null,
+        axisBottom: axis ? Math.round(axis.getBoundingClientRect().bottom * 100) / 100 : null,
+        infoWidth: infos[0] ? Math.round(infos[0].getBoundingClientRect().width) : null,
+        rowHeight: rows[0] ? Math.round(rows[0].getBoundingClientRect().height) : null,
+        trackWidth: scroller ? Math.round(scroller.clientWidth) : null,
+        scrollLeft: scroller ? Math.round(scroller.scrollLeft) : null,
+        trackScrollbar: scroller ? scroller.offsetHeight - scroller.clientHeight : null,
+        trackOverflowX: scroller ? getComputedStyle(scroller).overflowX : null,
+        trackVerticalScroll:
+          scroller ? scroller.scrollHeight > scroller.clientHeight + 1 : null,
+        canvasWidth: canvas ? Math.round(canvas.getBoundingClientRect().width) : null,
+        firstTickLeft: firstTick ? Math.round(firstTick.getBoundingClientRect().left - (scroller?.getBoundingClientRect().left ?? 0)) : null,
+        firstBarLeft: firstBar ? Math.round(firstBar.getBoundingClientRect().left - (scroller?.getBoundingClientRect().left ?? 0)) : null,
+        barCount: bars.length,
+        tier2Count: document.querySelectorAll(".timeline-tier-2 .timeline-tick").length,
+        scalePressed: [...document.querySelectorAll(".segmented button")].find((b) => b.getAttribute("aria-pressed") === "true")?.textContent?.trim() ?? null,
+        markCount: document.querySelectorAll(".timeline-mark").length,
+        terminalRows: document.querySelectorAll(".timeline-row.is-terminal").length,
+        legend: legend.map((li) => ({ text: (li.textContent || "").trim(), w: Math.round(li.getBoundingClientRect().width) })),
+        legendVisible: legend.every((li) => li.getBoundingClientRect().width > 0 && li.getBoundingClientRect().height > 0),
+        unscheduledText: document.querySelector(".timeline-unscheduled")?.textContent?.trim().slice(0, 80) ?? null,
+        frame: rect(frame),
+        pageScrollWidth: document.documentElement.scrollWidth,
+        windowInnerWidth: window.innerWidth,
+        hasStickyHeader: (() => {
+          const el = document.querySelector(".timeline-axis");
+          return el ? getComputedStyle(el).position : null;
+        })(),
+      };
+    })(),
     viewport: { w: window.innerWidth, h: window.innerHeight },
     bodyText: document.body.innerText.slice(0, 1200),
   };
 })()`;
+
+// PROBE_TERMINAL=1：勾选「显示已结束」，用于验证终态订单的展示。
+if (process.env.PROBE_TERMINAL === "1") {
+  await send("Runtime.evaluate", {
+    expression: `(() => {
+      const box = document.querySelector(".timeline-toggle input");
+      if (!box) return false;
+      if (!box.checked) box.click();
+      return box.checked;
+    })()`,
+    returnByValue: true,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 250));
+}
+
+// PROBE_SCALE=日|周|月|年：切换时间尺度后再量（否则只能量到默认的月视图）。
+if (process.env.PROBE_SCALE) {
+  await send("Runtime.evaluate", {
+    expression: `(() => {
+      const target = ${JSON.stringify(process.env.PROBE_SCALE)};
+      const btn = [...document.querySelectorAll(".segmented button")].find((b) => (b.textContent || "").trim() === target);
+      if (btn) btn.click();
+      return Boolean(btn);
+    })()`,
+    returnByValue: true,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 300));
+}
 
 const result = await send("Runtime.evaluate", {
   expression,

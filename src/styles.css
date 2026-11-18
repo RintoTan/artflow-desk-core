@@ -4417,3 +4417,525 @@ dl.stat-row {
   flex-direction: column;
   align-items: stretch;
 }
+
+/* ---------------------------------------------------------------- 工作台时间线（DEV-06D-2） */
+/*
+ * 两列共用同一行高与同一套 x 坐标：表头与轨道放在同一个横向滚动容器里，
+ * 所以不需要用 JS 同步两个 scrollLeft。左侧信息列不参与横向滚动。
+ */
+.timeline-frame {
+  --timeline-info-w: 300px;
+  --timeline-row-h: 56px;
+  --timeline-axis-h: 45px;
+  display: grid;
+  grid-template-columns: var(--timeline-info-w) minmax(0, 1fr);
+  align-items: start;
+  border-top: 1px solid var(--border);
+}
+
+.timeline-head {
+  align-items: flex-start;
+}
+
+.timeline-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.timeline-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.timeline-range {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-range strong {
+  color: var(--text);
+}
+
+.timeline-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.timeline-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.timeline-legend-swatch {
+  width: 14px;
+  height: 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.timeline-legend-swatch.tone-scheduled { background: var(--sched-band); border-color: var(--border-strong); }
+.timeline-legend-swatch.tone-dueSoon { background: var(--warn-soft); border-color: var(--warn); }
+.timeline-legend-swatch.tone-today { background: var(--chip-today-bg); border-color: var(--chip-today-text); }
+.timeline-legend-swatch.tone-overdue { background: var(--danger-soft); border-color: var(--danger-border); }
+.timeline-legend-swatch.tone-terminal { background: var(--neutral-soft); border-color: var(--border-strong); }
+
+.timeline-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.timeline-toggle input {
+  accent-color: var(--accent);
+}
+
+.timeline-refresh {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.timeline-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--danger-border);
+  border-radius: 8px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.timeline-empty {
+  padding: 30px 12px 32px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.timeline-empty strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13.5px;
+}
+
+.timeline-empty span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.timeline-info-col {
+  min-width: 0;
+  border-right: 1px solid var(--border);
+}
+
+.timeline-corner {
+  height: var(--timeline-axis-h);
+  display: flex;
+  align-items: flex-end;
+  padding: 0 12px 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.timeline-info {
+  height: var(--timeline-row-h);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  min-width: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  color: inherit;
+  text-decoration: none;
+}
+
+.timeline-info:last-child {
+  border-bottom: 0;
+}
+
+.timeline-info:hover {
+  background: var(--surface-alt);
+}
+
+.timeline-info:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.timeline-code {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-scroll {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 10px;
+}
+
+.timeline-canvas {
+  position: relative;
+}
+
+.timeline-axis {
+  position: relative;
+  height: var(--timeline-axis-h);
+  border-bottom: 1px solid var(--border);
+}
+
+.timeline-tier {
+  position: relative;
+  height: 22px;
+}
+
+.timeline-tier-1 {
+  border-bottom: 1px solid var(--border);
+}
+
+.timeline-tick {
+  position: absolute;
+  top: 0;
+  height: 22px;
+  padding-left: 5px;
+  border-left: 1px solid var(--border);
+  font-size: 10.5px;
+  line-height: 22px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* 标签吸在滚动视口左缘，但不会越过自己所属的时间段 */
+.timeline-tick-text {
+  position: sticky;
+  left: 5px;
+  display: inline-block;
+  padding-right: 6px;
+  background: var(--surface);
+}
+
+.timeline-tick-sub {
+  margin-left: 1px;
+  font-size: 9px;
+  opacity: 0.72;
+}
+
+.timeline-tick.is-today .timeline-tick-text {
+  color: var(--chip-today-text);
+  font-weight: 700;
+}
+
+.timeline-today-flag {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  z-index: 4;
+  padding: 2px 5px 3px;
+  border-radius: 0 0 4px 4px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 9.5px;
+  line-height: 1;
+}
+
+.timeline-grid {
+  position: absolute;
+  top: var(--timeline-axis-h);
+  bottom: 0;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.timeline-grid-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+
+.timeline-today-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  z-index: 3;
+  pointer-events: none;
+  background: repeating-linear-gradient(180deg, var(--danger) 0 4px, transparent 4px 8px);
+}
+
+.timeline-rows {
+  position: relative;
+  z-index: 1;
+}
+
+.timeline-row {
+  position: relative;
+  height: var(--timeline-row-h);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 var(--timeline-row-h);
+}
+
+.timeline-row:last-child {
+  border-bottom: 0;
+}
+
+.timeline-row:hover {
+  background: var(--surface-alt);
+}
+
+.timeline-bar {
+  position: absolute;
+  top: 20px;
+  height: 16px;
+  min-width: 4px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+
+.timeline-bar.tone-scheduled { background: var(--sched-band); border-color: var(--border-strong); }
+.timeline-bar.tone-dueSoon { background: var(--warn-soft); border-color: var(--warn); }
+.timeline-bar.tone-today { background: var(--chip-today-bg); border-color: var(--chip-today-text); }
+.timeline-bar.tone-overdue { background: var(--danger-soft); border-color: var(--danger-border); }
+
+.timeline-bar.tone-terminal {
+  background: var(--neutral-soft);
+  border: 1px dashed var(--border-strong);
+}
+
+.timeline-bar.is-single {
+  border-radius: 4px;
+}
+
+.timeline-bar[data-clip="left"] {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.timeline-bar[data-clip="right"] {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.timeline-mark {
+  position: absolute;
+  top: 24px;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.timeline-mark.is-delivery {
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+
+.timeline-mark.is-planStart {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.timeline-mark.tone-overdue { background: var(--danger); }
+.timeline-mark.tone-today { background: var(--chip-today-text); }
+.timeline-mark.tone-dueSoon { background: var(--warn); }
+.timeline-mark.tone-scheduled { background: var(--accent); }
+.timeline-mark.tone-terminal { background: var(--text-faint); }
+
+.timeline-mark.is-planStart.tone-overdue { box-shadow: inset 0 0 0 2px var(--danger); }
+.timeline-mark.is-planStart.tone-terminal { box-shadow: inset 0 0 0 2px var(--text-faint); }
+
+.timeline-mark[data-overflow]::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  margin-top: -3.5px;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+}
+
+.timeline-mark[data-overflow="left"]::before {
+  left: -7px;
+  border-right: 5px solid var(--text-faint);
+}
+
+.timeline-mark[data-overflow="right"]::before {
+  right: -7px;
+  border-left: 5px solid var(--text-faint);
+}
+
+.timeline-edge {
+  position: absolute;
+  top: 21px;
+  z-index: 2;
+  padding: 0 1px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1;
+}
+
+.timeline-edge.is-right {
+  text-align: right;
+}
+
+.timeline-tag {
+  position: absolute;
+  top: 19px;
+  left: 8px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.timeline-tag.is-alert {
+  color: var(--danger);
+}
+
+.timeline-unscheduled {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.timeline-unscheduled h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+
+.timeline-count {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--neutral-soft);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.timeline-unscheduled ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline-unscheduled li a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-alt);
+  font-size: 11.5px;
+}
+
+.timeline-unscheduled li a:hover {
+  border-color: var(--border-strong);
+}
+
+.timeline-hint {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+}
+
+/* 容器查询只能影响后代：这里改的是 .timeline-frame 自己的变量，不是容器自身 */
+@container workspace (max-width: 900px) {
+  .timeline-frame {
+    --timeline-info-w: 236px;
+  }
+
+  .timeline-legend {
+    gap: 8px;
+    font-size: 10.5px;
+  }
+
+  .timeline-legend-swatch {
+    width: 12px;
+    height: 7px;
+  }
+}
+
+@container workspace (max-width: 640px) {
+  .timeline-frame {
+    --timeline-info-w: 178px;
+    --timeline-row-h: 52px;
+  }
+
+  .timeline-info {
+    padding: 6px 9px;
+  }
+
+  .timeline-sub {
+    display: none;
+  }
+
+  .timeline-bar {
+    top: 18px;
+  }
+
+  .timeline-mark {
+    top: 22px;
+  }
+
+  .timeline-legend {
+    gap: 6px;
+    font-size: 10px;
+  }
+}

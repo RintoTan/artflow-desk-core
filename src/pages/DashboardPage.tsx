@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { describeError, statsApi, type DashboardMetrics } from "../bridge/commands";
+import { ProjectTimeline } from "../components/ProjectTimeline";
 
 type Card = {
   key: string;
@@ -137,6 +138,8 @@ export default function DashboardPage() {
           ))}
         </div>
       </section>
+
+      <ProjectTimeline />
 
       <section className="panel panel-quiet">
         <h2>提醒说明</h2>
