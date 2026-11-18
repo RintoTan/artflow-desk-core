@@ -1,0 +1,7 @@
+$ npx tsc --noEmit
+exit=0
+
+$ npm run build
+[33m[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0mnode_modules/@tauri-apps/api/window.js is dynamically imported by src/App.tsx but also statically imported by node_modules/@tauri-apps/api/webview.js, dynamic import will not move module into another chunk.
+[39m
+[32m✓ built in 119ms[39m
