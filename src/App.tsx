@@ -347,13 +347,15 @@ export default function App() {
       </aside>
 
       <main className="main">
-        {qa && (
-          <p className="qa-banner" role="status">
-            <strong>QA 测试环境</strong>（{qa.scenario === "clean" ? "空白场景" : "预置场景"}）·
-            数据目录与正式台账完全隔离
-          </p>
-        )}
-        <Outlet />
+        <div className="main-inner">
+          {qa && (
+            <p className="qa-banner" role="status">
+              <strong>QA 测试环境</strong>（{qa.scenario === "clean" ? "空白场景" : "预置场景"}）·
+              数据目录与正式台账完全隔离
+            </p>
+          )}
+          <Outlet />
+        </div>
       </main>
 
       <UnsavedChangesDialog

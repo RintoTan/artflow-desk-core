@@ -132,10 +132,8 @@ body,
   margin: 0;
 }
 
-html {
-  /* 预留滚动条槽位：切换视图时页面高度会变，滚动条出现/消失会让工具区左右抖 15px。 */
-  scrollbar-gutter: stable;
-}
+/* 根节点不滚动（body overflow: hidden），在 html 上预留槽位只会在窗口右侧
+   留出一条 15px 的空白，滚动条看起来"没贴边"。槽位只放在真正滚动的 .main 上。 */
 
 body {
   background: var(--bg-grad), var(--bg);
@@ -345,17 +343,25 @@ nav {
   color: var(--text-muted);
 }
 
-/* ------------------------------------------------------------ 主区域 */
+/* 滚动视口只负责滚动，横向留白交给 .main-inner：
+   浏览器把滚动条画在留白内侧，视口自己再留 padding，滚动条右边就会多出
+   一条永远不被覆盖的背景空隙（实测 34px）。 */
 .main {
-  padding: 28px 34px 40px;
+  padding: 28px 0 40px;
   overflow-y: auto;
   /* 真正滚动的是这一层：切视图改变页面高度时，滚动条出现/消失会让内容整体平移 15px。 */
   scrollbar-gutter: stable;
+}
+
+.main-inner {
+  padding-inline: 34px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  /* 双栏要不要拆，取决于"主内容区还剩多少宽"，不取决于窗口宽——
-     侧栏折叠后内容区变宽，窗口没变，用媒体查询会判断错。 */
+  min-width: 0;
+  /* 双栏要不要拆，取决于"主内容区还剩多少宽"，不取决于窗口宽——侧栏折叠后内容区变宽，
+     窗口没变，用媒体查询会判断错。容器查询必须挂在真正带留白的这一层，
+     否则横向留白搬走后阈值会整体偏 68px。 */
   container-type: inline-size;
   container-name: workspace;
 }
@@ -650,7 +656,10 @@ code.mono {
     padding: 16px 8px;
   }
   .main {
-    padding: 18px 14px 26px;
+    padding: 18px 0 26px;
+  }
+  .main-inner {
+    padding-inline: 14px;
   }
 }
 
@@ -3744,6 +3753,8 @@ body:has(.row-dragging) {
 /* 详情：调整阶段 */
 .stage-adjust { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .stage-adjust-list { display: flex; flex-direction: column; gap: 2px; max-height: 46dvh; overflow-y: auto; }
+.stage-group-title { margin: 4px 0 0; font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.stage-adjust-list + .stage-group-title { margin-top: 8px; }
 .stage-adjust-row {
   display: flex;
   align-items: center;

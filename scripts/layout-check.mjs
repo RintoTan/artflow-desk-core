@@ -68,6 +68,31 @@ for (const route of ROUTES) {
       problems.push("容器查询不受支持（会走媒体查询退化路径，请人工确认）");
     }
 
+    // 滚动条贴边：滚动节点的右边界必须等于窗口右边，槽位只留在主滚动点上。
+    // 根节点（html）不滚动，若在它上面预留槽位，右侧就会多出一条永远不会被
+    // 滚动条覆盖的空白——实测 15px。Blink 用覆盖式滚动条，像素表现仍需实机确认。
+    const sg = data.scrollGeom;
+    if (!sg?.main) problems.push("没有量到主滚动节点");
+    else {
+      if (sg.rightGapToWindow !== 0) {
+        problems.push(`滚动节点右边界距窗口 ${sg.rightGapToWindow}px（滚动条右侧有空隙）`);
+      }
+      if (sg.docScrollbarGutter !== "auto") {
+        problems.push(`根节点仍在预留滚动条槽位：${sg.docScrollbarGutter}`);
+      }
+      if (sg.mainScrollbarGutter !== "stable") {
+        problems.push(`主滚动节点没有稳定槽位：${sg.mainScrollbarGutter}`);
+      }
+      if (sg.shellWidth !== width) problems.push(`shell 宽 ${sg.shellWidth} ≠ 窗口宽 ${width}`);
+      if (sg.panelRightInset === null || sg.panelRightInset < 24) {
+        problems.push(`面板右侧留白只有 ${sg.panelRightInset}px`);
+      }
+      if (sg.bodyOverflow !== "hidden") problems.push(`body overflow ${sg.bodyOverflow}（会出现双重滚动条）`);
+      if (sg.mainScrollable && sg.mainScrollbarWidth === 0 && sg.mainClientWidth !== sg.mainOffsetWidth) {
+        problems.push("滚动条宽度与 offset/client 差不一致");
+      }
+    }
+
     // 展开态：所有导航项图标盒与行中心对齐，且文字起点完全一致
     const nav = data.navGeom ?? [];
     if (nav.length !== 7) problems.push(`导航项数量 ${nav.length} ≠ 7`);

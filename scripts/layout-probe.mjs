@@ -630,6 +630,59 @@ const expression = `(() => {
         overflowY: getComputedStyle(n).overflowY,
       };
     })(),
+    // 滚动条几何：滚动节点的右边界是否真的贴住窗口右边。
+    // Blink 在 macOS 上默认用覆盖式滚动条（宽度 0），所以"滚动条到底在哪"
+    // 只能用 scrollbarGutter + offsetWidth/clientWidth 间接判断，
+    // 真正贴边的结论仍需 WKWebView 实机确认。
+    scrollGeom: (() => {
+      const doc = document.documentElement;
+      const body = document.body;
+      const shell = document.querySelector(".shell");
+      const main = document.querySelector("main.main") || document.querySelector(".main");
+      const panel = main ? main.querySelector(".panel") : null;
+      const rr = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: Math.round(r.x), w: Math.round(r.width), right: Math.round(r.right) };
+      };
+      const cs = (el, p) => (el ? getComputedStyle(el)[p] : null);
+      const mainRect = rr(main);
+      const panelRect = rr(panel);
+      const border =
+        main
+          ? (parseFloat(cs(main, "borderLeftWidth")) || 0) + (parseFloat(cs(main, "borderRightWidth")) || 0)
+          : 0;
+      return {
+        windowInnerWidth: window.innerWidth,
+        docClientWidth: doc.clientWidth,
+        docScrollWidth: doc.scrollWidth,
+        docScrollHeight: doc.scrollHeight,
+        docScrollbarGutter: cs(doc, "scrollbarGutter"),
+        bodyOverflow: cs(body, "overflow"),
+        shell: rr(shell),
+        shellWidth: shell ? Math.round(shell.getBoundingClientRect().width) : null,
+        main: mainRect,
+        mainOffsetWidth: main ? main.offsetWidth : null,
+        mainClientWidth: main ? main.clientWidth : null,
+        mainScrollHeight: main ? main.scrollHeight : null,
+        mainClientHeight: main ? main.clientHeight : null,
+        mainScrollable: main ? main.scrollHeight > main.clientHeight + 1 : null,
+        mainOverflowY: cs(main, "overflowY"),
+        mainScrollbarGutter: cs(main, "scrollbarGutter"),
+        mainPaddingRight: cs(main, "paddingRight"),
+        mainPaddingLeft: cs(main, "paddingLeft"),
+        mainMarginRight: cs(main, "marginRight"),
+        mainBorderRightWidth: cs(main, "borderRightWidth"),
+        // 装饰性滚动条占用 = offsetWidth - clientWidth - 边框（覆盖式滚动条下为 0）
+        mainScrollbarWidth: main ? main.offsetWidth - main.clientWidth - border : null,
+        // 滚动节点右边界到窗口右边的距离：> 0 就说明滚动条右侧还有一条背景空隙
+        rightGapToWindow: mainRect ? Math.round(window.innerWidth - mainRect.right) : null,
+        panel: panelRect,
+        // 面板右边界到滚动节点右边界的距离（留白，不是空隙）
+        panelRightInset: panelRect && mainRect ? Math.round(mainRect.right - panelRect.right) : null,
+
+      };
+    })(),
     viewport: { w: window.innerWidth, h: window.innerHeight },
     bodyText: document.body.innerText.slice(0, 1200),
   };

@@ -4,7 +4,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 
 import AttachmentPanel from "../components/AttachmentPanel";
 import OrderBoard from "../components/OrderBoard";
-import { planStageMove } from "../lib/board";
+import { planStageMove, type StageMovePlan } from "../lib/board";
 import FilterMenu from "../components/FilterMenu";
 import OrderTable from "../components/OrderTable";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -22,7 +22,6 @@ import {
   type StatusFilter,
   type WorkFilter,
 } from "../lib/ordersView";
-import type { StageMovePlan } from "../lib/board";
 import { usePageShortcuts } from "../lib/shortcuts";
 import { useUnsavedGuard } from "../lib/unsavedRegistry";
 import {
@@ -210,8 +209,8 @@ export default function OrdersPage() {
   /** 看板/表格模式下详情以右侧抽屉呈现；卡片模式永远并排显示。 */
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
-  /** 详情里的「调整阶段」：一次选择 + 一次确认，不再叠第二层对话框。 */
-  const [stageAdjust, setStageAdjust] = useState<string | null>(null);
+  /** 详情里唯一的制作进度入口：打开后一次选择 + 一次确认，不再叠第二层对话框。 */
+  const [stagePanel, setStagePanel] = useState<{ target: string | null } | null>(null);
   const filterBtnRef = useRef<HTMLButtonElement | null>(null);
   const detailVisible = viewMode === "cards" || drawerOpen;
   /** 从客户页跳进来时的稳定 ID 过滤；null = 不按客户过滤 */
@@ -1196,7 +1195,7 @@ export default function OrdersPage() {
                 onRequest={setPendingAction}
                 onRun={runLifecycle}
                 onDirtyGuard={() => dirty}
-                onAdjustStage={() => setStageAdjust("")}
+                onOpenStage={() => setStagePanel({ target: nextStageTitle(detail) })}
               />
 
               {pendingAction && (
@@ -1343,15 +1342,20 @@ export default function OrdersPage() {
       </ConfirmDialog>
 
       <ConfirmDialog
-        open={stageAdjust !== null}
-        title="调整制作阶段"
-        confirmLabel="确认调整"
-        confirmDisabled={!stageAdjust}
-        onCancel={() => setStageAdjust(null)}
+        open={stagePanel !== null}
+        title="推进阶段"
+        confirmLabel={
+          stagePanel?.target && detail && stagePanel.target === nextStageTitle(detail)
+            ? "确认推进"
+            : "确认返工"
+        }
+        confirmDisabled={!stagePanel?.target}
+        onCancel={() => setStagePanel(null)}
         onConfirm={() => {
-          if (!stageAdjust || !detail) return;
-          const plan = planStageMove(detail, stageAdjust);
-          setStageAdjust(null);
+          const target = stagePanel?.target;
+          if (!target || !detail) return;
+          const plan = planStageMove(detail, target);
+          setStagePanel(null);
           if (plan.kind === "advance" || plan.kind === "rework") {
             void applyStageMove(
               detail,
@@ -1362,44 +1366,12 @@ export default function OrdersPage() {
           }
         }}
       >
-        {detail && (
-          <div className="stage-adjust">
-            <p className="muted">
-              当前阶段：<strong>{detail.currentStageTitle ?? "—"}</strong> · 该流程共{" "}
-              {detail.stages.length} 个阶段
-            </p>
-            <div className="stage-adjust-list" role="radiogroup" aria-label="目标阶段">
-              {detail.stages
-                .filter((stage) => stage.id !== detail.currentStageId)
-                .map((stage) => {
-                  const plan = planStageMove(detail, stage.title);
-                  const usable = plan.kind === "advance" || plan.kind === "rework";
-                  const reason =
-                    plan.kind === "blocked"
-                      ? plan.reason
-                      : usable
-                        ? null
-                        : "请用「推进阶段」逐级推进";
-                  return (
-                    <label key={stage.id} className={`stage-adjust-row${usable ? "" : " is-off"}`}>
-                      <input
-                        type="radio"
-                        name="adjust-stage"
-                        value={stage.title}
-                        disabled={!usable}
-                        checked={stageAdjust === stage.title}
-                        onChange={() => setStageAdjust(stage.title)}
-                      />
-                      <span className="stage-adjust-name">{stage.title}</span>
-                      <span className="stage-adjust-note">
-                        {reason ?? (plan.kind === "rework" ? "返工" : "推进")}
-                      </span>
-                    </label>
-                  );
-                })}
-            </div>
-            <p className="muted">确认后只写入一次合法领域动作；取消不改动任何数据。跨阶段跳转暂不支持。</p>
-          </div>
+        {detail && stagePanel && (
+          <StagePanelBody
+            order={detail}
+            target={stagePanel.target}
+            onSelect={(target) => setStagePanel({ target })}
+          />
         )}
       </ConfirmDialog>
 
@@ -1453,22 +1425,125 @@ function ViewSwitch({
   );
 }
 
+/** 当前阶段的下一阶段；没有（未开工、无阶段、已在最后）时为 null。 */
+function nextStageTitle(order: OrderView): string | null {
+  const index = order.currentStageIndex;
+  if (index === null) return null;
+  return order.stages[index + 1]?.title ?? null;
+}
+
+/**
+ * 阶段入口为什么不能打开。
+ * 注意不能用「还能不能推进」来判断：最后一个阶段仍可返工，入口必须留着。
+ */
+function planBlockedReason(plan: StageMovePlan): string | null {
+  return plan.kind === "blocked" || plan.kind === "noop" ? plan.reason : null;
+}
+
+function stageEntryBlockedReason(order: OrderView): string | null {
+  if (order.status !== "active") return "已完成或已取消的订单不能推进或返工";
+  if (!order.startedAt) return "订单尚未开工，不能推进或返工";
+  if (order.currentStageIndex === null) return "订单当前没有阶段，请先在资料里检查流程";
+  return null;
+}
+
+/**
+ * 阶段操作面板：一个主入口（推进）加一个次级区（返工）。
+ * 受控越级尚未开放，所以更远的阶段不列出来，避免摆一个永远点不动的入口。
+ */
+function StagePanelBody({
+  order,
+  target,
+  onSelect,
+}: {
+  order: OrderView;
+  target: string | null;
+  onSelect: (target: string) => void;
+}) {
+  const index = order.currentStageIndex;
+  const next = index === null ? null : (order.stages[index + 1] ?? null);
+  const earlier = index === null ? [] : order.stages.slice(0, index);
+  const advancePlan = next ? planStageMove(order, next.title) : null;
+  const advanceReason = advancePlan ? planBlockedReason(advancePlan) : null;
+
+  return (
+    <div className="stage-adjust">
+      <p className="muted">
+        当前阶段：<strong>{order.currentStageTitle ?? "—"}</strong> · 第 {(index ?? 0) + 1}/
+        {order.stages.length} 步
+      </p>
+
+      <p className="stage-group-title">推进</p>
+      {next ? (
+        <div className="stage-adjust-list" role="radiogroup" aria-label="推进目标">
+          <label className={`stage-adjust-row${advanceReason ? " is-off" : ""}`}>
+            <input
+              type="radio"
+              name="stage-target"
+              value={next.title}
+              disabled={advanceReason !== null}
+              checked={target === next.title}
+              onChange={() => onSelect(next.title)}
+            />
+            <span className="stage-adjust-name">推进到「{next.title}」</span>
+            <span className="stage-adjust-note">{advanceReason ?? "下一阶段"}</span>
+          </label>
+        </div>
+      ) : (
+        <p className="muted">已在最后一个阶段，没有可推进的下一阶段；请用「完成」结束订单。</p>
+      )}
+
+      <p className="stage-group-title">返工</p>
+      {earlier.length > 0 ? (
+        <div className="stage-adjust-list" role="radiogroup" aria-label="返工目标">
+          {earlier.map((stage) => {
+            const plan = planStageMove(order, stage.title);
+            const reason = plan.kind === "rework" ? null : planBlockedReason(plan);
+            return (
+              <label key={stage.id} className={`stage-adjust-row${reason ? " is-off" : ""}`}>
+                <input
+                  type="radio"
+                  name="stage-target"
+                  value={stage.title}
+                  disabled={reason !== null}
+                  checked={target === stage.title}
+                  onChange={() => onSelect(stage.title)}
+                />
+                <span className="stage-adjust-name">退回「{stage.title}」</span>
+                <span className="stage-adjust-note">{reason ?? "返工"}</span>
+              </label>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="muted">已在第一阶段，没有可返工的目标。</p>
+      )}
+
+      <p className="muted">
+        一次只推进一个阶段；确认后只写入一次合法领域动作，取消不改动任何数据。
+      </p>
+    </div>
+  );
+}
+
 function ActionBar({
   order,
   busy,
   onRequest,
   onRun,
   onDirtyGuard,
-  onAdjustStage,
+  onOpenStage,
 }: {
   order: OrderView;
   busy: boolean;
   onRequest: (action: PendingAction) => void;
   onRun: (label: string, call: (order: OrderView) => Promise<OrderView>) => Promise<void>;
   onDirtyGuard: () => boolean;
-  onAdjustStage: () => void;
+  onOpenStage: () => void;
 }) {
   const caps = order.capabilities;
+  /** 阶段入口只在真的无路可走时禁用：最后一个阶段仍可返工，不能因此把入口关掉。 */
+  const stageEntryBlocked = stageEntryBlockedReason(order);
 
   const lifecycleCall = (
     fn: (input: {
@@ -1489,7 +1564,7 @@ function ActionBar({
     <div className="action-bar">
       <button
         type="button"
-        className="btn btn-primary"
+        className={`btn${caps.canStartWork ? " btn-primary" : ""}`}
         disabled={busy || !caps.canStartWork}
         title={caps.canStartWork ? "" : "只有活动且未开工的订单可以开始制作"}
         onClick={() => void onRun("已开始制作", (o) => lifecycleCall(api.startWork, o, "start"))}
@@ -1511,47 +1586,12 @@ function ActionBar({
 
       <button
         type="button"
-        className="btn"
-        disabled={busy || !caps.canAdvance}
-        title={caps.canAdvance ? "" : "尚未开工或已在最后一个阶段"}
-        onClick={() => void onRun("已推进到下一阶段", (o) => lifecycleCall(api.advanceStage, o, "advance"))}
+        className={`btn${!caps.canStartWork && caps.canAdvance ? " btn-primary" : ""}`}
+        disabled={busy || stageEntryBlocked !== null}
+        title={stageEntryBlocked ?? "推进到下一阶段，或返工到更早阶段"}
+        onClick={onOpenStage}
       >
-        推进阶段
-      </button>
-
-      <button
-        type="button"
-        className="btn"
-        disabled={busy || !caps.canRework}
-        title={caps.canRework ? "" : "尚未开工或已在第一阶段"}
-        onClick={() =>
-          onRequest({
-            title: "返工",
-            detail: `把「${order.currentStageTitle ?? ""}」退回上一阶段？历史会记录这次返工。`,
-            confirmLabel: "确认返工",
-            run: () =>
-              onRun("已返工到上一阶段", (o) =>
-                api.reworkStage({
-                  orderId: o.id,
-                  expectedRevision: o.revision,
-                  targetStageId: null,
-                  requestId: newRequestId("rework"),
-                }),
-              ),
-          })
-        }
-      >
-        返工一步
-      </button>
-
-      <button
-        type="button"
-        className="btn"
-        disabled={busy || order.status !== "active"}
-        title={order.status === "active" ? "选择该订单流程内的其它阶段" : "终态订单不能改阶段"}
-        onClick={onAdjustStage}
-      >
-        调整阶段…
+        推进阶段…
       </button>
 
       <button

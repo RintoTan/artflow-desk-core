@@ -36,7 +36,15 @@ function rule(selector: string): string {
 
 describe("窄窗口布局降级", () => {
   it("主内容区是内容宽度容器，而不是按窗口宽度猜", () => {
-    expect(rule(".main")).toContain("container-type: inline-size");
+    // 容器查询挂在带横向留白的 .main-inner 上：.main 只负责滚动，
+    // 若把容器查询留在它身上，阈值会随着留白搬走而整体偏 68px。
+    expect(rule(".main-inner")).toContain("container-type: inline-size");
+  });
+
+  it("滚动视口不承担横向留白，滚动条才能贴住窗口右边", () => {
+    expect(rule(".main")).not.toMatch(/padding[^;]*34px/);
+    expect(rule(".main")).toContain("scrollbar-gutter: stable");
+    expect(rule(".main-inner")).toContain("padding-inline: 34px");
   });
 
   it("内容区不足 780px 时两栏改单栏，并解除列表粘性定位", () => {
