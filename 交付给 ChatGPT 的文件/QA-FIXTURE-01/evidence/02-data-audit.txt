@@ -1,0 +1,53 @@
+# 真实数据直查（sqlite3，按 state/active.json 定位活动代际，不依赖 qa_seed 自述）
+# 生成时间：2026-11-18 19:12:19
+
+## seeded
+generation: gen-f410eeb0f1e24c6d90c376a3680f600d
+version: qa01-v1
+orders: 14  db_mtime: Nov 18 19:04:55 2026
+ status    n   both_empty  only_start  only_delivery  both_dates
+---------  --  ----------  ----------  -------------  ----------
+active     10           2           1              2           5
+cancelled   1           1           0              0           0
+complete    3           1           0              1           1
+
+## timeline-unscheduled
+generation: gen-0c562fc8e6554e10aad3d3b595e36f14
+version: qa-timeline-unscheduled-v1
+orders: 5  db_mtime: Nov 18 19:11:01 2026
+status  n  both_empty  only_start  only_delivery  both_dates
+------  -  ----------  ----------  -------------  ----------
+active  5           2           1              1           1
+
+## timeline-empty
+generation: gen-de04faa3e47a4eb59bf08847952548bc
+version: qa-timeline-empty-v1
+orders: 0  db_mtime: Nov 18 19:11:02 2026
+
+## timeline-no-dates
+generation: gen-1f0c690efa0b4a7cac49e0e20d2c2060
+version: qa-timeline-no-dates-v1
+orders: 2  db_mtime: Nov 18 19:11:02 2026
+status  n  both_empty  only_start  only_delivery  both_dates
+------  -  ----------  ----------  -------------  ----------
+active  2           2           0              0           0
+
+## timeline-terminal
+generation: gen-27895daebbec423c8167cecc8d369915
+version: qa-timeline-terminal-v1
+orders: 2  db_mtime: Nov 18 19:11:20 2026
+ status    n  both_empty  only_start  only_delivery  both_dates
+---------  -  ----------  ----------  -------------  ----------
+cancelled  1           1           0              0           0
+complete   1           1           0              0           0
+
+## 正式目录文件指纹（新一轮计算）
+sha256(all files): e515a55d4d9de81cc1a2e450bb0f3913013dfca34dfa93c95f24c1c83eb54eaf
+正式目录 .qa-root: 不存在
+
+## seeded 里最新的三条订单（用于说明 AF-2026-0014 的来源）
+    code                                    title                                        created_at
+------------  ------------------------------------------------------------------  ------------------------
+AF-2026-0014  国庆跨年订单                                                        2026-11-18T11:04:55.051Z
+AF-2026-0013  这是一条标题超级过场的委托单子 当然只是用于测试的名字 再次加长名称  2026-11-17T10:00:02.557Z
+AF-2026-0012  @SUM(1,2) 注入样本                                                  2026-11-17T08:25:17.702Z

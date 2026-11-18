@@ -5,6 +5,13 @@
 //! qa_seed --scenario clean             # 准备空白 clean 场景
 //! qa_seed --scenario seeded --rebuild  # 显式重建（先校验 QA 标记）
 //! qa_seed --root <绝对路径> ...        # 自定义位置（测试用，需通过重叠检查）
+//!
+//! QA-FIXTURE-01 时间线验收场景（各自独立目录，互不覆盖 seeded）：
+//! ```text
+//! qa_seed --scenario timeline-unscheduled
+//! qa_seed --scenario timeline-empty
+//! qa_seed --scenario timeline-no-dates
+//! qa_seed --scenario timeline-terminal
 //! ```
 
 use std::path::PathBuf;
@@ -27,7 +34,9 @@ fn run() -> AppResult<()> {
         println!(
             "用法：qa_seed [--scenario seeded|clean] [--rebuild] [--root <绝对路径>] [--fail-after N]\n\
              \n\
-             --scenario   预置场景，默认 seeded（虚构数据）；clean 只准备空目录\n\
+             --scenario   seeded（虚构数据，默认）/ clean（空目录）/ \n\
+                           timeline-unscheduled | timeline-empty | \n\
+                           timeline-no-dates | timeline-terminal（DEV-06D-2 验收）\n\
              --rebuild    清空该场景后重建。目录必须带 .qa-root 标记\n\
              --root       自定义数据根（默认 ~/Library/Application Support/dev.artflow.minidesk.qa/<场景>）\n\
              --fail-after 仅测试用：第 N 个订单后强制失败，验证失败不留半成品"
@@ -95,6 +104,15 @@ fn run() -> AppResult<()> {
             },
         )?,
         qa::Scenario::Clean => qa_dataset::prepare_clean(&root, rebuild)?,
+        other if other.is_timeline_fixture() => {
+            qa_dataset::seed_timeline(other, &root, &SeedOptions { rebuild, fail_after })?
+        }
+        other => {
+            return Err(AppError::invalid(format!(
+                "{} 没有对应的预置逻辑",
+                other.as_str()
+            )))
+        }
     };
 
     print_report(scenario, &report);
@@ -122,8 +140,7 @@ fn print_report(scenario: qa::Scenario, report: &SeedReport) {
         println!("  {line}");
     }
     println!(
-        "\n启动该场景：\n  cd /Users/rinto/Documents/ChatGPT/ArtFlow-miniDesk\n  \
-         npm run qa:{}",
+        "\n启动该场景：\n  cd /Users/rinto/Documents/ChatGPT/ArtFlow-miniDesk\n  npm run qa:{}",
         scenario.as_str()
     );
 }

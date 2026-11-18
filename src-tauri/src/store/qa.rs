@@ -34,6 +34,14 @@ pub enum Scenario {
     Seeded,
     /// 空白环境，用于从零走流程（首次启动、建单、导图）。
     Clean,
+    /// QA-FIXTURE-01 场景 A：完全未排期分类（含仅有单端日期的订单）。
+    TimelineUnscheduled,
+    /// QA-FIXTURE-01 场景 B：已初始化但没有任何订单。
+    TimelineEmpty,
+    /// QA-FIXTURE-01 场景 C：只有活动订单，且全部没有计划日期。
+    TimelineNoDates,
+    /// QA-FIXTURE-01 场景 D：全部订单都是终态，且全部没有计划日期。
+    TimelineTerminal,
 }
 
 impl Scenario {
@@ -41,6 +49,10 @@ impl Scenario {
         match self {
             Scenario::Seeded => "seeded",
             Scenario::Clean => "clean",
+            Scenario::TimelineUnscheduled => "timeline-unscheduled",
+            Scenario::TimelineEmpty => "timeline-empty",
+            Scenario::TimelineNoDates => "timeline-no-dates",
+            Scenario::TimelineTerminal => "timeline-terminal",
         }
     }
 
@@ -48,11 +60,27 @@ impl Scenario {
         match raw.trim() {
             "seeded" => Ok(Scenario::Seeded),
             "clean" => Ok(Scenario::Clean),
+            "timeline-unscheduled" => Ok(Scenario::TimelineUnscheduled),
+            "timeline-empty" => Ok(Scenario::TimelineEmpty),
+            "timeline-no-dates" => Ok(Scenario::TimelineNoDates),
+            "timeline-terminal" => Ok(Scenario::TimelineTerminal),
             other => Err(AppError::env(format!(
-                "{SCENARIO_ENV} 只接受 seeded 或 clean，收到 {other:?}；\
+                "{SCENARIO_ENV} 只接受 seeded / clean / timeline-unscheduled / \
+                 timeline-empty / timeline-no-dates / timeline-terminal，收到 {other:?}；\
                  这里是场景名，不是路径，目录不会因此改变。"
             ))),
         }
+    }
+
+    /// 是否属于 QA-FIXTURE-01 的时间线验收场景。
+    pub fn is_timeline_fixture(self) -> bool {
+        matches!(
+            self,
+            Scenario::TimelineUnscheduled
+                | Scenario::TimelineEmpty
+                | Scenario::TimelineNoDates
+                | Scenario::TimelineTerminal
+        )
     }
 }
 

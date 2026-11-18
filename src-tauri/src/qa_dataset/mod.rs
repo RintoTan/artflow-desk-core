@@ -15,6 +15,13 @@
 //! - **固定历史**：跨月订单的创建与完成时刻写死（2026-09 / 2026-10），
 //!   用来验证"金额按创建月份归属"与"跨月事件归属"。
 
+mod timeline_fixtures;
+
+pub use timeline_fixtures::{
+    facts as timeline_facts, seed as seed_timeline, FixtureFacts, VERSION_A, VERSION_B, VERSION_C,
+    VERSION_D,
+};
+
 use std::path::Path;
 
 use chrono::{Duration, NaiveDate};
@@ -118,12 +125,12 @@ pub fn prepare_clean(root: &Path, rebuild: bool) -> AppResult<SeedReport> {
     })
 }
 
-fn has_environment(root: &Path) -> bool {
+pub(super) fn has_environment(root: &Path) -> bool {
     root.join("environment.json").exists() || root.join("generations").exists()
 }
 
 /// 清掉"我们自己生成"的东西，保留 QA 标记。调用前必须已通过标记校验。
-fn wipe_generated(root: &Path) -> AppResult<()> {
+pub(super) fn wipe_generated(root: &Path) -> AppResult<()> {
     for name in ["generations", "state", "backups", "recovery", "environment.json"] {
         let path = root.join(name);
         if path.is_dir() {
@@ -149,7 +156,7 @@ fn existing_report(root: &Path) -> AppResult<Option<SeedReport>> {
     Ok(Some(report))
 }
 
-fn report_from_conn(root: &Path, conn: &rusqlite::Connection, already: bool) -> AppResult<SeedReport> {
+pub(super) fn report_from_conn(root: &Path, conn: &rusqlite::Connection, already: bool) -> AppResult<SeedReport> {
     let count = |sql: &str| -> AppResult<i64> { Ok(conn.query_row(sql, [], |r| r.get(0))?) };
     Ok(SeedReport {
         root: root.display().to_string(),
