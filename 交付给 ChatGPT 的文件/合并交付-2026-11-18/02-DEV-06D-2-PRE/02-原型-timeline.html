@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>工作台 · 跨订单项目时间线 · DEV-06D-2 原型</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f2f6fa;
+    --surface: #ffffff;
+    --surface-alt: #f7fafd;
+    --border: #e3ebf3;
+    --border-strong: #cad7e4;
+    --text: #1f2a33;
+    --text-muted: #6a7c8c;
+    --accent: #2c6fb5;
+    --accent-soft: #e6eff9;
+    --danger: #b4453a;
+    --due: #c9821c;
+    --ok: #2f7d5a;
+    --shadow: 0 10px 24px rgba(20, 40, 60, 0.08);
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 13px/1.5 -apple-system, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: var(--text);
+    background: var(--bg);
+  }
+  .app { display: grid; grid-template-columns: 232px minmax(0, 1fr); height: 100vh; }
+  .side {
+    background: #edf3f9;
+    border-right: 1px solid var(--border);
+    padding: 18px 14px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .brand { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
+  .brand b { font-size: 14px; }
+  .brand small { color: var(--text-muted); display: block; font-size: 11px; }
+  .nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav span {
+    padding: 8px 10px; border-radius: 8px; color: #35485a; font-size: 13px;
+  }
+  .nav .on { background: var(--accent-soft); color: #1d4f86; font-weight: 600; }
+  main { padding: 22px 26px; overflow: auto; min-width: 0; }
+  .title { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+  .title h1 { margin: 0 0 2px; font-size: 19px; }
+  .title p { margin: 0; color: var(--text-muted); font-size: 12.5px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .seg { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-alt); }
+  .seg button {
+    appearance: none; border: 1px solid transparent; background: transparent; color: var(--text-muted);
+    border-radius: 7px; padding: 5px 12px; font: inherit; font-size: 12.5px; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); border-color: var(--border); box-shadow: 0 1px 2px rgba(15,30,45,.08); }
+  .btn {
+    appearance: none; border: 1px solid var(--border-strong); background: var(--surface);
+    border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 12.5px; color: var(--text); cursor: pointer;
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+  .timeline-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .timeline-head h2 { margin: 0; font-size: 15px; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; color: var(--text-muted); font-size: 11.5px; }
+  .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 4px; vertical-align: -1px; }
+
+  /* 时间线：一个滚动容器，表头 sticky top、信息列 sticky left */
+  .tl-scroll { overflow: auto; max-height: calc(100vh - 210px); }
+  .tl-inner { position: relative; min-width: 100%; }
+  .tl-header {
+    position: sticky; top: 0; z-index: 4; display: grid;
+    grid-template-columns: var(--info) var(--track);
+    background: var(--surface); border-bottom: 1px solid var(--border);
+  }
+  .tl-corner {
+    position: sticky; left: 0; z-index: 5; background: var(--surface);
+    border-right: 1px solid var(--border); padding: 8px 14px;
+    display: flex; align-items: flex-end; color: var(--text-muted); font-size: 11.5px;
+  }
+  .tl-ticks { position: relative; }
+  .tier1, .tier2 { position: relative; height: 22px; }
+  .tier2 { border-top: 1px solid var(--border); }
+  .tick {
+    position: absolute; top: 0; bottom: 0; padding-left: 6px; font-size: 11px; line-height: 22px;
+    color: var(--text-muted); border-left: 1px solid var(--border); white-space: nowrap; overflow: hidden;
+  }
+  .tick.strong { color: var(--text); font-weight: 600; }
+
+  .tl-row { display: grid; grid-template-columns: var(--info) var(--track); border-bottom: 1px solid var(--border); }
+  .tl-row:hover .tl-info { background: var(--surface-alt); }
+  .tl-info {
+    position: sticky; left: 0; z-index: 3; background: var(--surface);
+    border-right: 1px solid var(--border); padding: 9px 14px; display: flex; flex-direction: column; gap: 2px;
+    cursor: pointer; min-width: 0;
+  }
+  .tl-info .code { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .tl-info .name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tl-info .meta { font-size: 11.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tl-track { position: relative; height: 58px; background-image: linear-gradient(90deg, var(--border) 1px, transparent 1px); background-size: var(--grid) 100%; }
+  .bar {
+    position: absolute; top: 20px; height: 16px; border-radius: 999px;
+    background: #cfe0f2; border: 1px solid #a9c6e4; min-width: 3px;
+  }
+  .bar.overdue { background: #f6d9d6; border-color: #d8a39d; }
+  .bar.today { background: #f8e6c8; border-color: #d8b483; }
+  .bar.dueSoon { background: #f7ecd6; border-color: #dcc094; }
+  .bar.terminal { background: #e9eef3; border-color: #cdd8e2; border-style: dashed; }
+  .bar.only-delivery { background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.6) 0 4px, transparent 4px 8px); }
+  .bar.invalid { background: transparent; border-style: dotted; }
+  .marker { position: absolute; top: 15px; width: 2px; height: 26px; background: var(--accent); border-radius: 1px; }
+  .marker.delivery { background: var(--due); }
+  .marker.started { background: #6a8ea8; }
+  .marker.terminal { background: #93a3b1; }
+  #overlay { position: absolute; left: var(--info); right: 0; top: 0; bottom: 0; pointer-events: none; }
+  .today-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--danger); z-index: 2; pointer-events: none; }
+  .today-flag {
+    position: absolute; top: 0; transform: translateX(-50%); background: var(--danger); color: #fff;
+    font-size: 10px; padding: 1px 5px; border-radius: 0 0 4px 4px; z-index: 3;
+  }
+  .row-note { position: absolute; top: 4px; left: 8px; font-size: 10.5px; color: var(--text-muted); }
+  .row-off { position: absolute; top: 21px; left: 8px; font-size: 11px; color: var(--text-muted); border: 1px dashed var(--border-strong); border-radius: 999px; padding: 1px 8px; }
+
+  .unscheduled { padding: 12px 18px 16px; border-top: 1px solid var(--border); }
+  .unscheduled h3 { margin: 0 0 6px; font-size: 12.5px; }
+  .unscheduled p { margin: 0; color: var(--text-muted); font-size: 12px; }
+  .empty { padding: 42px 18px 46px; text-align: center; color: var(--text-muted); }
+  .empty strong { display: block; color: var(--text); font-size: 14px; margin-bottom: 4px; }
+  .diag { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .diag code { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; font-size: 11.5px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  @media (max-width: 1000px) {
+    .app { grid-template-columns: 72px minmax(0, 1fr); }
+    .brand b, .brand small, .nav span { display: none; }
+    .nav span.on { display: block; text-align: center; padding: 8px 4px; font-size: 11px; }
+    main { padding: 16px 14px; }
+  }
+  @media (max-width: 760px) {
+    .title { align-items: flex-start; }
+    .tl-scroll { max-height: calc(100vh - 250px); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="6" stroke="#2c6fb5" stroke-width="1.6"/><circle cx="12" cy="12" r="3.2" stroke="#2c6fb5" stroke-width="1.6"/></svg>
+      <div><b>ArtFlow Desk Core</b><small>原型 · 只读</small></div>
+    </div>
+    <nav class="nav"><span>工作台</span><span class="on">项目时间线</span><span>订单</span><span>客户</span><span>流程模板</span><span>历史统计</span><span>设置</span></nav>
+  </aside>
+  <main>
+    <div class="title">
+      <div>
+        <h1>项目时间线</h1>
+        <p id="subtitle">只读视图 · 按计划开始与计划交付绘制 · 不会写回任何日期</p>
+      </div>
+      <div class="toolbar">
+        <button class="btn" id="todayBtn" type="button">定位今天</button>
+        <button class="btn" id="emptyBtn" type="button">切换到空状态</button>
+        <div class="seg" id="scales" role="group" aria-label="时间尺度">
+          <button type="button" data-scale="day" aria-pressed="false">日</button>
+          <button type="button" data-scale="week" aria-pressed="true">周</button>
+          <button type="button" data-scale="month" aria-pressed="false">月</button>
+          <button type="button" data-scale="year" aria-pressed="false">年</button>
+        </div>
+      </div>
+    </div>
+
+    <section class="panel" aria-labelledby="tl-heading">
+      <div class="timeline-head">
+        <div>
+          <h2 id="tl-heading">跨订单排期</h2>
+          <p style="margin:2px 0 0;color:var(--text-muted);font-size:12px" id="windowLabel"></p>
+        </div>
+        <div class="legend">
+          <span><i style="background:#cfe0f2;border:1px solid #a9c6e4"></i>按排期</span>
+          <span><i style="background:#f7ecd6;border:1px solid #dcc094"></i>三日内</span>
+          <span><i style="background:#f6d9d6;border:1px solid #d8a39d"></i>已逾期</span>
+          <span><i style="background:#e9eef3;border:1px dashed #cdd8e2"></i>已结束</span>
+          <span><i style="background:repeating-linear-gradient(45deg,#dfe9f3 0 3px,#fff 3px 6px);border:1px solid #b9cbdc"></i>仅交付日期</span>
+        </div>
+      </div>
+      <div class="tl-scroll" id="scroll">
+        <div class="tl-inner" id="inner">
+          <div class="tl-header" id="header">
+            <div class="tl-corner">订单 · 客户 · 阶段</div>
+            <div class="tl-ticks" id="ticks">
+              <div class="tier1" id="tier1"></div>
+              <div class="tier2" id="tier2"></div>
+            </div>
+          </div>
+          <div id="rows"></div>
+          <div id="overlay"></div>
+        </div>
+      </div>
+      <div class="unscheduled" id="unscheduled"></div>
+    </section>
+
+    <div class="diag">
+      <code id="diagScale"></code>
+      <code id="diagWindow"></code>
+      <code id="diagRows"></code>
+      <code id="diagToday"></code>
+    </div>
+  </main>
+</div>
+
+<script>
+// ---------------------------------------------------------------- 日期工具
+// 与 src/lib/scheduleBar.ts 同一套整数算法（days_from_civil），原型里单独复制，
+// 以便脱离构建产物也能直接打开审查；正式实现必须 import 现有函数。
+const DAY = 86400000;
+
+
+function daysFromCivil(y, m, d) {
+  const yy = y - (m <= 2 ? 1 : 0);
+  const era = Math.floor(yy / 400);
+  const yoe = yy - era * 400;
+  const doy = Math.floor((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5) + d - 1;
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+  return era * 146097 + doe - 719468;
+}
+function civilFromDays(index) {
+  const z = index + 719468;
+  const era = Math.floor(z / 146097);
+  const doe = z - era * 146097;
+  const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
+  const y = yoe + era * 400;
+  const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+  const mp = Math.floor((5 * doy + 2) / 153);
+  const d = doy - Math.floor((153 * mp + 2) / 5) + 1;
+  const m = mp + (mp < 10 ? 3 : -9);
+  return { year: y + (m <= 2 ? 1 : 0), month: m, day: d };
+}
+function parseKey(key) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key || "");
+  if (!m) return null;
+  const idx = daysFromCivil(+m[1], +m[2], +m[3]);
+  const back = civilFromDays(idx);
+  return back.year === +m[1] && back.month === +m[2] && back.day === +m[3] ? idx : null;
+}
+const key = (idx) => { const c = civilFromDays(idx); return `${c.year}-${String(c.month).padStart(2,"0")}-${String(c.day).padStart(2,"0")}`; };
+const mmdd = (idx) => { const c = civilFromDays(idx); return `${String(c.month).padStart(2,"0")}-${String(c.day).padStart(2,"0")}`; };
+const dow = (idx) => (new Date(idx * DAY).getUTCDay() + 6) % 7; // 0=周一
+const isLeap = (y) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+const daysInMonth = (y, m) => [31, isLeap(y) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+const todayIdx = daysFromCivil(2026, 11, 18); // 2026-11-18，Asia/Shanghai 的工作日
+
+// ---------------------------------------------------------------- 尺度定义
+// pxPerDay 与窗口都是"设计基准"，正式实现放在 lib/timeline.ts 常量里。
+const SCALES = {
+  day:   { pxPerDay: 44,  before: 7,  after: 13, label: "日", unit: "天" },
+  week:  { pxPerDay: 26,  before: 21, after: 56, label: "周", unit: "周" },
+  month: { pxPerDay: 6,   before: 60, after: 305, label: "月", unit: "月" },
+  year:  { pxPerDay: 1.8, before: 365, after: 1460, label: "年", unit: "年" },
+};
+const params = new URLSearchParams(location.search);
+let scale = ["day", "week", "month", "year"].includes(params.get("scale")) ? params.get("scale") : "week";
+let showEmpty = params.get("empty") === "1";
+
+// ---------------------------------------------------------------- 假数据
+// 只用于原型：覆盖跨年、超长标题、仅交付、反向区间、终态、未排期。
+const ORDERS = [
+  { code: "AF-2026-0001", title: "双人立绘 · 周年纪念", client: "林小满", stage: "线稿 2/5", amount: "¥880", start: "2026-11-10", due: "2026-11-22", state: "today", status: "active" },
+  { code: "AF-2026-0002", title: "封面主视觉重绘与全彩上色第二版修订稿第三轮细化与背景补画", client: "陈叙", stage: "细化 4/5", amount: "¥2,400", start: "2026-11-01", due: "2026-12-18", state: "scheduled", status: "active" },
+  { code: "AF-2026-0003", title: "跨年企划 · 十二张月历插画", client: "雾岛工作室", stage: "草稿 1/5", amount: "¥12,000", start: "2026-12-20", due: "2027-02-28", state: "scheduled", status: "active" },
+  { code: "AF-2026-0004", title: "角色三视图", client: "周牧", stage: "最终调整 5/5", amount: "¥1,200", start: "2026-10-05", due: "2026-11-12", state: "overdue", status: "active" },
+  { code: "AF-2026-0005", title: "仅确认交付日的加急头像", client: "匿名", stage: "草稿 1/5", amount: "—", start: null, due: "2026-11-20", state: "dueSoon", status: "active" },
+  { code: "AF-2026-0006", title: "反向日期示例（计划开始晚于交付）", client: "测试", stage: "线稿 2/5", amount: "¥300", start: "2026-12-05", due: "2026-11-28", state: "scheduled", status: "active" },
+  { code: "AF-2026-0007", title: "已完成的委托", client: "林小满", stage: "已完成", amount: "¥600", start: "2026-09-01", due: "2026-09-20", state: "scheduled", status: "complete" },
+  { code: "AF-2026-0008", title: "未排期：只建了单还没定日期", client: "陈叙", stage: "草稿 1/5", amount: "¥500", start: null, due: null, state: "unscheduled", status: "active" },
+];
+
+// ---------------------------------------------------------------- 窗口与刻度
+function windowFor(scaleKey) {
+  const cfg = SCALES[scaleKey];
+  return { from: todayIdx - cfg.before, to: todayIdx + cfg.after, cfg };
+}
+function pxOf(day, win) { return (day - win.from) * win.cfg.pxPerDay; }
+
+function buildTicks(win) {
+  const t1 = [];
+  const t2 = [];
+  const px = win.cfg.pxPerDay;
+  const total = (win.to - win.from + 1) * px;
+  if (scale === "day" || scale === "week") {
+    // 第一层：月
+    for (let d = win.from; d <= win.to; d++) {
+      const c = civilFromDays(d);
+      if (c.day === 1 || d === win.from) {
+        const next = daysFromCivil(c.month === 12 ? c.year + 1 : c.year, c.month === 12 ? 1 : c.month + 1, 1);
+        t1.push({ left: pxOf(d, win), width: (Math.min(next, win.to + 1) - d) * px, text: `${c.year} 年 ${c.month} 月` });
+      }
+    }
+    if (scale === "day") {
+      for (let d = win.from; d <= win.to; d++) {
+        const c = civilFromDays(d);
+        const wd = dow(d);
+        t2.push({ left: pxOf(d, win), width: px, text: wd === 0 ? `${c.day} 一` : String(c.day), strong: c.day === 1 || d === todayIdx });
+      }
+    } else {
+      for (let d = win.from; d <= win.to; d++) {
+        if (dow(d) !== 0) continue;
+        t2.push({ left: pxOf(d, win), width: 7 * px, text: mmdd(d), strong: true });
+      }
+    }
+  } else if (scale === "month") {
+    // 第一层按年分组，第二层才是月份
+    for (let y = civilFromDays(win.from).year; y <= civilFromDays(win.to).year; y++) {
+      const start = Math.max(win.from, daysFromCivil(y, 1, 1));
+      const end = Math.min(win.to + 1, daysFromCivil(y + 1, 1, 1));
+      t1.push({ left: pxOf(start, win), width: (end - start) * px, text: `${y} 年`, strong: true });
+    }
+    for (let d = win.from; d <= win.to; d++) {
+      const c = civilFromDays(d);
+      if (c.day === 1 || d === win.from) {
+        const next = daysFromCivil(c.month === 12 ? c.year + 1 : c.year, c.month === 12 ? 1 : c.month + 1, 1);
+        t2.push({ left: pxOf(d, win), width: (Math.min(next, win.to + 1) - d) * px, text: `${c.month} 月`, strong: true });
+      }
+    }
+  } else {
+    for (let y = civilFromDays(win.from).year; y <= civilFromDays(win.to).year; y++) {
+      const start = Math.max(win.from, daysFromCivil(y, 1, 1));
+      const end = Math.min(win.to + 1, daysFromCivil(y + 1, 1, 1));
+      t1.push({ left: pxOf(start, win), width: (end - start) * px, text: `${y} 年`, strong: true });
+      for (let q = 1; q <= 4; q++) {
+        const qs = daysFromCivil(y, (q - 1) * 3 + 1, 1);
+        const qe = daysFromCivil(y, q * 3 === 12 ? 12 : q * 3, daysInMonth(y, q * 3));
+        if (qe < win.from || qs > win.to) continue;
+        const s = Math.max(qs, win.from);
+        const e = Math.min(qe + 1, win.to + 1);
+        t2.push({ left: pxOf(s, win), width: (e - s) * px, text: `Q${q}` });
+      }
+    }
+  }
+  return { t1, t2, total };
+}
+
+// ---------------------------------------------------------------- 渲染
+const els = {
+  scroll: document.getElementById("scroll"),
+  inner: document.getElementById("inner"),
+  header: document.getElementById("header"),
+  tier1: document.getElementById("tier1"),
+  tier2: document.getElementById("tier2"),
+  rows: document.getElementById("rows"),
+  overlay: document.getElementById("overlay"),
+  unscheduled: document.getElementById("unscheduled"),
+  windowLabel: document.getElementById("windowLabel"),
+  diagScale: document.getElementById("diagScale"),
+  diagWindow: document.getElementById("diagWindow"),
+  diagRows: document.getElementById("diagRows"),
+  diagToday: document.getElementById("diagToday"),
+};
+
+function render() {
+  const win = windowFor(scale);
+  const { t1, t2, total } = buildTicks(win);
+  const trackPx = total;
+  const infoPx = 300;
+
+  els.inner.style.setProperty("--info", infoPx + "px");
+  els.inner.style.setProperty("--track", trackPx + "px");
+  els.inner.style.setProperty("--grid", SCALES[scale].pxPerDay + "px");
+  els.header.style.setProperty("--info", infoPx + "px");
+  els.header.style.setProperty("--track", trackPx + "px");
+
+  const tier = (list, el) => {
+    el.innerHTML = list.map((t) =>
+      `<div class="tick${t.strong ? " strong" : ""}" style="left:${t.left}px;width:${Math.max(t.width, 1)}px">${t.text}</div>`,
+    ).join("");
+  };
+  tier(t1, els.tier1);
+  tier(t2, els.tier2);
+  els.tier1.style.width = total + "px";
+  els.tier2.style.width = total + "px";
+
+  const visible = ORDERS.filter((o) => o.status === "active" || !showEmpty);
+  const scheduled = visible.filter((o) => o.start || o.due);
+  const unscheduled = visible.filter((o) => !o.start && !o.due);
+
+  els.rows.innerHTML = scheduled.map((o) => {
+    const s = o.start ? parseKey(o.start) : null;
+    const d = o.due ? parseKey(o.due) : null;
+    const invalid = s !== null && d !== null && d < s;
+    const bandStart = s !== null ? s : Math.max(win.from, d - 7);
+    const bandEnd = d !== null ? d : Math.max(bandStart + 2, s + 2);
+    const left = pxOf(Math.max(bandStart, win.from), win);
+    const right = pxOf(Math.min(bandEnd, win.to), win);
+    const width = Math.max(right - left, 8);
+    const cls = [
+      "bar",
+      o.status !== "active" ? "terminal" : o.state,
+      !s && d ? "only-delivery" : "",
+      invalid ? "invalid" : "",
+    ].filter(Boolean).join(" ");
+    const markers = [
+      s !== null ? `<span class="marker started" style="left:${pxOf(Math.min(Math.max(s, win.from), win.to), win)}px" title="计划开始"></span>` : "",
+      d !== null ? `<span class="marker delivery" style="left:${pxOf(Math.min(Math.max(d, win.from), win.to), win)}px" title="计划交付"></span>` : "",
+    ].join("");
+    const note = invalid ? "日期顺序异常" : (!s ? "仅交付日期" : "");
+    // 整段落在窗口外：不把条形挪到边缘冒充日期，给一句可读的说明。
+    const outside = (s !== null && d !== null) && (d < win.from || s > win.to);
+    const outsideText = outside ? `窗口外：${o.start} → ${o.due}` : "";
+    return `
+      <div class="tl-row" data-id="${o.code}">
+        <div class="tl-info" role="link" tabindex="0" aria-label="打开订单 ${o.code}">
+          <span class="code">${o.code}</span>
+          <span class="name" title="${escapeHtml(o.title)}">${escapeHtml(o.title)}</span>
+          <span class="meta">${escapeHtml(o.client)} · ${o.stage} · ${o.amount}${note ? ` · ${note}` : ""}</span>
+        </div>
+        <div class="tl-track">
+          ${outside ? `<span class="row-off">${outsideText}</span>` : invalid ? "" : `<span class="${cls}" style="left:${left}px;width:${width}px" title="${o.start ?? "未设开始"} → ${o.due ?? "未设交付"}"></span>`}
+          ${markers}
+        </div>
+      </div>`;
+  }).join("");
+
+  const todayLeft = pxOf(todayIdx, win) + SCALES[scale].pxPerDay / 2;
+  els.overlay.innerHTML =
+    `<div class="today-line" style="left:${todayLeft}px"></div>` +
+    `<div class="today-flag" style="left:${todayLeft}px">今天</div>`;
+
+  els.unscheduled.innerHTML = unscheduled.length
+    ? `<h3>未排期（${unscheduled.length}）</h3><p>${unscheduled.map((o) => `${o.code} ${escapeHtml(o.title)}`).join(" · ")}<br/>没有计划日期的订单不上时间线，也不自动补日期；可在订单详情里补排期。</p>`
+    : `<h3>未排期（0）</h3><p>所有活动订单都有至少一个计划日期。</p>`;
+
+  if (!scheduled.length) {
+    els.rows.innerHTML = `<div class="empty"><strong>当前范围内没有已排期的订单</strong>没有计划日期的订单会留在下方「未排期」区，不会被硬塞进时间线。</div>`;
+    els.overlay.innerHTML = "";
+  }
+
+  // ?at=start 用于审查对照：保持滚动在 0，方便核对表头与条形是否共用同一坐标系。
+  els.scroll.scrollLeft = params.get("at") === "start"
+    ? 0
+    : Math.max(0, todayLeft - els.scroll.clientWidth * 0.45);
+  els.windowLabel.textContent =
+    `${key(win.from)} ~ ${key(win.to)} · ${SCALES[scale].pxPerDay}px/天 · 今天 ${key(todayIdx)} · Asia/Shanghai`;
+  els.diagScale.textContent = `尺度：${SCALES[scale].label}（${SCALES[scale].unit}）`;
+  els.diagWindow.textContent = `窗口 ${win.from} … ${win.to}（${win.to - win.from + 1} 天 / ${Math.round(total)}px）`;
+  els.diagRows.textContent = `已排期 ${scheduled.length} 行 · 未排期 ${unscheduled.length}`;
+  els.diagToday.textContent = `今天线 x=${Math.round(todayLeft)}px`;
+  document.getElementById("subtitle").textContent =
+    `只读视图 · 按计划开始与计划交付绘制 · 当前 ${SCALES[scale].label}尺度 · 不会写回任何日期`;
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+}
+
+document.getElementById("scales").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-scale]");
+  if (!btn) return;
+  scale = btn.dataset.scale;
+  [...document.querySelectorAll("#scales button")].forEach((b) =>
+    b.setAttribute("aria-pressed", String(b === btn)),
+  );
+  render();
+});
+document.getElementById("todayBtn").addEventListener("click", () => {
+  const win = windowFor(scale);
+  const px = pxOf(todayIdx, win) + SCALES[scale].pxPerDay / 2;
+  els.scroll.scrollTo({ left: Math.max(0, px - els.scroll.clientWidth * 0.45), behavior: "smooth" });
+});
+document.getElementById("emptyBtn").addEventListener("click", () => {
+  showEmpty = !showEmpty;
+  document.getElementById("emptyBtn").textContent = showEmpty ? "恢复示例订单" : "切换到空状态";
+  render();
+});
+window.addEventListener("resize", render);
+// 初始按 URL 参数同步按钮状态，避免截图里"周"高亮却显示日尺度。
+[...document.querySelectorAll("#scales button")].forEach((b) =>
+  b.setAttribute("aria-pressed", String(b.dataset.scale === scale)),
+);
+if (showEmpty) document.getElementById("emptyBtn").textContent = "恢复示例订单";
+render();
+</script>
+</body>
+</html>
