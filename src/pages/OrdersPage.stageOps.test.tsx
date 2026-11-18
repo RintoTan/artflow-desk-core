@@ -87,6 +87,10 @@ vi.mock("../bridge/commands", async () => {
         calls.push({ kind: "rework", input });
         return current;
       },
+      cancelOrder: async (input: unknown) => {
+        calls.push({ kind: "cancel", input });
+        return current;
+      },
       status: async () => ({
         appVersion: "0.1.0",
         firstRun: false,
@@ -218,6 +222,35 @@ describe("订单详情的阶段操作入口", () => {
     const entry = await waitFor(() => screen.getByRole("button", { name: "推进阶段…" }));
     expect(entry).toBeDisabled();
     expect(entry).toHaveAttribute("title", "已完成或已取消的订单不能推进或返工");
+  });
+
+  it("取消订单走独立确认框：保留订单不写任何数据", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(screen.getAllByText("双人插画").length).toBeGreaterThan(0));
+
+    await user.click(screen.getByRole("button", { name: "取消订单…" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText("取消这张订单？")).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "确认取消订单" })).toBeTruthy();
+
+    await user.click(within(dialog).getByRole("button", { name: "保留订单" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(calls).toHaveLength(0);
+  });
+
+  it("确认取消订单只调用一次取消命令", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(screen.getAllByText("双人插画").length).toBeGreaterThan(0));
+
+    await user.click(screen.getByRole("button", { name: "取消订单…" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "确认取消订单" }));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]?.kind).toBe("cancel");
+    expect(calls[0]?.input).toMatchObject({ orderId: "o1", expectedRevision: 1 });
   });
 
   it("超长阶段名不把确认按钮挤出对话框", async () => {

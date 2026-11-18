@@ -1179,6 +1179,40 @@ code.mono {
   border-top: 1px solid var(--border);
 }
 
+.action-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+/* 危险/终态操作与制作操作分区：竖线分隔，按钮靠右，不和主操作抢视线。 */
+.action-group + .action-group {
+  margin-left: auto;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+}
+
+.btn-quiet-danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+}
+
+.btn-quiet-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+@container workspace (max-width: 780px) {
+  /* 单栏时右侧分区换行后不再有"右边"，分隔线只会显得错位。 */
+  .action-group + .action-group {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
 .action-hint {
   font-size: 11.5px;
 }

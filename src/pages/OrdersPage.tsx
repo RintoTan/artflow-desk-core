@@ -211,6 +211,8 @@ export default function OrdersPage() {
   const [filterOpen, setFilterOpen] = useState(false);
   /** 详情里唯一的制作进度入口：打开后一次选择 + 一次确认，不再叠第二层对话框。 */
   const [stagePanel, setStagePanel] = useState<{ target: string | null } | null>(null);
+  /** 取消订单用独立确认框：后果比普通阶段操作重，不和内联确认条混用。 */
+  const [cancelOpen, setCancelOpen] = useState(false);
   const filterBtnRef = useRef<HTMLButtonElement | null>(null);
   const detailVisible = viewMode === "cards" || drawerOpen;
   /** 从客户页跳进来时的稳定 ID 过滤；null = 不按客户过滤 */
@@ -1196,6 +1198,7 @@ export default function OrdersPage() {
                 onRun={runLifecycle}
                 onDirtyGuard={() => dirty}
                 onOpenStage={() => setStagePanel({ target: nextStageTitle(detail) })}
+                onCancelOrder={() => setCancelOpen(true)}
               />
 
               {pendingAction && (
@@ -1339,6 +1342,40 @@ export default function OrdersPage() {
           />
           <span>全部订单（{orders.length} 条）</span>
         </label>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={cancelOpen}
+        title="取消这张订单？"
+        danger
+        confirmLabel="确认取消订单"
+        cancelLabel="保留订单"
+        busy={busy}
+        onCancel={() => setCancelOpen(false)}
+        onConfirm={async () => {
+          if (!detail) return;
+          setCancelOpen(false);
+          await runLifecycle("订单已取消", (o) =>
+            api.cancelOrder({
+              orderId: o.id,
+              expectedRevision: o.revision,
+              requestId: newRequestId("cancel"),
+            }),
+          );
+        }}
+      >
+        {detail && (
+          <div className="stage-adjust">
+            <p>
+              <strong>{detail.code}</strong>「{detail.title}」会退出活动队列，制作流程被锁定；
+              当前阶段「{detail.currentStageTitle ?? "—"}」、开工记录与历史事件都会保留。
+            </p>
+            <p className="muted">
+              取消后普通资料仍可编辑；需要恢复时用「重新打开」，订单会排到队列末尾。
+              这一步不会删除任何数据。
+            </p>
+          </div>
+        )}
       </ConfirmDialog>
 
       <ConfirmDialog
@@ -1533,6 +1570,7 @@ function ActionBar({
   onRun,
   onDirtyGuard,
   onOpenStage,
+  onCancelOrder,
 }: {
   order: OrderView;
   busy: boolean;
@@ -1540,6 +1578,7 @@ function ActionBar({
   onRun: (label: string, call: (order: OrderView) => Promise<OrderView>) => Promise<void>;
   onDirtyGuard: () => boolean;
   onOpenStage: () => void;
+  onCancelOrder: () => void;
 }) {
   const caps = order.capabilities;
   /** 阶段入口只在真的无路可走时禁用：最后一个阶段仍可返工，不能因此把入口关掉。 */
@@ -1562,6 +1601,7 @@ function ActionBar({
 
   return (
     <div className="action-bar">
+      <div className="action-group" role="group" aria-label="制作进度">
       <button
         type="button"
         className={`btn${caps.canStartWork ? " btn-primary" : ""}`}
@@ -1593,7 +1633,9 @@ function ActionBar({
       >
         推进阶段…
       </button>
+      </div>
 
+      <div className="action-group action-group-end" role="group" aria-label="订单状态">
       <button
         type="button"
         className="btn"
@@ -1613,18 +1655,11 @@ function ActionBar({
 
       <button
         type="button"
-        className="btn"
+        className="btn btn-quiet-danger"
         disabled={busy || !caps.canCancel}
-        onClick={() =>
-          onRequest({
-            title: "取消订单",
-            detail: "取消后订单退出活动队列，制作流程被锁定；普通资料仍可编辑。",
-            confirmLabel: "确认取消",
-            run: () => onRun("订单已取消", (o) => lifecycleCall(api.cancelOrder, o, "cancel")),
-          })
-        }
+        onClick={onCancelOrder}
       >
-        取消
+        取消订单…
       </button>
 
       <button
@@ -1643,6 +1678,7 @@ function ActionBar({
       >
         重新打开
       </button>
+      </div>
 
       {onDirtyGuard() && (
         <span className="muted action-hint">资料有未保存修改，生命周期操作不受影响</span>
