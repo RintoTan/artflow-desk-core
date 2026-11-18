@@ -149,9 +149,24 @@ const fixtures = {
     month: "2026-11",
   },
   client_tag_list: [{ id: "t1", name: "长期客户", clientCount: 1 }],
-  client_detail: (args) => {
-    const base = fixtures.list_clients.find((c) => c.id === args?.clientId) ?? fixtures.list_clients[0];
-    return { ...base, tags: fixtures.client_tag_list, orders: [], recentEvents: [] };
+  // JSON.stringify 会丢掉函数，夹具必须是纯数据；详情固定指向第一位客户。
+  client_detail: {
+    client: {
+      id: "c1",
+      displayName: "林小满",
+      contact: "a@example.test",
+      note: null,
+      revision: 0,
+      orderCount: 2,
+      activeCount: 1,
+      completedCount: 1,
+      knownAmountCents: 176000,
+      lastOrderAt: "2026-11-02T03:04:05.000Z",
+      tags: [{ id: "t1", name: "长期客户", clientCount: 1 }],
+    },
+    tags: [{ id: "t1", name: "长期客户", clientCount: 1 }],
+    orders: [],
+    ordersTotal: 0,
   },
   attachment_list: [],
 };
