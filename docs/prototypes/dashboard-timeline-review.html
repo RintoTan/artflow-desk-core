@@ -1,0 +1,1593 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ArtFlow Desk Core · 工作台时间线审核原型（虚构数据）</title>
+<style>
+  /* Arctic Blue 令牌：与 src/styles.css 的 :root 同值，原型单独复制以便离线打开 */
+  :root {
+    color-scheme: light;
+    --bg: #f5f8fc;
+    --bg-grad: radial-gradient(1200px 520px at 12% -10%, #e6f0fb 0%, transparent 62%),
+      radial-gradient(900px 420px at 100% 0%, #eef4fb 0%, transparent 58%);
+    --surface: #ffffff;
+    --surface-soft: rgba(24, 40, 56, 0.035);
+    --surface-alt: #edf3fa;
+    --border: #d3e0ee;
+    --border-strong: #b7cbe0;
+    --border-active: #bcd6f0;
+    --text: #16283c;
+    --text-muted: #5a7189;
+    --text-faint: #6b7783;
+    --accent: #2c6fb5;
+    --accent-soft: #e3eefb;
+    --danger: #b4402f;
+    --danger-soft: #fbeae7;
+    --danger-border: #e7c3bc;
+    --ok: #2f7d5b;
+    --ok-soft: #e4f3ec;
+    --warn: #9a6b17;
+    --warn-soft: #fbf1dd;
+    --warning-border: #e3cf9c;
+    --neutral-soft: #eceff3;
+    --chip-today-bg: #fff1e6;
+    --chip-today-text: #a55618;
+    --chip-neutral-bg: #eef1f5;
+    --chip-neutral-text: #5f6b78;
+    --sched-track: #dbe6f1;
+    --sched-band: #a9cdec;
+    --sidebar-bg: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(237,243,250,0.82));
+    --panel-quiet-bg: rgba(255, 255, 255, 0.66);
+    --tone-accent-bg: linear-gradient(180deg, #f7fbff, var(--accent-soft));
+    --tone-warn-bg: linear-gradient(180deg, #fffaef, var(--warn-soft));
+    --tone-danger-bg: linear-gradient(180deg, #fff6f4, var(--danger-soft));
+    --radius: 12px;
+    --radius-sm: 8px;
+    --control-h: 34px;
+    --shadow: 0 1px 2px rgba(22, 40, 60, 0.05), 0 8px 24px rgba(22, 40, 60, 0.05);
+    --row-h: 56px;
+    --axis-h: 45px;
+    --info-w: 300px;
+    font-family: "PingFang SC", "Hiragino Sans GB", "Source Han Sans SC", "Noto Sans SC",
+      system-ui, -apple-system, sans-serif;
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    background-image: var(--bg-grad);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  a { color: inherit; text-decoration: none; }
+  .mono { font-family: "SF Mono", ui-monospace, "Cascadia Mono", monospace; font-variant-numeric: tabular-nums; }
+  .muted { color: var(--text-muted); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  .app { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 100dvh; }
+  .app.is-collapsed { grid-template-columns: 76px minmax(0, 1fr); }
+
+  /* ------------------------------------------------------------ 侧栏 */
+  .sidebar {
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--border);
+    padding: 18px 12px 14px;
+    display: flex; flex-direction: column; gap: 4px;
+    position: sticky; top: 0; height: 100dvh;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 2px 8px 14px; }
+  .brand-mark { width: 26px; height: 26px; flex: 0 0 auto; }
+  .brand-text strong { display: block; font-size: 13px; letter-spacing: -0.01em; }
+  .brand-text small { display: block; font-size: 11px; color: var(--text-muted); }
+  .nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav-item {
+    display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center;
+    gap: 10px; height: 40px; padding: 0 10px; border-radius: var(--radius-sm);
+    color: var(--text); font-size: 13.5px;
+  }
+  .nav-item:hover { background: var(--surface-soft); }
+  .nav-item-active { background: var(--accent-soft); color: #1d4f86; font-weight: 600; }
+  .nav-icon-box { width: 24px; height: 24px; display: grid; place-items: center; }
+  .nav-icon-box svg { width: 18px; height: 18px; }
+  .sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+  .sidebar-collapse {
+    display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 10px;
+    height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: transparent; color: var(--text-faint); font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .sidebar-foot { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--text-faint); padding: 0 10px; }
+  .app.is-collapsed .nav-label,
+  .app.is-collapsed .brand-text,
+  .app.is-collapsed .sidebar-foot { display: none; }
+  .app.is-collapsed .nav-item,
+  .app.is-collapsed .sidebar-collapse { grid-template-columns: 24px; justify-content: center; padding: 0; }
+
+  /* ------------------------------------------------------------ 主区 */
+  .main { padding: 26px 0 44px; min-width: 0; }
+  .main-inner { padding-inline: 30px; container-type: inline-size; container-name: workspace; }
+  .panel {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 18px 20px 20px; margin-bottom: 14px;
+  }
+  .panel-quiet { background: var(--panel-quiet-bg); box-shadow: none; }
+  .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
+  .panel-head h2 { margin: 0; font-size: 15px; letter-spacing: -0.01em; }
+  .panel-head p { margin: 2px 0 0; font-size: 12.5px; color: var(--text-muted); }
+  .badge {
+    flex: 0 0 auto; padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600;
+    background: var(--neutral-soft); color: var(--chip-neutral-text);
+  }
+  .badge-warn { background: var(--warn-soft); color: var(--warn); }
+  .badge-ok { background: var(--ok-soft); color: var(--ok); }
+
+  .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  @container workspace (min-width: 520px) { .metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @container workspace (min-width: 840px) { .metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  @container workspace (min-width: 1240px) { .metric-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
+  .metric-card {
+    display: flex; flex-direction: column; gap: 1px; padding: 12px 13px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--surface), var(--surface-alt));
+    transition: transform 90ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  }
+  .metric-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow); transform: translateY(-1px); }
+  .metric-value { font-size: 23px; font-weight: 640; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .metric-label { font-size: 12.5px; font-weight: 600; }
+  .metric-hint { font-size: 11px; color: var(--text-muted); line-height: 1.35; }
+  .tone-warn { background: var(--tone-warn-bg); border-color: var(--warning-border); }
+  .tone-danger { background: var(--tone-danger-bg); border-color: var(--danger-border); }
+  .tone-accent { background: var(--tone-accent-bg); border-color: var(--border-active); }
+
+  /* ------------------------------------------------------------ 原型控制条（正式应用不存在） */
+  .proto-bar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    border: 1px dashed var(--border-strong); border-radius: var(--radius-sm);
+    background: rgba(255,255,255,0.5); padding: 7px 11px; margin-bottom: 14px;
+    font-size: 11.5px; color: var(--text-muted);
+  }
+  .proto-bar strong { color: var(--text); font-size: 11.5px; }
+  .proto-bar select {
+    height: 26px; border: 1px solid var(--border-strong); border-radius: 6px;
+    background: var(--surface); color: var(--text); font: inherit; font-size: 11.5px; padding: 0 6px;
+  }
+  .proto-bar a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+
+  /* ------------------------------------------------------------ 时间线 */
+  .btn {
+    height: var(--control-h); padding: 0 12px; border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm); background: var(--surface); color: var(--text);
+    font: inherit; font-size: 12.5px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--border-active); background: var(--surface-alt); }
+  .btn-icon { width: var(--control-h); padding: 0; display: grid; place-items: center; }
+  .btn-icon svg { width: 15px; height: 15px; }
+  .seg {
+    display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--border);
+    border-radius: 10px; background: var(--surface-alt);
+  }
+  .seg button {
+    height: 26px; min-width: 40px; padding: 0 11px; border: 1px solid transparent; border-radius: 7px;
+    background: transparent; color: var(--text-muted); font: inherit; font-size: 12.5px; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] {
+    background: var(--surface); color: var(--text); border-color: var(--border);
+    box-shadow: 0 1px 2px rgba(15,30,45,.08); font-weight: 600;
+  }
+  .tl-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  .tl-meta {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    flex-wrap: wrap; padding-bottom: 10px; border-bottom: 1px solid var(--border);
+  }
+  .tl-range { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .tl-range strong { color: var(--text); font-weight: 600; }
+  .tl-legend { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--text-muted); }
+  .tl-legend i { display: inline-block; width: 14px; height: 8px; border-radius: 999px; margin-right: 4px; vertical-align: 0; }
+  .tl-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); cursor: pointer; }
+  .tl-toggle input { accent-color: var(--accent); }
+
+  .tl-frame {
+    display: grid; grid-template-columns: var(--info-w) minmax(0, 1fr);
+    align-items: start; position: relative;
+  }
+  .tl-scroll-hint {
+    position: absolute; right: 0; top: var(--axis-h); bottom: 0; width: 26px;
+    background: linear-gradient(90deg, transparent, var(--surface) 78%);
+    pointer-events: none; z-index: 5; opacity: 1; transition: opacity 120ms ease;
+  }
+  .tl-scroll-hint[hidden] { display: none; }
+  .tl-scroll-hint span {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    font-size: 11px; color: var(--text-faint); background: var(--surface); padding: 2px 1px;
+  }
+  .tl-frame[hidden] { display: none; }
+  .tl-left { border-right: 1px solid var(--border); min-width: 0; }
+  .tl-corner {
+    height: var(--axis-h); display: flex; align-items: flex-end; padding: 0 12px 6px;
+    font-size: 11px; color: var(--text-muted); border-bottom: 1px solid var(--border);
+  }
+  .tl-right { min-width: 0; overflow-x: auto; overflow-y: hidden; padding-bottom: 12px; }
+  .tl-canvas { position: relative; }
+
+  .tl-axis {
+    position: relative; height: var(--axis-h);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .tier { position: relative; height: 22px; }
+  .tier1 { border-bottom: 1px solid var(--border); }
+  .tick {
+    position: absolute; top: 0; height: 22px; padding-left: 5px;
+    font-size: 10.5px; line-height: 22px; color: var(--text-muted);
+    border-left: 1px solid var(--border); white-space: nowrap;
+  }
+  /* 标签吸附在滚动视口左缘，但不会越过自己所属的时间段 */
+  .tick > .tick-text {
+    position: sticky; left: 5px; display: inline-block; padding-right: 6px;
+    background: var(--surface);
+  }
+  .tick-strong { color: var(--text); font-weight: 600; }
+  .tick-today { color: var(--chip-today-text); font-weight: 700; background: var(--chip-today-bg); }
+  .tick-sub { font-size: 9px; opacity: 0.72; margin-left: 1px; }
+
+  .tl-grid { position: absolute; top: var(--axis-h); bottom: 0; left: 0; right: 0; pointer-events: none; z-index: 0; }
+  .tl-grid span.gridline { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border); opacity: 0.55; }
+  .tl-grid span.weekend { position: absolute; top: 0; bottom: 0; background: var(--surface-soft); }
+
+  .tl-row { position: relative; height: var(--row-h); border-bottom: 1px solid var(--border); }
+  .tl-row:last-child { border-bottom: 0; }
+
+  .tl-info {
+    height: var(--row-h); padding: 8px 12px; display: flex; flex-direction: column; justify-content: center;
+    gap: 1px; min-width: 0; cursor: pointer;
+  }
+  .tl-info:hover { background: var(--surface-alt); }
+  .tl-info:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .tl-code { font-size: 10.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+  .tl-title { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tl-sub { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .tl-bar {
+    position: absolute; top: 20px; height: 16px; border-radius: 999px; min-width: 6px;
+    background: var(--sched-band); border: 1px solid rgba(28, 74, 120, 0.28);
+  }
+  .tl-bar.is-overdue { background: #f0c3ba; border-color: #cf9184; }
+  .tl-bar.is-today { background: #f6d7a8; border-color: #d2a45f; }
+  .tl-bar.is-soon { background: #f5e5c4; border-color: #d8bd8a; }
+  .tl-bar.is-terminal { background: #e9eef3; border: 1px dashed #b9c7d5; }
+  .tl-bar.is-single { border-radius: 4px; }
+  .tl-bar[data-clip="left"] { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+  .tl-bar[data-clip="right"] { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+
+  .tl-mark {
+    position: absolute; width: 9px; height: 9px; border-radius: 50%;
+    border: 2px solid var(--surface); background: var(--accent);
+    top: 24px; margin-left: -4.5px; box-shadow: 0 0 0 1px rgba(28,74,120,.35);
+  }
+  .tl-mark.is-delivery { border-radius: 2px; transform: rotate(45deg); }
+  .tl-mark.is-start { background: var(--surface); box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 1px var(--surface); }
+  .tl-mark.tone-overdue { background: #b4402f; }
+  .tl-mark.is-start.tone-overdue { box-shadow: inset 0 0 0 2px #b4402f, 0 0 0 1px var(--surface); }
+  .tl-mark.tone-today { background: #b87615; }
+  .tl-mark.tone-soon { background: #a98334; }
+  .tl-mark.tone-terminal { background: #93a3b1; }
+  .tl-mark[data-overflow]::before {
+    content: ""; position: absolute; top: 50%; margin-top: -3.5px;
+    border-top: 3.5px solid transparent; border-bottom: 3.5px solid transparent;
+  }
+  .tl-mark[data-overflow="left"]::before { left: -7px; border-right: 5px solid #93a8bc; }
+  .tl-mark[data-overflow="right"]::before { right: -7px; border-left: 5px solid #93a8bc; }
+
+  .tl-tag {
+    position: absolute; top: 19px; font-size: 10px; color: var(--text-muted);
+    background: var(--surface); padding: 0 3px; border-radius: 3px; white-space: nowrap;
+  }
+  .tl-tag.is-alert { color: var(--danger); }
+  .tl-edge {
+    position: absolute; top: 21px; font-size: 9px; color: var(--text-muted);
+    background: var(--surface); padding: 0 1px; line-height: 1;
+  }
+  .tl-edge-right { text-align: right; }
+  .tl-outside {
+    position: absolute; top: 18px; left: 10px; font-size: 10.5px; color: var(--text-muted);
+    border: 1px dashed var(--border-strong); border-radius: 999px; padding: 1px 8px;
+    background: var(--surface);
+  }
+
+  .today-line {
+    position: absolute; top: 0; bottom: 0; width: 1px; z-index: 3; pointer-events: none;
+    background: repeating-linear-gradient(180deg, #b4402f 0 4px, transparent 4px 8px);
+  }
+  .today-flag {
+    position: absolute; top: 0; transform: translateX(-50%); z-index: 4;
+    background: var(--danger); color: #fff; font-size: 9.5px; line-height: 1;
+    padding: 2px 5px 3px; border-radius: 0 0 4px 4px; letter-spacing: 0.02em;
+  }
+
+  .tl-empty { padding: 32px 16px 34px; text-align: center; border-top: 1px solid var(--border); }
+  .tl-empty[hidden] { display: none; }
+  .tl-empty strong { display: block; font-size: 13.5px; margin-bottom: 4px; }
+  .tl-empty span { font-size: 12px; color: var(--text-muted); }
+
+  .tl-unscheduled { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 10px; }
+  .tl-unscheduled h3 { margin: 0 0 6px; font-size: 12px; display: flex; gap: 6px; align-items: center; }
+  .tl-unscheduled .count {
+    font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 999px;
+    background: var(--chip-neutral-bg); color: var(--chip-neutral-text);
+  }
+  .tl-unscheduled ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .tl-unscheduled li a {
+    display: inline-flex; gap: 6px; align-items: baseline; padding: 4px 9px;
+    border: 1px solid var(--border); border-radius: 999px; background: var(--surface-alt);
+    font-size: 11.5px;
+  }
+  .tl-unscheduled li a:hover { border-color: var(--border-strong); }
+  .tl-unscheduled .empty-note { margin: 0; font-size: 11.5px; color: var(--text-muted); }
+
+  .hint { font-size: 11.5px; color: var(--text-muted); margin: 10px 0 0; }
+  .kbd {
+    font: inherit; font-size: 10.5px; border: 1px solid var(--border-strong); border-bottom-width: 2px;
+    border-radius: 4px; padding: 0 4px; background: var(--surface-alt);
+  }
+
+  /* 原型内的 SCROLLBAR-01 预览：只作用于时间线轨道容器 */
+  /* SCROLLBAR-01：时间线轨道在 macOS 上保持系统 overlay（不写任何滚动条样式）。
+     实测：一旦设置 scrollbar-color，overlay 会变成 15px 常驻滚动条并占布局，
+     与"低存在感"相冲突。窗口化平台（Windows）的定制方案见状态板。 */
+
+  /* 原型反馈 */
+  .toast {
+    position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 12px);
+    background: #22303e; color: #f2f7fc; border-radius: 10px; padding: 10px 14px;
+    font-size: 12px; box-shadow: 0 8px 24px rgba(12, 22, 33, 0.28);
+    opacity: 0; pointer-events: none; transition: opacity 140ms ease, transform 140ms ease;
+    max-width: min(560px, calc(100vw - 40px)); z-index: 50;
+  }
+  .toast.is-on { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ------------------------------------------------------------ 容器响应 */
+  @container workspace (max-width: 900px) {
+    #timelinePanel { --info-w: 236px; }
+    .tl-legend .legend-text { display: none; }
+  }
+  @container workspace (max-width: 640px) {
+    #timelinePanel { --info-w: 178px; --row-h: 52px; }
+    .tl-info { padding: 6px 9px; }
+    .tl-sub { display: none; }
+    .tl-bar { top: 18px; }
+    .tl-mark { top: 22px; }
+    .metric-hint { display: none; }
+    .metric-card { padding: 9px 11px; }
+    .metric-value { font-size: 20px; }
+  }
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 76px minmax(0, 1fr); }
+    .nav-label, .brand-text, .sidebar-foot { display: none; }
+    .nav-item, .sidebar-collapse { grid-template-columns: 24px; justify-content: center; padding: 0; }
+    .main-inner { padding-inline: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .toast { transition: none; }
+    .metric-card { transition: none; }
+  }
+
+  /* ------------------------------------------------------------ 深色作用域（滚动条状态板） */
+  .theme-dark {
+    color-scheme: dark;
+    --bg: #0f151b;
+    --surface: #182028;
+    --surface-soft: rgba(255, 255, 255, 0.05);
+    --surface-alt: #1f2a34;
+    --border: #2b3947;
+    --border-strong: #3b4d5e;
+    --border-active: #3d6f9e;
+    --text: #e6edf4;
+    --text-muted: #a3b4c6;
+    --text-faint: #8598ab;
+    --accent: #5aa7ea;
+    --accent-soft: #1b2c3d;
+    --danger: #e2836f;
+    --danger-soft: #35211d;
+    --danger-border: #6a3a30;
+    --ok: #63bd92;
+    --warn: #d9ac57;
+    --neutral-soft: #232f3a;
+    --chip-neutral-bg: #25313d;
+    --chip-neutral-text: #a9b8c7;
+    --sched-track: #2b3947;
+    --sched-band: #3d6f9e;
+    --panel-quiet-bg: rgba(255, 255, 255, 0.035);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.35);
+    color: var(--text);
+    background: var(--surface);
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="2.6" y="2.6" width="18.8" height="18.8" rx="6" stroke="#2c6fb5" stroke-width="1.6"/>
+        <circle cx="12" cy="12" r="3.4" stroke="#2c6fb5" stroke-width="1.6"/>
+      </svg>
+      <div class="brand-text"><strong>ArtFlow Desk Core</strong><small>虚构审核数据</small></div>
+    </div>
+    <nav class="nav" aria-label="主导航">
+      <a class="nav-item nav-item-active" href="#" aria-current="page" aria-label="工作台">
+        <span class="nav-icon-box"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2" stroke="currentColor" stroke-width="1.7"/><rect x="13.5" y="3.5" width="7" height="7" rx="2" stroke="currentColor" stroke-width="1.7"/><rect x="3.5" y="13.5" width="7" height="7" rx="2" stroke="currentColor" stroke-width="1.7"/><rect x="13.5" y="13.5" width="7" height="7" rx="2" stroke="currentColor" stroke-width="1.7"/></svg></span>
+        <span class="nav-label">工作台</span>
+      </a>
+      <a class="nav-item" href="#" aria-label="订单（原型未接路由）">
+        <span class="nav-icon-box"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 4.5h9.5L20 9v10.5H6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M15 4.5V9h4.5" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></span>
+        <span class="nav-label">订单</span>
+      </a>
+      <a class="nav-item" href="#" aria-label="客户（原型未接路由）">
+        <span class="nav-icon-box"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="9" r="3.4" stroke="currentColor" stroke-width="1.7"/><path d="M5 20c1.2-3.2 3.8-4.8 7-4.8s5.8 1.6 7 4.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+        <span class="nav-label">客户</span>
+      </a>
+      <a class="nav-item" href="#" aria-label="流程模板（原型未接路由）">
+        <span class="nav-icon-box"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 7h9M5 12h14M5 17h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+        <span class="nav-label">流程模板</span>
+      </a>
+      <a class="nav-item" href="#" aria-label="历史统计（原型未接路由）">
+        <span class="nav-icon-box"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 19.5V9M9.3 19.5V4.5M14.7 19.5v-7M20 19.5V7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+        <span class="nav-label">历史统计</span>
+      </a>
+      <a class="nav-item" href="#" aria-label="设置（原型未接路由）">
+        <span class="nav-icon-box"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.7"/><path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M17.9 6.1l-1.6 1.6M7.7 16.3l-1.6 1.6M17.9 17.9l-1.6-1.6M7.7 7.7L6.1 6.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+        <span class="nav-label">设置</span>
+      </a>
+    </nav>
+    <div class="sidebar-bottom">
+      <button class="sidebar-collapse" type="button" id="collapseBtn" aria-expanded="true" aria-label="折叠侧边栏">
+        <span class="nav-icon-box"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="nav-label">折叠</span>
+      </button>
+      <footer class="sidebar-foot"><span>原型 · 不写库</span><span class="muted">DEV-06D-2-PRE-REVISION</span></footer>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="main-inner" id="mainInner">
+      <div class="proto-bar">
+        <strong>原型控制</strong>
+        <span>数据：
+          <select id="dataset">
+            <option value="full">排期齐全（含终态）</option>
+            <option value="single">单端日期 / 异常</option>
+            <option value="crossyear">跨年与超长标题</option>
+            <option value="dense">密集（16 单）</option>
+            <option value="unscheduled">全部未排期</option>
+            <option value="empty">无订单</option>
+          </select>
+        </span>
+        <span>· 全部为虚构数据，不读取数据库、不写库</span>
+        <span>· <a href="?view=scrollbar">滚动条状态板</a></span>
+        <span>· 行点击只做原型反馈，不接真实路由</span>
+      </div>
+
+      <section class="panel">
+        <header class="panel-head">
+          <div>
+            <h2>工作台</h2>
+            <p id="todayLineText">今天是 —（Asia/Shanghai）· 本月 —</p>
+          </div>
+          <span class="badge badge-warn" id="attentionBadge">—</span>
+        </header>
+        <div class="metric-grid" id="metricGrid"></div>
+      </section>
+
+      <section class="panel" id="timelinePanel" aria-labelledby="tlTitle">
+        <header class="panel-head">
+          <div>
+            <h2 id="tlTitle">跨订单项目时间线</h2>
+            <p id="tlSubtitle">只读 · 按计划日期绘制 · 不表示完成进度</p>
+          </div>
+          <div class="tl-controls">
+            <button class="btn btn-icon" type="button" id="prevBtn" aria-label="上一时间段" title="上一时间段">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M14.5 6l-6 6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button class="btn" type="button" id="todayBtn">今天</button>
+            <button class="btn btn-icon" type="button" id="nextBtn" aria-label="下一时间段" title="下一时间段">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9.5 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="seg" id="scaleSeg" role="group" aria-label="时间尺度">
+              <button type="button" data-scale="day" aria-pressed="false">日</button>
+              <button type="button" data-scale="week" aria-pressed="false">周</button>
+              <button type="button" data-scale="month" aria-pressed="true">月</button>
+              <button type="button" data-scale="year" aria-pressed="false">年</button>
+            </div>
+          </div>
+        </header>
+
+        <div class="tl-meta">
+          <div class="tl-range" id="rangeLabel">—</div>
+          <div class="tl-legend" aria-hidden="true">
+            <span><i style="background:#a9cdec;border:1px solid rgba(28,74,120,.28)"></i><span class="legend-text">按排期</span></span>
+            <span><i style="background:#f5e5c4;border:1px solid #d8bd8a"></i><span class="legend-text">三日内</span></span>
+            <span><i style="background:#f6d7a8;border:1px solid #d2a45f"></i><span class="legend-text">今天到期</span></span>
+            <span><i style="background:#f0c3ba;border:1px solid #cf9184"></i><span class="legend-text">已逾期</span></span>
+            <span><i style="background:#e9eef3;border:1px dashed #b9c7d5"></i><span class="legend-text">已结束</span></span>
+          </div>
+          <label class="tl-toggle">
+            <input type="checkbox" id="showTerminal" /> 显示已结束
+          </label>
+        </div>
+
+        <div class="tl-frame" id="tlFrame">
+          <div class="tl-left">
+            <div class="tl-corner">订单 / 客户 / 阶段</div>
+            <div id="infoList"></div>
+          </div>
+          <span class="tl-scroll-hint" id="scrollHint" aria-hidden="true"><span>›</span></span>
+          <div class="tl-right" id="trackScroll" tabindex="0" aria-label="时间轨道，可横向滚动，方向键可左右移动">
+            <div class="tl-canvas" id="canvas">
+              <div class="tl-axis" id="axis">
+                <div class="tier tier1" id="tier1"></div>
+                <div class="tier tier2" id="tier2"></div>
+                <div class="today-flag" id="todayFlag">今天</div>
+              </div>
+              <div class="tl-grid" id="gridLayer"></div>
+              <div class="today-line" id="todayLineEl"></div>
+              <div id="trackRows"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tl-empty" id="tlEmpty" hidden>
+          <strong id="tlEmptyTitle">当前范围内没有可显示的订单</strong>
+          <span id="tlEmptyNote">—</span>
+        </div>
+
+        <div class="tl-unscheduled" id="unscheduledBlock">
+          <h3>未排期 <span class="count" id="unscheduledCount">0</span></h3>
+          <div id="unscheduledBody"></div>
+        </div>
+
+        <p class="hint">
+          轨道只表示计划日期的位置，不表示完成度；逾期状态沿用后端判定，不在前端重算。
+          横向滚动只作用于右侧轨道，左侧订单列固定不动。
+        </p>
+      </section>
+
+      <section class="panel panel-quiet">
+        <h2>提醒说明</h2>
+        <p class="muted">到期提醒只影响上面的计数与订单列表里的状态标记，<strong>不会自动调整活动队列顺序</strong>。队列顺序始终由你手动决定。</p>
+        <p class="muted">已完成与已取消的订单不进入到期提醒；日期一律按应用内的工作时时区判定。</p>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<pre id="selftest" hidden></pre>
+<script id="timeline-core">
+/* #region core —— 纯日期与几何函数；node 测试脚本按这两个标记抽取同一份代码 */
+const DAY_KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function daysFromCivil(year, month, day) {
+  const y = year - (month <= 2 ? 1 : 0);
+  const era = Math.floor(y / 400);
+  const yoe = y - era * 400;
+  const doy = Math.floor((153 * (month + (month > 2 ? -3 : 9)) + 2) / 5) + day - 1;
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+  return era * 146097 + doe - 719468;
+}
+
+function civilFromDays(index) {
+  const z = index + 719468;
+  const era = Math.floor(z / 146097);
+  const doe = z - era * 146097;
+  const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
+  const y = yoe + era * 400;
+  const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+  const mp = Math.floor((5 * doy + 2) / 153);
+  const day = doy - Math.floor((153 * mp + 2) / 5) + 1;
+  const month = mp + (mp < 10 ? 3 : -9);
+  return { year: y + (month <= 2 ? 1 : 0), month, day };
+}
+
+function parseDayKey(value) {
+  if (!value) return null;
+  const match = DAY_KEY.exec(String(value).trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const index = daysFromCivil(year, month, day);
+  const back = civilFromDays(index);
+  if (back.year !== year || back.month !== month || back.day !== day) return null;
+  return index;
+}
+
+function formatDayKey(index) {
+  const c = civilFromDays(index);
+  return `${String(c.year).padStart(4, "0")}-${String(c.month).padStart(2, "0")}-${String(c.day).padStart(2, "0")}`;
+}
+
+function shortDate(index) {
+  const c = civilFromDays(index);
+  return `${String(c.month).padStart(2, "0")}-${String(c.day).padStart(2, "0")}`;
+}
+
+/** ISO 8601：周一 = 0。项目内没有既有周起始规范，这是建议值，需产品裁定。 */
+function weekdayMon(index) {
+  // 1970-01-01 是周四 → 在「周一=0」里是 3
+  return (((index + 3) % 7) + 7) % 7;
+}
+
+function isLeap(year) {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
+function daysInMonth(year, month) {
+  return [31, isLeap(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+}
+
+function addMonthsClamped(index, delta) {
+  const c = civilFromDays(index);
+  const total = (c.year * 12) + (c.month - 1) + delta;
+  const year = Math.floor(total / 12);
+  const month = total - year * 12 + 1;
+  return daysFromCivil(year, month, Math.min(c.day, daysInMonth(year, month)));
+}
+
+const SCALES = {
+  day: { pxPerDay: 44, before: 7, after: 13, shiftDays: 7, minBar: 22, label: "日" },
+  week: { pxPerDay: 26, before: 21, after: 56, shiftDays: 28, minBar: 14, label: "周" },
+  month: { pxPerDay: 6, beforeMonths: 2, afterMonths: 10, minBar: 7, label: "月" },
+  year: { pxPerDay: 1.8, beforeYears: 1, afterYears: 4, minBar: 3, label: "年" },
+};
+
+/**
+ * 时间窗口。日/周按天数前后取，月/年按自然月、自然年对齐，
+ * 切到「月」时不会出现半截月份。
+ */
+function timelineWindow(scale, anchor) {
+  const cfg = SCALES[scale];
+  if (scale === "day") {
+    return { from: anchor - cfg.before, to: anchor + cfg.after };
+  }
+  if (scale === "week") {
+    // 周视图以完整周为单位：起点回退到周一、终点推进到周日。
+    const from = anchor - cfg.before - weekdayMon(anchor - cfg.before);
+    const to = anchor + cfg.after + (6 - weekdayMon(anchor + cfg.after));
+    return { from, to };
+  }
+  if (scale === "month") {
+    const c = civilFromDays(anchor);
+    const start = daysFromCivil(c.year, c.month, 1);
+    const fromC = civilFromDays(addMonthsClamped(start, -cfg.beforeMonths));
+    const from = daysFromCivil(fromC.year, fromC.month, 1);
+    const endC = civilFromDays(addMonthsClamped(start, cfg.afterMonths));
+    const to = daysFromCivil(endC.year, endC.month, daysInMonth(endC.year, endC.month));
+    return { from, to };
+  }
+  const y = civilFromDays(anchor).year;
+  return { from: daysFromCivil(y - cfg.beforeYears, 1, 1), to: daysFromCivil(y + cfg.afterYears, 12, 31) };
+}
+
+function shiftAnchor(scale, anchor, direction) {
+  const cfg = SCALES[scale];
+  if (scale === "day" || scale === "week") return anchor + cfg.shiftDays * direction;
+  if (scale === "month") return addMonthsClamped(anchor, direction);
+  return addMonthsClamped(anchor, 12 * direction);
+}
+
+function dayToX(day, win, scale) {
+  return (day - win.from) * SCALES[scale].pxPerDay;
+}
+
+function canvasWidth(win, scale) {
+  return (win.to - win.from + 1) * SCALES[scale].pxPerDay;
+}
+
+/** 双层刻度：第一层是更大的时间单位，第二层是当前尺度。 */
+function buildTicks(win, scale, today) {
+  const px = SCALES[scale].pxPerDay;
+  const tier1 = [];
+  const tier2 = [];
+  const firstYear = civilFromDays(win.from).year;
+  const lastYear = civilFromDays(win.to).year;
+
+  const pushMonthTier1 = () => {
+    for (let d = win.from; d <= win.to; d++) {
+      const c = civilFromDays(d);
+      if (c.day !== 1 && d !== win.from) continue;
+      const next = c.month === 12 ? daysFromCivil(c.year + 1, 1, 1) : daysFromCivil(c.year, c.month + 1, 1);
+      tier1.push({
+        left: dayToX(d, win, scale),
+        width: (Math.min(next, win.to + 1) - d) * px,
+        text: `${c.year} 年 ${c.month} 月`,
+        strong: true,
+      });
+    }
+  };
+
+  if (scale === "day") {
+    pushMonthTier1();
+    for (let d = win.from; d <= win.to; d++) {
+      const c = civilFromDays(d);
+      tier2.push({
+        left: dayToX(d, win, scale),
+        width: px,
+        text: `${c.day}`,
+        sub: ["一", "二", "三", "四", "五", "六", "日"][weekdayMon(d)],
+        strong: d === today,
+        today: d === today,
+      });
+    }
+  } else if (scale === "week") {
+    pushMonthTier1();
+    for (let d = win.from; d <= win.to; d++) {
+      if (weekdayMon(d) !== 0) continue;
+      const end = Math.min(d + 7, win.to + 1);
+      tier2.push({
+        left: dayToX(d, win, scale),
+        width: (end - d) * px,
+        text: shortDate(d),
+        strong: true,
+        today: today >= d && today < d + 7,
+      });
+    }
+  } else if (scale === "month") {
+    for (let y = firstYear; y <= lastYear; y++) {
+      const start = Math.max(win.from, daysFromCivil(y, 1, 1));
+      const end = Math.min(win.to + 1, daysFromCivil(y + 1, 1, 1));
+      tier1.push({ left: dayToX(start, win, scale), width: (end - start) * px, text: `${y} 年`, strong: true });
+    }
+    for (let d = win.from; d <= win.to; d++) {
+      const c = civilFromDays(d);
+      if (c.day !== 1 && d !== win.from) continue;
+      const next = c.month === 12 ? daysFromCivil(c.year + 1, 1, 1) : daysFromCivil(c.year, c.month + 1, 1);
+      const end = Math.min(next, win.to + 1);
+      tier2.push({ left: dayToX(d, win, scale), width: (end - d) * px, text: `${c.month} 月`, strong: true });
+    }
+  } else {
+    for (let y = firstYear; y <= lastYear; y++) {
+      const start = Math.max(win.from, daysFromCivil(y, 1, 1));
+      const end = Math.min(win.to + 1, daysFromCivil(y + 1, 1, 1));
+      tier1.push({ left: dayToX(start, win, scale), width: (end - start) * px, text: `${y} 年`, strong: true });
+      for (let q = 0; q < 4; q++) {
+        const qs = daysFromCivil(y, q * 3 + 1, 1);
+        const qe = daysFromCivil(y, q * 3 + 3, daysInMonth(y, q * 3 + 3));
+        if (qe < win.from || qs > win.to) continue;
+        const s = Math.max(qs, win.from);
+        const e = Math.min(qe + 1, win.to + 1);
+        tier2.push({ left: dayToX(s, win, scale), width: (e - s) * px, text: `Q${q + 1}`, strong: q === 0 });
+      }
+    }
+  }
+
+  const boundaries = tier2
+    .map((t) => t.left)
+    .filter((left, i, arr) => i === 0 || left > arr[i - 1] + 0.01);
+  return { tier1, tier2, boundaries };
+}
+
+/**
+ * 单行的排期几何。区间按「包含首尾两天」算；单日区间给最小可见宽度，
+ * 宽度只影响可读性，位置始终来自真实日期。
+ */
+function rowGeometry(order, win, scale, today) {
+  const cfg = SCALES[scale];
+  const start = parseDayKey(order.plannedStartDate);
+  const delivery = parseDayKey(order.plannedDeliveryDate);
+  const terminal = order.status !== "active";
+  const total = canvasWidth(win, scale);
+  const clampX = (x) => Math.min(total, Math.max(0, x));
+
+  const band = { left: 0, width: 0, clippedLeft: false, clippedRight: false };
+  let hasBand = false;
+  let invalid = false;
+
+  if (start !== null && delivery !== null) {
+    if (delivery < start) {
+      invalid = true;
+    } else {
+      const leftX = dayToX(start, win, scale);
+      const rightX = dayToX(delivery, win, scale) + cfg.pxPerDay;
+      if (rightX > 0 && leftX < total) {
+        hasBand = true;
+        band.clippedLeft = leftX < 0;
+        band.clippedRight = rightX > total;
+        band.left = clampX(leftX);
+        band.width = Math.max(cfg.minBar, clampX(rightX) - clampX(leftX));
+      }
+    }
+  }
+
+  const markers = [];
+  const pushMarker = (kind, day) => {
+    if (day === null) return;
+    const x = dayToX(day, win, scale) + cfg.pxPerDay / 2;
+    markers.push({
+      kind,
+      day,
+      x: clampX(x),
+      overflow: day < win.from ? "left" : day > win.to ? "right" : null,
+      pct: total ? (clampX(x) / total) * 100 : 0,
+    });
+  };
+  if (start !== null) pushMarker("start", start);
+  if (delivery !== null) pushMarker("delivery", delivery);
+
+  const fullyOutside = start !== null && delivery !== null && (delivery < win.from || start > win.to);
+
+  return { start, delivery, terminal, hasBand, band, markers, invalid, fullyOutside, today };
+}
+/* #endregion core */
+</script>
+<script>
+/* 只在浏览器里运行；node 测试脚本只抽取上面 timeline-core 区块。 */
+(function () {
+  "use strict";
+
+  // 原型把「今天」固定成规格基准日，保证截图与审查结论可复现。
+  const TODAY = parseDayKey("2026-11-18");
+  const TZ = "Asia/Shanghai";
+  const params = new URLSearchParams(location.search);
+
+  const ORDERS = {
+    full: [
+      { code: "AF-2026-0101", title: "双人立绘 · 周年纪念", client: "林小满", stage: "线稿 2/5", amountCents: 88000, status: "active", plannedStartDate: "2026-11-10", plannedDeliveryDate: "2026-11-20", startedAt: "2026-11-12T02:10:00Z" },
+      { code: "AF-2026-0102", title: "封面主视觉重绘与全彩上色第二版修订稿第三轮细化", client: "陈叙", stage: "细化 4/5", amountCents: 240000, status: "active", plannedStartDate: "2026-11-02", plannedDeliveryDate: "2026-12-18", startedAt: "2026-11-03T01:00:00Z" },
+      { code: "AF-2026-0103", title: "角色三视图", client: "周牧", stage: "最终调整 5/5", amountCents: 120000, status: "active", plannedStartDate: "2026-10-20", plannedDeliveryDate: "2026-11-17", startedAt: "2026-10-21T05:30:00Z" },
+      { code: "AF-2026-0104", title: "生日贺图", client: "匿名", stage: "草稿 1/5", amountCents: null, status: "active", plannedStartDate: null, plannedDeliveryDate: "2026-11-18", startedAt: "2026-11-14T07:00:00Z" },
+      { code: "AF-2026-0105", title: "场景插画 · 夜景街道", client: "雾岛工作室", stage: "线稿 2/5", amountCents: 160000, status: "active", plannedStartDate: "2026-11-24", plannedDeliveryDate: null, startedAt: null },
+      { code: "AF-2026-0106", title: "头像委托", client: "苏禾", stage: "上色 3/5", amountCents: 32000, status: "active", plannedStartDate: null, plannedDeliveryDate: null, startedAt: null },
+      { code: "AF-2026-0107", title: "已完成的委托 · 立绘", client: "林小满", stage: "已完成", amountCents: 60000, status: "complete", plannedStartDate: "2026-10-01", plannedDeliveryDate: "2026-10-15", startedAt: "2026-10-02T03:00:00Z", completedAt: "2026-10-14T09:20:00Z" },
+      { code: "AF-2026-0108", title: "已取消的委托 · 头像", client: "陈叙", stage: "已取消", amountCents: 0, status: "cancelled", plannedStartDate: "2026-11-05", plannedDeliveryDate: "2026-11-12", startedAt: null, cancelledAt: "2026-11-08T03:00:00Z" },
+    ],
+    single: [
+      { code: "AF-2026-0201", title: "只填了计划开始", client: "林小满", stage: "线稿 2/5", amountCents: 50000, status: "active", plannedStartDate: "2026-11-16", plannedDeliveryDate: null, startedAt: "2026-11-16T02:00:00Z" },
+      { code: "AF-2026-0202", title: "只填了计划交付", client: "苏禾", stage: "上色 3/5", amountCents: 42000, status: "active", plannedStartDate: null, plannedDeliveryDate: "2026-11-22", startedAt: null },
+      { code: "AF-2026-0203", title: "同一天开始并交付（单日）", client: "周牧", stage: "草稿 1/5", amountCents: 18000, status: "active", plannedStartDate: "2026-11-25", plannedDeliveryDate: "2026-11-25", startedAt: null },
+      { code: "AF-2026-0204", title: "日期顺序异常（正式库被 CHECK 阻止）", client: "测试", stage: "线稿 2/5", amountCents: 30000, status: "active", plannedStartDate: "2026-12-05", plannedDeliveryDate: "2026-11-28", startedAt: null },
+      { code: "AF-2026-0205", title: "完整区间（对照）", client: "陈叙", stage: "细化 4/5", amountCents: 90000, status: "active", plannedStartDate: "2026-11-08", plannedDeliveryDate: "2026-12-02", startedAt: "2026-11-09T01:00:00Z" },
+    ],
+    crossyear: [
+      { code: "AF-2026-0301", title: "跨年企划 · 十二张月历插画", client: "雾岛工作室", stage: "草稿 1/5", amountCents: 1200000, status: "active", plannedStartDate: "2026-12-20", plannedDeliveryDate: "2027-02-28", startedAt: null },
+      { code: "AF-2026-0302", title: "跨年回顾稿（上一年的尾巴）", client: "林小满", stage: "线稿 2/5", amountCents: 46000, status: "active", plannedStartDate: "2025-12-01", plannedDeliveryDate: "2026-01-15", startedAt: null },
+      { code: "AF-2026-0303", title: "超长标题：封面主视觉重绘与全彩上色第二版修订稿第三轮细化，另含背景补画与字体排版调整", client: "陈叙", stage: "细化 4/5", amountCents: 360000, status: "active", plannedStartDate: "2026-11-05", plannedDeliveryDate: "2026-11-28", startedAt: "2026-11-06T02:00:00Z" },
+      { code: "AF-2026-0304", title: "长周期企划 · 画集装帧", client: "周牧", stage: "线稿 2/5", amountCents: 880000, status: "active", plannedStartDate: "2027-06-01", plannedDeliveryDate: "2028-03-31", startedAt: null },
+      { code: "AF-2026-0305", title: "闰年 2 月 29 日交付", client: "苏禾", stage: "上色 3/5", amountCents: 24000, status: "active", plannedStartDate: "2028-02-20", plannedDeliveryDate: "2028-02-29", startedAt: null },
+    ],
+    dense: buildDense(),
+    unscheduled: [
+      { code: "AF-2026-0401", title: "还没定日期的委托 A", client: "林小满", stage: "草稿 1/5", amountCents: 30000, status: "active", plannedStartDate: null, plannedDeliveryDate: null, startedAt: null },
+      { code: "AF-2026-0402", title: "还没定日期的委托 B", client: "陈叙", stage: "草稿 1/5", amountCents: 52000, status: "active", plannedStartDate: null, plannedDeliveryDate: null, startedAt: null },
+      { code: "AF-2026-0403", title: "还没定日期的委托 C", client: "周牧", stage: "草稿 1/5", amountCents: null, status: "active", plannedStartDate: null, plannedDeliveryDate: null, startedAt: null },
+      { code: "AF-2026-0404", title: "还没定日期的委托 D", client: "苏禾", stage: "草稿 1/5", amountCents: 18000, status: "active", plannedStartDate: null, plannedDeliveryDate: null, startedAt: null },
+    ],
+    empty: [],
+  };
+
+  function buildDense() {
+    const titles = [
+      "双人立绘 · 周年纪念", "封面主视觉", "角色三视图", "生日贺图", "场景插画 · 夜景",
+      "头像委托", "轻小说内页插图", "立绘差分三套", "海报主视觉", "Q 版表情包",
+      "书签卡面", "委托合绘", "活动主视觉", "角色设定集内页", "季节限定插画", "短篇漫画封面",
+    ];
+    const clients = ["林小满", "陈叙", "周牧", "苏禾", "雾岛工作室", "匿名"];
+    const stages = ["草稿 1/5", "线稿 2/5", "上色 3/5", "细化 4/5", "最终调整 5/5"];
+    return titles.map((title, i) => {
+      const startOffset = -18 + i * 4;
+      const span = 5 + (i % 5) * 4;
+      const start = formatDayKey(TODAY + startOffset);
+      const due = formatDayKey(TODAY + startOffset + span);
+      return {
+        code: `AF-2026-${String(500 + i).padStart(4, "0")}`,
+        title,
+        client: clients[i % clients.length],
+        stage: stages[i % stages.length],
+        amountCents: i % 4 === 3 ? null : (i + 1) * 12000,
+        status: "active",
+        plannedStartDate: start,
+        plannedDeliveryDate: due,
+        startedAt: i % 3 === 0 ? null : `2026-11-0${(i % 9) + 1}T03:00:00Z`,
+      };
+    });
+  }
+
+  function deadlineState(order) {
+    if (order.status !== "active") return "scheduled";
+    const due = parseDayKey(order.plannedDeliveryDate);
+    if (due === null) return "unscheduled";
+    if (due < TODAY) return "overdue";
+    if (due === TODAY) return "today";
+    if (due <= TODAY + 3) return "dueSoon";
+    return "scheduled";
+  }
+
+  function workState(order) {
+    if (order.status === "complete") return "completed";
+    if (order.status === "cancelled") return "cancelled";
+    return order.startedAt ? "inProgress" : "queued";
+  }
+
+  const state = {
+    dataset: params.get("dataset") && ORDERS[params.get("dataset")] ? params.get("dataset") : "full",
+    scale: ["day", "week", "month", "year"].includes(params.get("scale")) ? params.get("scale") : "month",
+    anchor: TODAY,
+    showTerminal: params.get("terminal") === "1",
+    scroll: params.get("scroll") || "today",
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (value) =>
+    String(value == null ? "" : value).replace(/[&<>"']/g, (ch) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+
+  const money = (cents) => (cents === null ? "金额未填" : `¥${(cents / 100).toLocaleString("zh-CN")}`);
+
+  let toastTimer = 0;
+  function toast(text) {
+    const el = $("toast");
+    el.textContent = text;
+    el.classList.add("is-on");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("is-on"), 2600);
+  }
+
+  function renderMetrics() {
+    const list = ORDERS[state.dataset] || [];
+    const active = list.filter((o) => o.status === "active");
+    const m = {
+      activeTotal: active.length,
+      queued: active.filter((o) => workState(o) === "queued").length,
+      inProgress: active.filter((o) => workState(o) === "inProgress").length,
+      dueSoon: active.filter((o) => deadlineState(o) === "dueSoon").length,
+      dueToday: active.filter((o) => deadlineState(o) === "today").length,
+      overdue: active.filter((o) => deadlineState(o) === "overdue").length,
+      unscheduled: active.filter((o) => !o.plannedDeliveryDate).length,
+      completedThisMonth: list.filter(
+        (o) => o.status === "complete" && o.completedAt && o.completedAt.startsWith("2026-11"),
+      ).length,
+    };
+    const cards = [
+      ["activeTotal", "活动订单", "当前仍在进行中的全部委托", ""],
+      ["queued", "排队中", "活动但尚未开始制作", ""],
+      ["inProgress", "制作中", "已经在制作", "tone-accent"],
+      ["dueSoon", "三日内到期", "明天至第三天（不含今天）", "tone-warn"],
+      ["dueToday", "今天到期", "交付日期就是今天", "tone-warn"],
+      ["overdue", "已逾期", "交付日期早于今天", "tone-danger"],
+      ["unscheduled", "未排期", "还没有填预计交付日期", ""],
+      ["completedThisMonth", "本月完成次数", "按完成事件计数", "tone-accent"],
+    ];
+    $("metricGrid").innerHTML = cards
+      .map(([key, label, hint, tone]) =>
+        `<div class="metric-card ${tone}"><span class="metric-value">${m[key]}</span>` +
+        `<span class="metric-label">${label}</span><span class="metric-hint">${hint}</span></div>`)
+      .join("");
+
+    const attention = m.overdue + m.dueToday + m.dueSoon;
+    const badge = $("attentionBadge");
+    badge.textContent = attention > 0 ? `${attention} 项需要关注` : "没有临期订单";
+    badge.className = `badge ${attention > 0 ? "badge-warn" : "badge-ok"}`;
+
+    $("todayLineText").textContent =
+      `今天是 ${formatDayKey(TODAY)}（${TZ}）· 本月 2026-11 · 工作时间基准已固定，便于截图复现`;
+    return m;
+  }
+
+  function rowInfoHtml(order) {
+    const note = !order.plannedDeliveryDate && order.plannedStartDate
+      ? "仅开始"
+      : !order.plannedStartDate && order.plannedDeliveryDate
+        ? "仅交付"
+        : "";
+    const sub = [order.client, order.stage, money(order.amountCents), note].filter(Boolean).join(" · ");
+    return (
+      `<a class="tl-info" href="?orderId=${encodeURIComponent(order.code)}" data-code="${esc(order.code)}" ` +
+      `title="${esc(order.title)}" aria-label="打开订单 ${esc(order.code)} ${esc(order.title)}">` +
+      `<span class="tl-code">${esc(order.code)}</span>` +
+      `<span class="tl-title">${esc(order.title)}</span>` +
+      `<span class="tl-sub">${esc(sub)}</span></a>`
+    );
+  }
+
+  function rowTrackHtml(order, win, scale, today) {
+    const g = rowGeometry(order, win, scale, today);
+    const cfg = SCALES[scale];
+    const total = canvasWidth(win, scale);
+    const stateName = deadlineState(order);
+    const toneClass = g.terminal ? "is-terminal" : stateName === "overdue" ? "is-overdue" : stateName === "today" ? "is-today" : stateName === "dueSoon" ? "is-soon" : "";
+    const parts = [];
+
+    if (g.invalid) {
+      parts.push(`<span class="tl-tag is-alert" style="left:8px">日期顺序异常 · 不画区间</span>`);
+    } else if (g.fullyOutside) {
+      parts.push(`<span class="tl-outside">窗口外：${esc(order.plannedStartDate)} → ${esc(order.plannedDeliveryDate)}</span>`);
+    } else if (g.hasBand) {
+      const single = g.start === g.delivery;
+      const clip = g.band.clippedLeft ? "left" : g.band.clippedRight ? "right" : "";
+      parts.push(
+        `<span class="tl-bar ${toneClass}${single ? " is-single" : ""}" ` +
+        `style="left:${g.band.left.toFixed(2)}px;width:${g.band.width.toFixed(2)}px${single ? `;min-width:${Math.max(cfg.pxPerDay, cfg.minBar)}px` : ""}" ` +
+        `${clip ? `data-clip="${clip}"` : ""} data-order="${esc(order.code)}" ` +
+        `title="${esc(order.plannedStartDate)} → ${esc(order.plannedDeliveryDate)}"></span>`,
+      );
+      if (g.band.clippedLeft) {
+        parts.push(`<span class="tl-edge" style="left:0" title="计划开始早于窗口：${esc(order.plannedStartDate)}">◀</span>`);
+      }
+      if (g.band.clippedRight) {
+        parts.push(`<span class="tl-edge tl-edge-right" style="right:0" title="计划交付晚于窗口：${esc(order.plannedDeliveryDate)}">▶</span>`);
+      }
+    }
+
+    if (!g.hasBand || g.invalid) {
+      g.markers.forEach((marker) => {
+        const tone = g.terminal ? "tone-terminal" : `tone-${stateName === "dueSoon" ? "soon" : stateName}`;
+        parts.push(
+          `<span class="tl-mark is-${marker.kind} ${marker.kind === "delivery" ? tone : ""}" ` +
+          `style="left:${marker.x.toFixed(2)}px" ` +
+          `${marker.overflow ? `data-overflow="${marker.overflow}"` : ""} ` +
+          `title="${marker.kind === "start" ? "计划开始" : "计划交付"} ${formatDayKey(marker.day)}"></span>`,
+        );
+        if (!g.invalid && g.start !== null && g.delivery === null && marker.kind === "start") {
+          parts.push(`<span class="tl-tag" style="left:${Math.min(marker.x + 8, Math.max(0, total - 62)).toFixed(2)}px">仅开始</span>`);
+        }
+        if (!g.invalid && g.start === null && g.delivery !== null && marker.kind === "delivery") {
+          parts.push(`<span class="tl-tag" style="left:${Math.min(marker.x + 8, Math.max(0, total - 62)).toFixed(2)}px">仅交付</span>`);
+        }
+      });
+    }
+
+    return `<div class="tl-row" data-row="${esc(order.code)}">${parts.join("")}</div>`;
+  }
+
+  function renderTimeline() {
+    const all = ORDERS[state.dataset] || [];
+    const visible = state.showTerminal ? all.slice() : all.filter((o) => o.status === "active");
+    const scheduled = visible
+      .filter((o) => o.plannedStartDate || o.plannedDeliveryDate)
+      .sort((a, b) => {
+        const av = parseDayKey(a.plannedStartDate) ?? parseDayKey(a.plannedDeliveryDate) ?? 0;
+        const bv = parseDayKey(b.plannedStartDate) ?? parseDayKey(b.plannedDeliveryDate) ?? 0;
+        return av - bv || a.code.localeCompare(b.code);
+      });
+    const unscheduled = visible.filter((o) => !o.plannedStartDate && !o.plannedDeliveryDate);
+
+    const win = timelineWindow(state.scale, state.anchor);
+    const total = canvasWidth(win, state.scale);
+    const ticks = buildTicks(win, state.scale, TODAY);
+
+    rangeState = {
+      win,
+      scale: state.scale,
+      scheduled: scheduled.length,
+      unscheduled: unscheduled.length,
+      all: all.length,
+    };
+
+    $("canvas").style.width = `${total}px`;
+
+    const tierHtml = (list) => list
+      .map((t) => {
+        const cls = ["tick", t.strong ? "tick-strong" : "", t.today ? "tick-today" : ""].filter(Boolean).join(" ");
+        const sub = t.sub ? `<span class="tick-sub">${t.sub}</span>` : "";
+        return `<span class="${cls}" style="left:${t.left.toFixed(2)}px;width:${Math.max(1, t.width).toFixed(2)}px">` +
+          `<span class="tick-text">${t.text}${sub}</span></span>`;
+      })
+      .join("");
+    $("tier1").innerHTML = tierHtml(ticks.tier1);
+    $("tier2").innerHTML = tierHtml(ticks.tier2);
+
+    const gridParts = ticks.boundaries.map((left) =>
+      `<span class="gridline" style="left:${left.toFixed(2)}px"></span>`);
+    if (state.scale === "day" || state.scale === "week") {
+      for (let d = win.from; d <= win.to; d++) {
+        if (weekdayMon(d) < 5) continue;
+        const left = dayToX(d, win, state.scale);
+        gridParts.push(`<span class="weekend" style="left:${left.toFixed(2)}px;width:${SCALES[state.scale].pxPerDay}px"></span>`);
+      }
+    }
+    $("gridLayer").innerHTML = gridParts.join("");
+
+    const todayX = dayToX(TODAY, win, state.scale) + SCALES[state.scale].pxPerDay / 2;
+    const todayInside = TODAY >= win.from && TODAY <= win.to;
+    $("todayLineEl").style.display = todayInside ? "" : "none";
+    $("todayFlag").style.display = todayInside ? "" : "none";
+    if (todayInside) {
+      $("todayLineEl").style.left = `${todayX.toFixed(2)}px`;
+      $("todayFlag").style.left = `${todayX.toFixed(2)}px`;
+    }
+
+    $("infoList").innerHTML = scheduled.map(rowInfoHtml).join("");
+    $("trackRows").innerHTML = scheduled.map((o) => rowTrackHtml(o, win, state.scale, TODAY)).join("");
+
+    const frame = $("tlFrame");
+    const empty = $("tlEmpty");
+    if (!scheduled.length) {
+      frame.hidden = true;
+      empty.hidden = false;
+      if (!all.length) {
+        $("tlEmptyTitle").textContent = "还没有任何订单";
+        $("tlEmptyNote").textContent = "创建订单并填上计划日期后，订单会出现在这条时间线上。";
+      } else if (unscheduled.length) {
+        $("tlEmptyTitle").textContent = "没有任何订单填了计划日期";
+        $("tlEmptyNote").textContent = "它们全部列在下方「未排期」，补上计划开始或交付日期后会自动进入时间线。";
+      } else {
+        $("tlEmptyTitle").textContent = "活动订单都已完成";
+        $("tlEmptyNote").textContent = "勾选「显示已结束」可以查看已完成与已取消的订单。";
+      }
+    } else {
+      frame.hidden = false;
+      empty.hidden = true;
+    }
+
+    $("unscheduledCount").textContent = String(unscheduled.length);
+    $("unscheduledBody").innerHTML = unscheduled.length
+      ? `<ul>${unscheduled.map((o) =>
+        `<li><a href="?orderId=${encodeURIComponent(o.code)}" data-code="${esc(o.code)}">` +
+        `<span class="mono">${esc(o.code)}</span><span>${esc(o.title)}</span></a></li>`).join("")}</ul>`
+      : `<p class="empty-note">没有未排期订单。没有计划日期的订单不会自动补日期，也不会被塞进时间线。</p>`;
+
+    $("tlSubtitle").textContent =
+      `只读 · ${SCALES[state.scale].label}尺度 · 按计划日期绘制 · 不表示完成进度 · 逾期读后端判定`;
+
+    if (state.scroll === "start") {
+      $("trackScroll").scrollLeft = 0;
+    } else if (state.scroll !== "keep") {
+      const viewport = $("trackScroll").clientWidth;
+      $("trackScroll").scrollLeft = Math.max(0, todayX - viewport * 0.45);
+    }
+    updateRangeLabel();
+  }
+
+  let rangeState = null;
+
+  /** 可见区间按滚动位置实时算：窗口是固定的，可见范围不是。 */
+  function updateRangeLabel() {
+    if (!rangeState) return;
+    const { win, scale, scheduled, unscheduled, all } = rangeState;
+    const scroller = $("trackScroll");
+    const px = SCALES[scale].pxPerDay;
+    const width = scroller.clientWidth || 0;
+    const firstVisible = Math.min(win.to, win.from + Math.floor(scroller.scrollLeft / px));
+    const lastVisible = Math.min(win.to, win.from + Math.ceil((scroller.scrollLeft + width) / px) - 1);
+    const visible = width
+      ? `${formatDayKey(firstVisible)} ~ ${formatDayKey(lastVisible)}`
+      : `${formatDayKey(win.from)} ~ ${formatDayKey(win.to)}`;
+    $("rangeLabel").innerHTML =
+      `可见 <strong>${visible}</strong> · 窗口 ${formatDayKey(win.from)} ~ ${formatDayKey(win.to)} · ` +
+      `${SCALES[scale].label}尺度 · 时间线 ${scheduled} 单 · 未排期 ${unscheduled} 单 · 共 ${all} 单`;
+    const atEnd = scroller.scrollLeft + width >= scroller.scrollWidth - 2;
+    $("scrollHint").hidden = atEnd || !width;
+  }
+
+  function renderAll() {
+    renderMetrics();
+    renderTimeline();
+    [...document.querySelectorAll("#scaleSeg button")].forEach((b) =>
+      b.setAttribute("aria-pressed", String(b.dataset.scale === state.scale)));
+    $("showTerminal").checked = state.showTerminal;
+    $("dataset").value = state.dataset;
+  }
+
+  /* ---------------------------------------------------------- 事件 */
+  $("trackScroll").addEventListener("scroll", updateRangeLabel, { passive: true });
+
+  $("scaleSeg").addEventListener("click", (event) => {
+    const btn = event.target.closest("button[data-scale]");
+    if (!btn) return;
+    state.scale = btn.dataset.scale;
+    state.scroll = "today";
+    renderAll();
+  });
+
+  $("prevBtn").addEventListener("click", () => {
+    state.anchor = shiftAnchor(state.scale, state.anchor, -1);
+    state.scroll = "keep";
+    renderAll();
+    $("trackScroll").scrollLeft = 0;
+  });
+
+  $("nextBtn").addEventListener("click", () => {
+    state.anchor = shiftAnchor(state.scale, state.anchor, 1);
+    state.scroll = "keep";
+    renderAll();
+    $("trackScroll").scrollLeft = 0;
+  });
+
+  $("todayBtn").addEventListener("click", () => {
+    state.anchor = TODAY;
+    state.scroll = "today";
+    renderAll();
+  });
+
+  $("showTerminal").addEventListener("change", (event) => {
+    state.showTerminal = event.target.checked;
+    state.scroll = "keep";
+    renderAll();
+  });
+
+  $("dataset").addEventListener("change", (event) => {
+    state.dataset = event.target.value;
+    state.scroll = "today";
+    renderAll();
+  });
+
+  $("collapseBtn").addEventListener("click", () => {
+    const app = $("app");
+    app.classList.toggle("is-collapsed");
+    const collapsed = app.classList.contains("is-collapsed");
+    $("collapseBtn").setAttribute("aria-expanded", String(!collapsed));
+    $("collapseBtn").setAttribute("aria-label", collapsed ? "展开侧边栏" : "折叠侧边栏");
+    $("collapseBtn").querySelector(".nav-label").textContent = collapsed ? "展开" : "折叠";
+  });
+
+  function onOrderLink(event) {
+    const link = event.target.closest("a[data-code]");
+    if (!link) return;
+    event.preventDefault();
+    toast(`原型反馈：将进入订单 ${link.dataset.code} 的详情（/orders?orderId=…）。原型不接真实路由、不写库。`);
+  }
+  $("infoList").addEventListener("click", onOrderLink);
+  $("trackRows").addEventListener("click", onOrderLink);
+  $("unscheduledBody").addEventListener("click", onOrderLink);
+
+  /* ---------------------------------------------------------- 滚动条状态板 */
+  function renderScrollbarBoard() {
+    document.title = "SCROLLBAR-01 · 跨平台滚动条状态板";
+    $("mainInner").innerHTML = `
+      <div class="proto-bar"><strong>设计板</strong><span>· 静态示意 + 可交互实时样例</span>
+        <span>· <a href="?">返回时间线原型</a></span></div>
+
+      <section class="panel">
+        <header class="panel-head"><div><h2>SCROLLBAR-01 · 跨平台低存在感滚动条</h2>
+          <p>目标：不抢内容的注意力，但永不"永久隐藏"。四种状态 × 两套主题。</p></div>
+          <span class="badge">设计稿 · 未实施</span></header>
+
+        <h3 style="margin:6px 0 8px;font-size:13px">状态定义（浅色 / Arctic Blue）</h3>
+        <div id="sbLight" class="sb-board"></div>
+
+        <h3 style="margin:22px 0 8px;font-size:13px">状态定义（深色）</h3>
+        <div id="sbDark" class="sb-board theme-dark"></div>
+
+        <h3 style="margin:22px 0 8px;font-size:13px">平台分治：同一段内容，两种策略</h3>
+        <div class="sb-live">
+          <div class="sb-live-box" id="liveLight" tabindex="0" aria-label="macOS 策略：不改滚动条样式">
+            <p>macOS · 不改样式（系统 overlay）</p>
+            ${Array.from({ length: 12 }, (_, i) => `<p class="muted">第 ${i + 1} 行示例内容；滚动时才会出现系统滚动条。</p>`).join("")}
+          </div>
+          <div class="sb-live-box theme-dark" id="liveDark" tabindex="0" aria-label="深色主题：不改样式">
+            <p>深色 · 不改样式（系统 overlay）</p>
+            ${Array.from({ length: 12 }, (_, i) => `<p class="muted">第 ${i + 1} 行示例内容；深色下由 color-scheme 决定拇指颜色。</p>`).join("")}
+          </div>
+          <div class="sb-live-box is-win" tabindex="0" aria-label="Windows 策略：10px 细轨道">
+            <p>Windows 近似 · 10px 细轨道（Blink 渲染）</p>
+            ${Array.from({ length: 12 }, (_, i) => `<p class="muted">第 ${i + 1} 行示例内容；Windows 本来就占位，定制不损失 overlay。</p>`).join("")}
+          </div>
+        </div>
+        <p class="hint" id="sbDiag">—</p>
+        <p class="hint">
+          <strong>实测结论：</strong>macOS Chromium 下只要设置 <code>scrollbar-color</code>（或 <code>::-webkit-scrollbar</code>），
+          overlay 滚动条就会变成常驻占位（本次实测 15px，<code>offsetWidth − clientWidth = 0</code> 变成 15）。
+          因此本方案按平台分治：macOS 保持原样，Windows 才做细轨道定制。
+        </p>
+      </section>
+
+      <section class="panel">
+        <h2>平台能力矩阵</h2>
+        <table class="sb-table">
+          <thead><tr><th>能力</th><th>macOS WKWebView</th><th>Windows WebView2</th><th>结论</th></tr></thead>
+          <tbody>
+            <tr><td><code>scrollbar-width: thin</code></td><td>Safari 18.2+ 支持</td><td>Chromium 121+ 支持</td><td>可做"变窄"的主路径</td></tr>
+            <tr><td><code>scrollbar-color</code></td><td>Safari 26.2+ 才有</td><td>Chromium 121+ 支持</td><td>可做颜色，但不能作为唯一手段</td></tr>
+            <tr><td><code>::-webkit-scrollbar</code></td><td>支持（非标准）</td><td>支持（非标准）</td><td>唯一能精确控制圆角/内缩的手段</td></tr>
+            <tr><td>overlay 滚动条</td><td>由系统"显示滚动条"设置决定</td><td>Fluent（Chromium 133+），overlay 默认状态未定</td><td>不能假设两平台一致</td></tr>
+            <tr><td><code>scrollbar-gutter: stable</code></td><td>Safari 18.2+；overlay 下无效</td><td>Chromium 94+；overlay 下无效</td><td>只在经典滚动条下防抖动</td></tr>
+            <tr><td>forced-colors 高对比</td><td>系统接管</td><td>系统接管，<code>scrollbar-color</code> 被强制 auto</td><td>必须允许系统覆盖</td></tr>
+          </tbody>
+        </table>
+        <p class="hint">矩阵里的版本号来自 MDN / WebKit blog / blink-dev 的一手文档；<strong>"overlay 是否被自定义样式强制转成经典滚动条"在 WKWebView 上仍无权威来源</strong>，见规范 §4.3。</p>
+      </section>
+    `;
+
+    const boards = [
+      { state: "静止", note: "拇指 4px · 14% 不透明，轨道透明；不滚动 600ms 后回到这一档", pos: 30, on: "idle" },
+      { state: "悬停", note: "拇指 6px · 32% 不透明，轨道保持透明", pos: 40, on: "hover" },
+      { state: "滚动中", note: "拇指 10px · 55% 不透明，滚动停止 600ms 后回落到悬停档", pos: 56, on: "scrolling" },
+      { state: "拖动", note: "拇指 10px · 74% 不透明，轨道 6% 底色；命中区 12px", pos: 68, on: "dragging" },
+    ];
+    const boardHtml = () => boards.map((b) => `
+      <figure class="sb-card" data-state="${b.on}">
+        <figcaption><strong>${b.state}</strong><span>${b.note}</span></figcaption>
+        <div class="sb-track"><span class="sb-thumb" style="top:${b.pos}%"></span></div>
+      </figure>`).join("");
+    $("sbLight").innerHTML = boardHtml();
+    $("sbDark").innerHTML = boardHtml();
+
+    const diag = () => {
+      const el = $("liveLight");
+      const gutter = el.offsetWidth - el.clientWidth;
+      const inner = window.innerWidth - document.documentElement.clientWidth;
+      $("sbDiag").textContent =
+        `实测：样例容器占位 ${gutter}px（0 = overlay 滚动条，>0 = 经典滚动条）；` +
+        `页面级占位 ${inner}px；平台 ${navigator.platform}；devicePixelRatio ${window.devicePixelRatio}`;
+    };
+    diag();
+    window.addEventListener("resize", diag);
+  }
+
+  /* ---------------------------------------------------------- 自检 */
+  function runSelfTest() {
+    const out = [];
+    let pass = 0;
+    let fail = 0;
+    const check = (name, condition, detail) => {
+      if (condition) { pass++; out.push(`PASS ${name}`); }
+      else { fail++; out.push(`FAIL ${name}${detail ? ` — ${detail}` : ""}`); }
+    };
+
+    // 日期解析
+    let roundTripOk = true;
+    for (let i = 0; i < 4000; i += 37) {
+      const day = TODAY - 2000 + i;
+      if (parseDayKey(formatDayKey(day)) !== day) { roundTripOk = false; break; }
+    }
+    check("天序号 ↔ 日期 4000 点回读一致", roundTripOk);
+    check("2 月 30 日非法", parseDayKey("2026-02-30") === null);
+    check("13 月非法", parseDayKey("2026-13-01") === null);
+    check("非补零格式非法", parseDayKey("2026-1-1") === null);
+    check("空值非法", parseDayKey("") === null && parseDayKey(null) === null);
+    check("2024-02-29 合法（闰年）", parseDayKey("2024-02-29") !== null);
+    check("2023-02-29 非法", parseDayKey("2023-02-29") === null);
+    check("1900-02-29 非法（百年不闰）", parseDayKey("1900-02-29") === null);
+    check("2000-02-29 合法（四百年闰）", parseDayKey("2000-02-29") !== null);
+    check("isLeap 判定", isLeap(2024) && !isLeap(1900) && isLeap(2000) && !isLeap(2026));
+    check("月度天数", daysInMonth(2024, 2) === 29 && daysInMonth(2026, 2) === 28 && daysInMonth(2026, 4) === 30);
+    check("2026-11-18 是周三（周一=0 → 2）", weekdayMon(TODAY) === 2, String(weekdayMon(TODAY)));
+
+    // 窗口
+    const dw = timelineWindow("day", TODAY);
+    check("日尺度窗口 21 天", dw.to - dw.from + 1 === 21);
+    const ww = timelineWindow("week", TODAY);
+    check("周窗口对齐到整周（周一 → 周日）",
+      weekdayMon(ww.from) === 0 && weekdayMon(ww.to) === 6, `${formatDayKey(ww.from)} ${weekdayMon(ww.from)}`);
+    check("周窗口天数 ≡ 0 (mod 7)", (ww.to - ww.from + 1) % 7 === 0, String(ww.to - ww.from + 1));
+    const mw = timelineWindow("month", TODAY);
+    check("月尺度从月初开始", formatDayKey(mw.from) === "2026-09-01", formatDayKey(mw.from));
+    check("月尺度到月末结束", formatDayKey(mw.to) === "2027-09-30", formatDayKey(mw.to));
+    const yw = timelineWindow("year", TODAY);
+    check("年尺度按自然年", formatDayKey(yw.from) === "2025-01-01" && formatDayKey(yw.to) === "2030-12-31",
+      `${formatDayKey(yw.from)} → ${formatDayKey(yw.to)}`);
+    check("月窗口含今天", TODAY >= mw.from && TODAY <= mw.to);
+
+    // 位移
+    check("月位移夹到月末（1-31 → 2-28）",
+      formatDayKey(shiftAnchor("month", parseDayKey("2026-01-31"), 1)) === "2026-02-28");
+    check("年位移 12 个月",
+      formatDayKey(shiftAnchor("year", parseDayKey("2026-11-18"), 1)) === "2027-11-18");
+    check("日位移 7 天", shiftAnchor("day", TODAY, 1) - TODAY === 7);
+    check("周位移 28 天", shiftAnchor("week", TODAY, -1) - TODAY === -28);
+
+    // 刻度
+    const dayTicks = buildTicks(dw, "day", TODAY);
+    check("日刻度逐日 21 个", dayTicks.tier2.length === 21, String(dayTicks.tier2.length));
+    check("日刻度首个左边界为 0", dayTicks.tier2[0].left === 0);
+    const yearTicks = buildTicks(yw, "year", TODAY);
+    check("年刻度季度数 ≤ 24", yearTicks.tier2.length <= 24, String(yearTicks.tier2.length));
+    const monthTicks = buildTicks(mw, "month", TODAY);
+    check("月刻度第一层按年分组", monthTicks.tier1.length >= 2 && monthTicks.tier1.every((t) => t.text.endsWith("年")));
+    check("月刻度第二层 13 个月", monthTicks.tier2.length === 13, String(monthTicks.tier2.length));
+    const widthSum = monthTicks.tier2.reduce((sum, t) => sum + t.width, 0);
+    check("月刻度宽度总和等于画布宽（容差 0.5px）", Math.abs(widthSum - canvasWidth(mw, "month")) <= 0.5,
+      `${widthSum} vs ${canvasWidth(mw, "month")}`);
+
+    // 几何
+    const g1 = rowGeometry({ status: "active", plannedStartDate: "2026-11-12", plannedDeliveryDate: "2026-11-20" }, dw, "day", TODAY);
+    check("区间左端等于 dayToX(start)", Math.abs(g1.band.left - dayToX(parseDayKey("2026-11-12"), dw, "day")) < 0.01,
+      `${g1.band.left} vs ${dayToX(parseDayKey("2026-11-12"), dw, "day")}`);
+    check("区间宽度按包含首尾两天", Math.abs(g1.band.width - 9 * 44) < 0.01, String(g1.band.width));
+    const gSame = rowGeometry({ status: "active", plannedStartDate: "2026-11-18", plannedDeliveryDate: "2026-11-18" }, dw, "day", TODAY);
+    check("单日区间有可见宽度", gSame.hasBand && gSame.band.width >= 22);
+    const gStart = rowGeometry({ status: "active", plannedStartDate: "2026-11-16", plannedDeliveryDate: null }, dw, "day", TODAY);
+    check("仅开始：无区间 + 1 个标记", !gStart.hasBand && gStart.markers.length === 1 && gStart.markers[0].kind === "start");
+    const gDue = rowGeometry({ status: "active", plannedStartDate: null, plannedDeliveryDate: "2026-11-22" }, dw, "day", TODAY);
+    check("仅交付：无区间 + 1 个标记", !gDue.hasBand && gDue.markers.length === 1 && gDue.markers[0].kind === "delivery");
+    const gInvalid = rowGeometry({ status: "active", plannedStartDate: "2026-11-25", plannedDeliveryDate: "2026-11-20" }, dw, "day", TODAY);
+    check("反向区间不画条", gInvalid.invalid && !gInvalid.hasBand && gInvalid.markers.length === 2);
+    const gOut = rowGeometry({ status: "active", plannedStartDate: "2027-03-01", plannedDeliveryDate: "2027-03-10" }, dw, "day", TODAY);
+    check("窗口外：无条 + 右越界标记", !gOut.hasBand && gOut.fullyOutside &&
+      gOut.markers.every((m) => m.overflow === "right"));
+    const gClip = rowGeometry({ status: "active", plannedStartDate: "2026-11-05", plannedDeliveryDate: "2026-11-14" }, dw, "day", TODAY);
+    check("左侧被裁：条从 0 开始", gClip.hasBand && gClip.band.left === 0 && gClip.band.clippedLeft,
+      JSON.stringify({ hasBand: gClip.hasBand, left: gClip.band.left, clipped: gClip.band.clippedLeft }));
+    const gLeftOut = rowGeometry({ status: "active", plannedStartDate: "2026-11-01", plannedDeliveryDate: "2026-11-06" }, dw, "day", TODAY);
+    check("整段在窗口左侧：无条 + 左越界标记", !gLeftOut.hasBand && gLeftOut.fullyOutside &&
+      gLeftOut.markers.every((m) => m.overflow === "left"));
+    check("今天线位置 = dayToX(today)+px/2",
+      Math.abs((dayToX(TODAY, dw, "day") + 22) - ((TODAY - dw.from) * 44 + 22)) < 0.01);
+
+    // 与真实业务口径一致
+    const fullActive = ORDERS.full.filter((o) => o.status === "active");
+    check("未排期口径 = active 且交付日期为空（含仅开始）", fullActive.filter((o) => !o.plannedDeliveryDate).length === 2);
+    check("逾期只来自 active + 已过期", deadlineState(ORDERS.full[2]) === "overdue");
+    check("终态一律 scheduled", deadlineState(ORDERS.full[6]) === "scheduled" && deadlineState(ORDERS.full[7]) === "scheduled");
+    check("0 元与未填金额区分", money(0) === "¥0" && money(null) === "金额未填");
+
+    // DOM：默认过滤与切换
+    state.dataset = "full";
+    state.scale = "month";
+    state.showTerminal = false;
+    state.scroll = "start";
+    renderAll();
+    const activeScheduled = ORDERS.full.filter((o) => o.status === "active" &&
+      (o.plannedStartDate || o.plannedDeliveryDate)).length;
+    check("默认不显示终态行", $("infoList").children.length === activeScheduled,
+      `${$("infoList").children.length} vs ${activeScheduled}`);
+    state.showTerminal = true;
+    renderAll();
+    const allScheduled = ORDERS.full.filter((o) => o.plannedStartDate || o.plannedDeliveryDate).length;
+    check("勾选后增加终态行", $("infoList").children.length === allScheduled,
+      `${$("infoList").children.length} vs ${allScheduled}`);
+    state.showTerminal = false;
+    renderAll();
+    check("未排期区块计数与数据一致", $("unscheduledCount").textContent === "1");
+    check("表头与行使用同一宽度", $("canvas").style.width === `${canvasWidth(timelineWindow("month", TODAY), "month")}px`);
+
+    // 空状态与全未排期
+    state.dataset = "empty";
+    renderAll();
+    check("空场景显示空状态", !$("tlEmpty").hidden && $("tlFrame").hidden);
+    state.dataset = "unscheduled";
+    renderAll();
+    check("全未排期：空状态 + 4 条未排期", !$("tlEmpty").hidden && $("unscheduledCount").textContent === "4");
+
+    state.dataset = params.get("dataset") && ORDERS[params.get("dataset")] ? params.get("dataset") : "full";
+    state.showTerminal = params.get("terminal") === "1";
+    state.scale = ["day", "week", "month", "year"].includes(params.get("scale")) ? params.get("scale") : "month";
+    state.anchor = TODAY;
+    state.scroll = params.get("scroll") || "today";
+    renderAll();
+
+    // 几何：信息列与轨道行逐行对齐（同一 y），表头与轨道共用坐标系
+    const infoRows = [...document.querySelectorAll("#infoList .tl-info")];
+    const trackRows = [...document.querySelectorAll("#trackRows .tl-row")];
+    check("信息列行数 = 轨道行数", infoRows.length === trackRows.length,
+      `${infoRows.length} vs ${trackRows.length}`);
+    let maxDelta = 0;
+    for (let i = 0; i < Math.min(infoRows.length, trackRows.length); i++) {
+      maxDelta = Math.max(maxDelta, Math.abs(infoRows[i].getBoundingClientRect().top - trackRows[i].getBoundingClientRect().top));
+    }
+    check("逐行 y 对齐误差 ≤ 0.5px", maxDelta <= 0.5, `maxDelta=${maxDelta.toFixed(2)}`);
+    const cornerBottom = document.querySelector(".tl-corner").getBoundingClientRect().bottom;
+    const axisBottom = $("axis").getBoundingClientRect().bottom;
+    check("表头底边与info列表起点同一 y", Math.abs(cornerBottom - axisBottom) <= 0.5,
+      `${cornerBottom} vs ${axisBottom}`);
+    const barX = (() => {
+      const row = document.querySelector('#trackRows .tl-row[data-row="AF-2026-0101"]');
+      const bar = row && row.querySelector(".tl-bar");
+      return bar ? parseFloat(bar.style.left) : NaN;
+    })();
+    const tickX = (() => {
+      const w = timelineWindow(state.scale, TODAY);
+      return dayToX(parseDayKey("2026-11-10"), w, state.scale);
+    })();
+    check("条形左端 = 同一坐标系的 dayToX(11-10)", Math.abs(barX - tickX) < 0.01, `${barX} vs ${tickX}`);
+
+    const el = $("selftest");
+    el.textContent = `SELFTEST ${fail === 0 ? "OK" : "FAILED"} · pass=${pass} fail=${fail}\n${out.join("\n")}`;
+    el.hidden = false;
+    el.style.cssText = "position:absolute;left:-99999px;top:0";
+    document.body.dataset.selftest = fail === 0 ? "ok" : "failed";
+  }
+
+  window.addEventListener("error", (event) => {
+    const el = $("selftest");
+    el.hidden = false;
+    el.textContent += `\nRUNTIME ERROR: ${event.message}`;
+    document.body.dataset.runtimeError = event.message;
+  });
+
+  if (params.get("view") === "scrollbar") {
+    renderScrollbarBoard();
+  } else {
+    renderAll();
+  }
+
+  if (params.get("geom") === "1") {
+    const scroller = $("trackScroll");
+    const rows = [...document.querySelectorAll("#trackRows .tl-row")].map((row) => {
+      const rect = row.getBoundingClientRect();
+      const bar = row.querySelector(".tl-bar");
+      return {
+        code: row.dataset.row,
+        top: Math.round(rect.top * 100) / 100,
+        height: Math.round(rect.height * 100) / 100,
+        barLeft: bar ? Math.round(parseFloat(bar.style.left) * 100) / 100 : null,
+        barWidth: bar ? Math.round(parseFloat(bar.style.width) * 100) / 100 : null,
+      };
+    });
+    const info = [...document.querySelectorAll("#infoList .tl-info")].map((row) => {
+      const rect = row.getBoundingClientRect();
+      return { top: Math.round(rect.top * 100) / 100, height: Math.round(rect.height * 100) / 100 };
+    });
+    const payload = {
+      scale: state.scale,
+      canvasWidth: Math.round(parseFloat($("canvas").style.width) * 100) / 100,
+      viewport: { clientWidth: scroller.clientWidth, offsetWidth: scroller.offsetWidth },
+      scrollbar: {
+        vertical: scroller.offsetHeight - scroller.clientHeight,
+        pageGutter: window.innerWidth - document.documentElement.clientWidth,
+      },
+      axisHeight: Math.round($("axis").getBoundingClientRect().height * 100) / 100,
+      rows,
+      info,
+    };
+    const pre = document.createElement("pre");
+    pre.id = "geomdump";
+    pre.textContent = JSON.stringify(payload);
+    pre.style.cssText = "position:absolute;left:-99999px";
+    document.body.appendChild(pre);
+  }
+
+  if (params.get("selftest") === "1") runSelfTest();
+})();
+</script>
+</body>
+</html>
+<style>
+  /* ------------------------------------------------------------ 滚动条状态板 */
+  .sb-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 10px; }
+  .sb-card {
+    margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: linear-gradient(180deg, var(--surface), var(--surface-alt));
+    display: grid; grid-template-columns: minmax(0, 1fr) 26px; gap: 10px; align-items: stretch;
+  }
+  .sb-card figcaption { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .sb-card figcaption strong { font-size: 12px; }
+  .sb-card figcaption span { font-size: 10.5px; color: var(--text-muted); line-height: 1.35; }
+  .sb-track {
+    position: relative; width: 26px; border-radius: 999px; overflow: hidden;
+    background: var(--surface); border: 1px dashed var(--border-strong);
+  }
+  .sb-card[data-state="dragging"] .sb-track { background: color-mix(in srgb, var(--accent) 7%, var(--surface-alt)); }
+  .sb-thumb {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    width: 4px; height: 34px; border-radius: 999px;
+    background: rgba(44, 111, 181, 0.14);
+  }
+  .theme-dark .sb-thumb { background: rgba(90, 167, 234, 0.16); }
+  .sb-card[data-state="hover"] .sb-thumb { width: 6px; background: rgba(44, 111, 181, 0.32); }
+  .theme-dark .sb-card[data-state="hover"] .sb-thumb { background: rgba(90, 167, 234, 0.34); }
+  .sb-card[data-state="scrolling"] .sb-thumb { width: 10px; background: rgba(44, 111, 181, 0.55); }
+  .theme-dark .sb-card[data-state="scrolling"] .sb-thumb { background: rgba(90, 167, 234, 0.58); }
+  .sb-card[data-state="dragging"] .sb-thumb { width: 10px; background: rgba(44, 111, 181, 0.74); }
+  .theme-dark .sb-card[data-state="dragging"] .sb-thumb { background: rgba(90, 167, 234, 0.78); }
+
+  .sb-live { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+  .sb-live-box {
+    height: 168px; overflow-y: auto; padding: 10px 12px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border); background: var(--surface);
+    scrollbar-color: rgba(44, 111, 181, 0.42) transparent;
+  }
+  .sb-live-box p { margin: 0 0 6px; font-size: 11.5px; }
+  .sb-live-box p:first-child { font-weight: 600; font-size: 12px; }
+  .sb-live-box.filled { background: var(--surface); }
+  .theme-dark.sb-live-box { color-scheme: dark; }
+  .sb-live-box.is-win {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(44, 111, 181, 0.42) transparent;
+  }
+  .sb-live-box.is-win::-webkit-scrollbar { width: 10px; }
+  .sb-live-box.is-win::-webkit-scrollbar-track { background: rgba(24, 40, 56, 0.04); }
+  .sb-live-box.is-win::-webkit-scrollbar-thumb {
+    background: rgba(44, 111, 181, 0.42); border-radius: 999px;
+    border: 2px solid transparent; background-clip: padding-box;
+  }
+
+  .sb-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  .sb-table th, .sb-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .sb-table th { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+  .sb-table code { font-family: "SF Mono", ui-monospace, monospace; font-size: 10.5px; }
+</style>
