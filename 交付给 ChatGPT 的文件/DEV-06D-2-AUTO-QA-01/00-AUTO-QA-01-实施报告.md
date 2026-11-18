@@ -203,7 +203,7 @@ $ AUTOQA_WIDTH=1160 node scripts/timeline-autoqa.mjs http://127.0.0.1:1425/
 
 | 路径 | 行数/大小 | 作用 |
 |---|---|---|
-| `scripts/timeline-autoqa.mjs` | 596 行 | U6-D / U6-E / U7-B / U7-C 的浏览器自动化：夹具 IPC、几何测量、CDP 设 scrollLeft、截图、断言与观察项 |
+| `scripts/timeline-autoqa.mjs` | 630 行 | U6-D / U6-E / U7-B / U7-C 的浏览器自动化：夹具 IPC、几何测量、CDP 设 scrollLeft、截图、断言与观察项 |
 | `src/components/ProjectTimeline.refresh.test.tsx` | 328 行 | U7-B/C/D/E 组件测试 11 条 |
 | `docs/assets/dev06d-2-autoqa/01-容器900-滚动前.png` | 1160×1300 | 滚动前 |
 | `docs/assets/dev06d-2-autoqa/02-容器900-滚动后.png` | 1160×1300 | 滚动后 |
