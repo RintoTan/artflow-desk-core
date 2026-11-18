@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api, describeError, type TimezoneInfo } from "../bridge/commands";
 import { AppIconImage } from "../components/AppIconImage";
+import ConfirmDialog from "../components/ConfirmDialog";
+import { NavIcon } from "../components/NavIcon";
 import {
   DEFAULT_ICON_VARIANT,
   ICON_DESCRIPTION,
@@ -65,6 +67,7 @@ export default function SettingsPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
 
   const [themeDraft, setThemeDraft] = useState<ThemeChoice>(() => savedChoice());
   const [themeSaved, setThemeSaved] = useState<ThemeChoice>(() => savedChoice());
@@ -201,17 +204,26 @@ export default function SettingsPage() {
   const accentCheck = accent ? checkAccent(accent, resolved) : null;
 
   return (
-    <>
-      <section className="panel">
-        <header className="panel-head">
+    <div className="settings-page">
+      <header className="settings-head">
+        <NavIcon name="settings" className="settings-head-icon" />
+        <div>
+          <h1>设置</h1>
+          <p className="muted">配置应用的外观、工作区域与保存方式。</p>
+        </div>
+      </header>
+
+      <div className="settings-grid">
+      <div className="settings-col">
+      <section className="panel settings-module settings-appearance">
+        <header className="module-head">
           <div>
             <h2>外观</h2>
-            <p className="muted">
-              选择的是「模式」，实际外观由模式和系统共同决定。跟随系统时改的是系统的深色开关，
-              这里不会把当前外观记成你的选择。
-            </p>
+            <p className="muted">应用的整体视觉风格与主题模式。</p>
           </div>
         </header>
+        <div className="settings-appearance-body">
+        <div className="settings-appearance-controls">
 
         <div className="row">
           <span className="row-label">用户选择</span>
@@ -232,8 +244,6 @@ export default function SettingsPage() {
           </span>
         </div>
 
-        <div className="settings-modules">
-        <section className="settings-module">
         <div className="field">
           <span>主题模式</span>
           <div className="segmented" role="group" aria-label="主题模式">
@@ -252,8 +262,70 @@ export default function SettingsPage() {
           <p className="hint">切换会立刻预览，但只有点「保存设置」才会写入。</p>
         </div>
 
-        </section>
-        <section className="settings-module">
+        </div>
+        <div className="settings-preview" aria-hidden="true">
+          <span className="settings-preview-swatch" />
+          <span className="settings-preview-line" />
+          <span className="settings-preview-line short" />
+          <span className="settings-preview-chip" />
+        </div>
+        </div>
+      </section>
+      <section className="panel settings-module">
+        <header className="module-head">
+          <div>
+            <h2>工作时区</h2>
+            <p className="muted">
+              计划日期是日历日期，事件时间是真实时间点。修改时区不会改动已保存的时间点。
+            </p>
+          </div>
+        </header>
+
+        {info && (
+          <div className="row">
+            <span className="row-label">当前</span>
+            <span className="row-value mono">{info.workingTimezone}</span>
+          </div>
+        )}
+        {info && (
+          <div className="row">
+            <span className="row-label">系统时区</span>
+            <span className="row-value mono">
+              {info.systemTimezone}
+              {info.sameAsSystem ? "" : "（与工作时区不同）"}
+            </span>
+          </div>
+        )}
+
+        <div className="field">
+          <label htmlFor="tz">IANA 时区名称</label>
+          <input
+            id="tz"
+            list="tz-options"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            spellCheck={false}
+            placeholder="例如 Asia/Shanghai"
+          />
+          <datalist id="tz-options">
+            {COMMON_ZONES.map((zone) => (
+              <option key={zone} value={zone} />
+            ))}
+          </datalist>
+          <p className="hint">必须是有效的 IANA 名称；非法值会被拒绝保存。</p>
+        </div>
+      </section>
+
+      </div>
+
+      <div className="settings-col">
+      <section className="panel settings-module settings-accent">
+        <header className="module-head">
+          <div>
+            <h2>强调色</h2>
+            <p className="muted">用于按钮、选中状态等界面重点。</p>
+          </div>
+        </header>
         <div className="field">
           <label htmlFor="accent">
             <span>强调色</span>
@@ -299,8 +371,15 @@ export default function SettingsPage() {
           )}
         </div>
 
-        </section>
-        <section className="settings-module settings-module-wide">
+      </section>
+
+      <section className="panel settings-module settings-icons">
+        <header className="module-head">
+          <div>
+            <h2>应用图标</h2>
+            <p className="muted">只换应用内的品牌图形；Dock 与安装包图标不变。</p>
+          </div>
+        </header>
         <div className="field field-wide">
           <span>应用图标</span>
           <div className="icon-grid" role="group" aria-label="应用图标">
@@ -376,10 +455,33 @@ export default function SettingsPage() {
             原因与可选方案见 <code>docs/DEV06B-ICON-RESULTS.md</code>。
           </p>
         </div>
-        </section>
-        </div>
+      </section>
+      </div>
 
-        <div className="actions">
+      <section className="panel panel-quiet settings-module settings-module-full">
+        <h2>本阶段尚未提供的设置</h2>
+        <p className="muted">
+          启动页面、备份提醒等属于后续阶段，界面在此明确标注，不会用占位控件伪装成已实现功能。
+        </p>
+      </section>
+      </div>
+
+      <div className="settings-savebar">
+        <div className="settings-savebar-status">
+          {dirty ? (
+            <span className="hint">有未保存的修改。离开本页或关闭窗口会先问你。</span>
+          ) : (
+            <span className="muted">当前没有未保存的修改。</span>
+          )}
+          {message && <p className="notice notice-ok">{message}</p>}
+          {/* 保存失败必须被读屏念出来，否则用户会以为已经存上了 */}
+          {error && (
+            <p className="notice notice-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+        <div className="settings-savebar-actions">
           <button type="button" className="btn btn-primary" onClick={apply} disabled={busy || !dirty}>
             {busy ? "保存中…" : "保存设置"}
           </button>
@@ -397,81 +499,28 @@ export default function SettingsPage() {
           >
             放弃修改
           </button>
-          <button
-            type="button"
-            className="btn"
-            disabled={busy}
-            onClick={() => previewTheme({ ...DEFAULT_CHOICE })}
-          >
+          <button type="button" className="btn" disabled={busy} onClick={() => setResetOpen(true)}>
             恢复默认主题
           </button>
         </div>
-        {dirty && (
-          <p className="hint">
-            有未保存的修改。离开本页或关闭窗口会先问你。
-          </p>
-        )}
+      </div>
 
-        {message && <p className="notice notice-ok">{message}</p>}
-        {/* 保存失败必须被读屏念出来，否则用户会以为已经存上了 */}
-        {error && (
-          <p className="notice notice-error" role="alert">
-            {error}
-          </p>
-        )}
-      </section>
-
-      <section className="panel">
-        <header className="panel-head">
-          <div>
-            <h2>工作时区</h2>
-            <p className="muted">
-              计划日期是日历日期，事件时间是真实时间点。修改时区不会改动已保存的时间点。
-            </p>
-          </div>
-        </header>
-
-        {info && (
-          <div className="row">
-            <span className="row-label">当前</span>
-            <span className="row-value mono">{info.workingTimezone}</span>
-          </div>
-        )}
-        {info && (
-          <div className="row">
-            <span className="row-label">系统时区</span>
-            <span className="row-value mono">
-              {info.systemTimezone}
-              {info.sameAsSystem ? "" : "（与工作时区不同）"}
-            </span>
-          </div>
-        )}
-
-        <div className="field">
-          <label htmlFor="tz">IANA 时区名称</label>
-          <input
-            id="tz"
-            list="tz-options"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            spellCheck={false}
-            placeholder="例如 Asia/Shanghai"
-          />
-          <datalist id="tz-options">
-            {COMMON_ZONES.map((zone) => (
-              <option key={zone} value={zone} />
-            ))}
-          </datalist>
-          <p className="hint">必须是有效的 IANA 名称；非法值会被拒绝保存。</p>
-        </div>
-      </section>
-
-      <section className="panel panel-quiet">
-        <h2>本阶段尚未提供的设置</h2>
-        <p className="muted">
-          启动页面、备份提醒等属于后续阶段，界面在此明确标注，不会用占位控件伪装成已实现功能。
+      <ConfirmDialog
+        open={resetOpen}
+        title="恢复默认主题？"
+        confirmLabel="恢复默认"
+        cancelLabel="保留当前设置"
+        onCancel={() => setResetOpen(false)}
+        onConfirm={() => {
+          setResetOpen(false);
+          previewTheme({ ...DEFAULT_CHOICE });
+        }}
+      >
+        <p>
+          会把主题模式恢复为 「{MODE_LABEL[DEFAULT_CHOICE.mode]}」、强调色回到主题自带色，
+          并立即预览。它只改当前草稿，点「保存设置」后才写入；不点保存就离开会被询问。
         </p>
-      </section>
-    </>
+      </ConfirmDialog>
+    </div>
   );
 }

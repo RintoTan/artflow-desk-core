@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -101,6 +101,9 @@ describe("设置页主题编辑", () => {
     await screen.findByText("外观");
 
     await userEvent.click(screen.getByRole("button", { name: "恢复默认主题" }));
+    // 覆盖当前草稿属于有后果的操作，先在确认框里点「恢复默认」。
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "恢复默认" }));
 
     await waitFor(() => expect(currentChoice().mode).toBe("arctic"));
     expect(currentChoice().accent).toBeNull();
@@ -124,5 +127,30 @@ describe("设置页主题编辑", () => {
 
     const notice = await screen.findByText(/对比度/);
     expect(notice).toHaveClass("notice-warn");
+  });
+
+  it("恢复默认主题可以取消，取消后草稿保持不变", async () => {
+    themeInfo = { mode: "dark", accent: "#7b5cff", storedMode: "dark" };
+    resetThemeForTests();
+    await loadTheme();
+    const { default: SettingsPage } = await import("./SettingsPage");
+    render(<SettingsPage />);
+    await screen.findByText("外观");
+
+    await userEvent.click(screen.getByRole("button", { name: "恢复默认主题" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "保留当前设置" }));
+
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(currentChoice().mode).toBe("dark");
+    expect(currentChoice().accent).toBe("#7b5cff");
+  });
+
+  it("全页只有一处保存入口，模块按页头 + 双栏 + 保存栏组织", async () => {
+    await renderSettings();
+    expect(screen.getAllByRole("button", { name: "保存设置" })).toHaveLength(1);
+    expect(screen.getByRole("heading", { level: 1, name: "设置" })).toBeInTheDocument();
+    expect(document.querySelector(".settings-grid")).not.toBeNull();
+    expect(document.querySelectorAll(".settings-savebar")).toHaveLength(1);
   });
 });
