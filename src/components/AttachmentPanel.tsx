@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import ConfirmDialog from "./ConfirmDialog";
 import ImageViewer from "./ImageViewer";
 import { attachmentApi, describeError, type AttachmentView } from "../bridge/commands";
-import { partitionImagePaths } from "../lib/attachmentDrop";
+import {
+  decideDrop,
+  isInsideRect,
+  partitionImagePaths,
+  physicalToCss,
+} from "../lib/attachmentDrop";
 
 const STATE_LABEL: Record<string, string> = {
   ok: "正常",
@@ -39,8 +44,12 @@ export default function AttachmentPanel({
   /** 事件订阅只建一次，用 ref 指向最新实现，避免 orderId 变化后闭包过期。 */
   const importPathsRef = useRef<(paths: string[]) => Promise<void>>(async () => {});
   /** 同一次拖拽可能连发 drop；800ms 内只处理一次。 */
-  const lastDropAt = useRef(0);
-  const dropRef = useRef<(paths: string[]) => void>(() => {});
+  const lastDropAtRef = useRef(0);
+  /** 拖拽开始时的订单 id；期间切单就不导入。 */
+  const dragOrderIdRef = useRef<string | null>(null);
+  /** 最新的 orderId，供事件回调读取，避免闭包过期。 */
+  const orderIdRef = useRef(orderId);
+  orderIdRef.current = orderId;
 
   const load = useCallback(async () => {
     const list = await attachmentApi.list(orderId);
@@ -123,48 +132,67 @@ export default function AttachmentPanel({
 
   /**
    * 真实的文件拖拽由 Tauri 在窗口层接管，HTML5 drop 拿不到磁盘路径。
-   * 所以订阅 webview 的拖拽事件，再用落点是否在面板内决定高亮与接收。
    *
-   * 坐标容错：Tauri 给的 position 是物理像素，但不同版本/缩放设置下
-   * 可能已经是逻辑像素。这里两种刻度都试，并对齐到详情面板的矩形，
-   * 避免"拖到面板上却因为坐标差一倍而毫无反应"。
+   * 坐标口径（以 @tauri-apps/api 的类型定义为准）：`position` 是**物理像素**，
+   * 相对 webview 左上角。所以统一除以 devicePixelRatio 换算到 CSS 像素，
+   * 再和 `sectionRef` 的 rect 比较——只有这个矩形是合法投放区。
    */
   useEffect(() => {
     let dispose: (() => void) | null = null;
-    const hits = (position: { x: number; y: number } | undefined) => {
+
+    const rectOf = () => {
       const node = sectionRef.current;
-      if (!node || !position) return false;
-      const panel = node.closest(".orders-detail") ?? node;
-      const rects = [node.getBoundingClientRect(), panel.getBoundingClientRect()];
-      const scales = [1, window.devicePixelRatio || 1];
-      return rects.some((r) =>
-        scales.some((scale) => {
-          const x = position.x / scale;
-          const y = position.y / scale;
-          const pad = 8;
-          return (
-            x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad
-          );
-        }),
-      );
+      if (!node) return null;
+      const r = node.getBoundingClientRect();
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    };
+
+    const handle = (payload: DragDropEvent) => {
+      const dpr = window.devicePixelRatio || 1;
+      if (payload.type === "enter" || payload.type === "over") {
+        // 只在拖拽的第一次事件里记住订单：期间切单不覆盖，drop 时才能发现串单。
+        if (dragOrderIdRef.current === null) dragOrderIdRef.current = orderIdRef.current;
+        setDragActive(isInsideRect(physicalToCss(payload.position, dpr), rectOf()));
+        return;
+      }
+      if (payload.type === "leave") {
+        dragOrderIdRef.current = null;
+        setDragActive(false);
+        return;
+      }
+
+      const decision = decideDrop({
+        position: payload.position,
+        devicePixelRatio: dpr,
+        rect: rectOf(),
+        paths: payload.paths,
+        dragOrderId: dragOrderIdRef.current,
+        activeOrderId: orderIdRef.current,
+        now: Date.now(),
+        lastDropAt: lastDropAtRef.current,
+      });
+
+      setDragActive(false);
+      dragOrderIdRef.current = null;
+      if (decision.import) {
+        lastDropAtRef.current = Date.now();
+        void importPathsRef.current(decision.paths);
+        return;
+      }
+      // 只在"本来可以导、但没导成"的情况下提示；落到别处就安静地不做。
+      if (decision.reason === "order-changed") {
+        onError("拖拽期间切换了订单，这次没有导入。请对着当前订单重新拖一次。");
+      } else if (decision.reason === "no-paths") {
+        onError("没有拿到文件路径：请从 Finder 直接拖到参考图片面板，或点「选择图片」。");
+      } else if (decision.reason === "missing-position") {
+        onNotice("无法判断落点，没有导入。请把文件拖到参考图片面板中间再松手。");
+      }
     };
 
     try {
       const webview = getCurrentWebview();
       void webview
-        .onDragDropEvent((event) => {
-          const payload = event.payload;
-          if (payload.type === "over") {
-            setDragActive(hits(payload.position));
-          } else if (payload.type === "leave") {
-            setDragActive(false);
-          } else if (payload.type === "drop") {
-            // 只有打开着订单时这个面板才会订阅，所以 `drop` 本身就是"给我"的意图；
-            // 坐标判定只用来决定高亮，不再作为是否导入的闸门。
-            setDragActive(false);
-            dropRef.current(payload.paths);
-          }
-        })
+        .onDragDropEvent((event) => handle(event.payload))
         .then((unlisten) => {
           dispose = unlisten;
         })
@@ -176,20 +204,12 @@ export default function AttachmentPanel({
     }
     return () => {
       dispose?.();
+      dragOrderIdRef.current = null;
+      setDragActive(false);
     };
   }, []);
 
   importPathsRef.current = importPaths;
-  dropRef.current = (paths) => {
-    const now = Date.now();
-    if (now - lastDropAt.current < 800) return;
-    lastDropAt.current = now;
-    if (paths.length === 0) {
-      onError("没有拿到文件路径：请从 Finder 直接拖到面板上，或点「选择图片」。");
-      return;
-    }
-    void importPathsRef.current(paths);
-  };
 
   async function verifyAll() {
     setBusy(true);
@@ -266,7 +286,10 @@ export default function AttachmentPanel({
   const current = viewerIndex !== null ? items[viewerIndex] ?? null : null;
 
   return (
-    <section className="panel">
+    <section
+      ref={sectionRef}
+      className={`panel attach-panel${dragActive ? " is-drop-target" : ""}`}
+    >
       <header className="panel-head compact">
         <div>
           <h2>参考图片</h2>
