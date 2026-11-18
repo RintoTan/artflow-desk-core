@@ -38,6 +38,9 @@ export default function AttachmentPanel({
   const sectionRef = useRef<HTMLElement | null>(null);
   /** 事件订阅只建一次，用 ref 指向最新实现，避免 orderId 变化后闭包过期。 */
   const importPathsRef = useRef<(paths: string[]) => Promise<void>>(async () => {});
+  /** 同一次拖拽可能连发 drop；800ms 内只处理一次。 */
+  const lastDropAt = useRef(0);
+  const dropRef = useRef<(paths: string[]) => void>(() => {});
 
   const load = useCallback(async () => {
     const list = await attachmentApi.list(orderId);
@@ -121,17 +124,29 @@ export default function AttachmentPanel({
   /**
    * 真实的文件拖拽由 Tauri 在窗口层接管，HTML5 drop 拿不到磁盘路径。
    * 所以订阅 webview 的拖拽事件，再用落点是否在面板内决定高亮与接收。
+   *
+   * 坐标容错：Tauri 给的 position 是物理像素，但不同版本/缩放设置下
+   * 可能已经是逻辑像素。这里两种刻度都试，并对齐到详情面板的矩形，
+   * 避免"拖到面板上却因为坐标差一倍而毫无反应"。
    */
   useEffect(() => {
     let dispose: (() => void) | null = null;
-    const inside = (position?: { x: number; y: number }) => {
+    const hits = (position: { x: number; y: number } | undefined) => {
       const node = sectionRef.current;
       if (!node || !position) return false;
-      const scale = window.devicePixelRatio || 1;
-      const x = position.x / scale;
-      const y = position.y / scale;
-      const r = node.getBoundingClientRect();
-      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+      const panel = node.closest(".orders-detail") ?? node;
+      const rects = [node.getBoundingClientRect(), panel.getBoundingClientRect()];
+      const scales = [1, window.devicePixelRatio || 1];
+      return rects.some((r) =>
+        scales.some((scale) => {
+          const x = position.x / scale;
+          const y = position.y / scale;
+          const pad = 8;
+          return (
+            x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad
+          );
+        }),
+      );
     };
 
     try {
@@ -140,15 +155,14 @@ export default function AttachmentPanel({
         .onDragDropEvent((event) => {
           const payload = event.payload;
           if (payload.type === "over") {
-            setDragActive(inside(payload.position));
+            setDragActive(hits(payload.position));
           } else if (payload.type === "leave") {
             setDragActive(false);
           } else if (payload.type === "drop") {
-            const hit = inside(payload.position);
+            // 只有打开着订单时这个面板才会订阅，所以 `drop` 本身就是"给我"的意图；
+            // 坐标判定只用来决定高亮，不再作为是否导入的闸门。
             setDragActive(false);
-            if (hit && payload.paths.length > 0) {
-              void importPathsRef.current(payload.paths);
-            }
+            dropRef.current(payload.paths);
           }
         })
         .then((unlisten) => {
@@ -166,6 +180,16 @@ export default function AttachmentPanel({
   }, []);
 
   importPathsRef.current = importPaths;
+  dropRef.current = (paths) => {
+    const now = Date.now();
+    if (now - lastDropAt.current < 800) return;
+    lastDropAt.current = now;
+    if (paths.length === 0) {
+      onError("没有拿到文件路径：请从 Finder 直接拖到面板上，或点「选择图片」。");
+      return;
+    }
+    void importPathsRef.current(paths);
+  };
 
   async function verifyAll() {
     setBusy(true);

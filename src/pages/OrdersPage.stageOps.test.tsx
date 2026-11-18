@@ -271,4 +271,22 @@ describe("订单详情的阶段操作入口", () => {
     expect(within(dialog).getByText(`推进到「${long}」`)).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "确认推进" })).toBeVisible();
   });
+
+  it("详情工作区把资料/附件放主列，阶段与辅助信息放辅列", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getAllByText("双人插画").length).toBeGreaterThan(0));
+
+    const main = await waitFor(() => {
+      const node = document.querySelector(".detail-col-main");
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    const side = document.querySelector(".detail-col-side") as HTMLElement | null;
+    expect(side).not.toBeNull();
+    expect(main.textContent).toContain("资料");
+    expect(main.textContent).toContain("把参考图片拖到这里");
+    expect(side?.textContent).toContain("制作流程");
+    // 两列是兄弟节点，窄了由容器查询改成上下排列，模块本身不卸载。
+    expect(main?.parentElement).toBe(side?.parentElement);
+  });
 });

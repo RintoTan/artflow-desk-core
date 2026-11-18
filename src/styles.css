@@ -711,6 +711,33 @@ code.mono {
   flex-direction: column;
   gap: 14px;
   min-width: 0;
+  /* 详情自己当容器：分不分栏只看详情区还剩多少宽，和窗口宽度无关。 */
+  container-type: inline-size;
+  container-name: detail;
+}
+
+/* 主内容（资料 / 附件）与辅助内容（排期 / 阶段 / 历史）。
+   单栏时两者按主→辅顺序纵向排列，模块不卸载，表单草稿不受影响。 */
+.detail-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.detail-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* 860px 以下主内容只剩 ~480px，表单会开始挤，保持单栏。 */
+@container detail (min-width: 860px) {
+  .detail-columns {
+    grid-template-columns: minmax(0, 1.62fr) minmax(0, 1fr);
+    gap: 16px;
+  }
 }
 
 /* 内容区不够放两栏时改成上下堆叠：列表在上（限高可滚），详情在下。

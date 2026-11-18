@@ -702,6 +702,31 @@ const expression = `(() => {
 
       };
     })(),
+    // 详情工作区：主/辅两列是否真的并排、各自多宽（给 U8 留证据）。
+    detailLayout: (() => {
+      const wrap = document.querySelector(".orders-detail");
+      const grid = document.querySelector(".detail-columns");
+      if (!wrap || !grid) return null;
+      const r = (el) => {
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        return { x: Math.round(b.x), w: Math.round(b.width), h: Math.round(b.height) };
+      };
+      const main = document.querySelector(".detail-col-main");
+      const side = document.querySelector(".detail-col-side");
+      const cs = getComputedStyle(grid);
+      return {
+        container: r(wrap),
+        columns: cs.gridTemplateColumns,
+        twoColumn: cs.gridTemplateColumns.trim().indexOf(" ") > 0,
+        main: r(main),
+        side: r(side),
+        sideIsRightOfMain:
+          main && side
+            ? side.getBoundingClientRect().left >= main.getBoundingClientRect().right - 1
+            : null,
+      };
+    })(),
     viewport: { w: window.innerWidth, h: window.innerHeight },
     bodyText: document.body.innerText.slice(0, 1200),
   };

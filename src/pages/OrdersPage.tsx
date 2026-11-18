@@ -1233,8 +1233,10 @@ export default function OrdersPage() {
               )}
             </section>
 
-            <ScheduleOverview order={detail} today={scheduleToday} timeZone={timezone} />
-
+            {/* 详情工作区：容器够宽时拆成主内容（资料/附件）与辅助内容（阶段/排期/历史）。
+                用 container query 判断，不看窗口宽度；窄了退回单列，模块不卸载、草稿不丢。 */}
+            <div className="detail-columns">
+            <div className="detail-col detail-col-main">
             <section className="panel">
               <header className="panel-head compact">
                 <h2>资料</h2>
@@ -1275,6 +1277,10 @@ export default function OrdersPage() {
               onError={setError}
               onNotice={setNotice}
             />
+            </div>
+
+            <div className="detail-col detail-col-side">
+            <ScheduleOverview order={detail} today={scheduleToday} timeZone={timezone} />
 
             <StagePanel
               order={detail}
@@ -1284,6 +1290,8 @@ export default function OrdersPage() {
             />
 
             <EventTimeline events={events} formatTime={formatTime} />
+            </div>
+            </div>
           </>
         )}
 
