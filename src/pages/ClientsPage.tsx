@@ -435,6 +435,9 @@ export default function ClientsPage() {
           </section>
         ) : (
           <>
+            {/* 宽屏：资料在左，概览与标签在右；窄屏自动单列，草稿不受影响。 */}
+            <div className="client-columns">
+            <div className="client-col client-col-main">
             <section className="panel">
               <header className="panel-head">
                 <div>
@@ -496,7 +499,9 @@ export default function ClientsPage() {
                 </button>
               </div>
             </section>
+            </div>
 
+            <div className="client-col client-col-side">
             <section className="panel">
               <header className="panel-head compact">
                 <h2>客户概览</h2>
@@ -624,6 +629,8 @@ export default function ClientsPage() {
                 </details>
               )}
             </section>
+            </div>
+            </div>
 
             <section className="panel">
               <header className="panel-head compact">

@@ -199,15 +199,29 @@ export default function StatsPage() {
 
   return (
     <>
-      <section className="panel">
-        <header className="panel-head">
-          <div>
-            <h2>历史统计</h2>
+      <section className="panel stats-overview">
+        <header className="stats-toolbar">
+          <div className="stats-heading">
+            <h1 className="page-title">历史统计</h1>
             <p className="muted">
-              {report.fromMonth} ~ {report.toMonth} · {report.timezone} · 按自然月
+              {report.fromMonth} ~ {report.toMonth} · {report.timezone} · 按自然月 ·
+              完成与取消按事件时间计入
             </p>
           </div>
-          <div className="attach-actions">
+          <div className="stats-tools">
+            <div className="segmented" role="group" aria-label="统计范围">
+              {RANGES.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`filter-chip${range === item.key ? " filter-chip-active" : ""}`}
+                  aria-pressed={range === item.key}
+                  onClick={() => switchRange(item.key)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
             <button
               type="button"
               className="btn btn-sm"
@@ -219,29 +233,15 @@ export default function StatsPage() {
           </div>
         </header>
 
-        <div className="segmented" role="group" aria-label="统计范围">
-          {RANGES.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              className={`filter-chip${range === item.key ? " filter-chip-active" : ""}`}
-              aria-pressed={range === item.key}
-              onClick={() => switchRange(item.key)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-
         {error && <p className="notice notice-error">{error}</p>}
         {notice && <p className="notice notice-ok">{notice}</p>}
 
-        <div className="metric-grid compact-metrics">
+        <div className="kpi-grid">
           <div className="metric-card tone-plain">
             <span className="metric-value">{report.totals.created}</span>
             <span className="metric-label">新建次数</span>
           </div>
-          <div className="metric-card tone-accent">
+          <div className="metric-card tone-plain">
             <span className="metric-value">{report.totals.completed}</span>
             <span className="metric-label">完成次数</span>
           </div>
@@ -280,7 +280,12 @@ export default function StatsPage() {
           <p className="muted">这个区间内还没有任何事件。</p>
         ) : (
           <>
-            <div className="chart-frame" ref={attachFrame} data-mode={mode}>
+            <div
+              className="chart-frame"
+              ref={attachFrame}
+              data-mode={mode}
+              data-single={report.months.length === 1 ? "true" : "false"}
+            >
               {(mode === "single" ? [report.months] : chunk(report.months, MONTHS_PER_ROW)).map(
                 (rowMonths, rowIndex) => (
                   <div className="chart-row" key={rowIndex}>
@@ -392,12 +397,12 @@ export default function StatsPage() {
             {report.months.map((bucket: MonthBucket) => (
               <tr key={bucket.month}>
                 <td className="mono">{bucket.month}</td>
-                <td>{bucket.created}</td>
-                <td>{bucket.completed}</td>
-                <td>{bucket.cancelled}</td>
-                <td>{yuan(bucket.amountCents)}</td>
-                <td>{bucket.knownOrders}</td>
-                <td>{bucket.unknownOrders}</td>
+                <td className="num">{bucket.created}</td>
+                <td className="num">{bucket.completed}</td>
+                <td className="num">{bucket.cancelled}</td>
+                <td className="num">{yuan(bucket.amountCents)}</td>
+                <td className="num">{bucket.knownOrders}</td>
+                <td className="num">{bucket.unknownOrders}</td>
               </tr>
             ))}
           </tbody>

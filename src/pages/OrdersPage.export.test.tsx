@@ -203,4 +203,36 @@ describe("订单明细导出", () => {
     await waitFor(() => expect(screen.getByText(/磁盘只读/)).toBeInTheDocument());
     expect(screen.queryByText(/已导出/)).not.toBeInTheDocument();
   });
+
+  it("手动选择：零选择禁用导出，搜索不清空已勾选，最终只传勾选的 ID", async () => {
+    const user = userEvent.setup();
+    saveDialog.mockResolvedValueOnce("/tmp/pick.csv");
+    await setup();
+    await user.click(screen.getByRole("button", { name: "导出" }));
+    await screen.findByRole("alertdialog");
+    await user.click(screen.getByRole("radio", { name: /手动选择订单/ }));
+
+    expect(screen.getByRole("button", { name: "导出 CSV" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "选择订单…" }));
+    await screen.findByText("选择要导出的订单");
+    await user.click(screen.getByRole("checkbox", { name: "选择订单 AF-2026-0001" }));
+
+    // 搜索到另一张单，已勾选的甲仍然保留
+    await user.type(screen.getByLabelText("搜索要导出的订单"), "乙");
+    expect(screen.queryByRole("checkbox", { name: "选择订单 AF-2026-0001" })).toBeNull();
+    await user.click(screen.getByRole("checkbox", { name: "选择订单 AF-2026-0002" }));
+    expect(screen.getByText(/已选 2 条/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "使用选中的 2 条" }));
+    expect(await screen.findByText(/已选 2 条/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "导出 CSV" }));
+
+    await waitFor(() => expect(exportOrders).toHaveBeenCalledTimes(1));
+    expect(exportOrders).toHaveBeenCalledWith({
+      path: "/tmp/pick.csv",
+      scope: "filtered",
+      orderIds: ["o1", "o2"],
+    });
+  });
 });

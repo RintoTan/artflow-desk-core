@@ -219,7 +219,24 @@ export default function OrdersPage() {
   const [clientFilter, setClientFilter] = useState<string | null>(null);
   const [boardCommit, setBoardCommit] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
-  const [exportScope, setExportScope] = useState<"filtered" | "all">("filtered");
+  const [exportScope, setExportScope] = useState<"filtered" | "all" | "selected">("filtered");
+  /** 手动导出：只认这份 id 集合，和列表当前渲染无关。 */
+  const [pickedIds, setPickedIds] = useState<string[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState("");
+
+  const pickerOrders = (() => {
+    const q = pickerQuery.trim().toLowerCase();
+    if (!q) return orders;
+    return orders.filter((order) =>
+      [order.title, order.code, order.clientName ?? ""].some((field) =>
+        field.toLowerCase().includes(q),
+      ),
+    );
+  })();
+
+  const togglePick = (id: string) =>
+    setPickedIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
   const [params] = useSearchParams();
   const searchKey = params.toString();
   const [density, setDensity] = useState<ListDensity>("comfortable");
@@ -1302,12 +1319,18 @@ export default function OrdersPage() {
         open={exportOpen}
         title="导出订单明细 CSV"
         confirmLabel="导出 CSV"
+        confirmDisabled={exportScope === "selected" && pickedIds.length === 0}
         busy={busy}
         error={null}
         onCancel={() => setExportOpen(false)}
         onConfirm={async () => {
           const scope = exportScope;
-          const ids = visible.map((order) => order.id);
+          const ids =
+            scope === "selected"
+              ? [...pickedIds]
+              : scope === "filtered"
+                ? visible.map((order) => order.id)
+                : [];
           setExportOpen(false);
           try {
             const path = await save({
@@ -1320,8 +1343,10 @@ export default function OrdersPage() {
             setBusy(true);
             const result = await statsApi.exportOrders({
               path,
-              scope,
-              orderIds: scope === "filtered" ? ids : [],
+              // 后端只认 all / filtered；手动选择是"显式 id 的 filtered"，
+              // 协议与 CSV 字段都没变，汇总行仍写"当前筛选结果（N 条）"。
+              scope: scope === "all" ? "all" : "filtered",
+              orderIds: scope === "all" ? [] : ids,
             });
             setNotice(`已导出 ${result.rows} 条订单到 ${result.path}`);
           } catch (e) {
@@ -1356,6 +1381,85 @@ export default function OrdersPage() {
           />
           <span>全部订单（{orders.length} 条）</span>
         </label>
+        <label className="radio-row">
+          <input
+            type="radio"
+            name="export-scope"
+            checked={exportScope === "selected"}
+            onChange={() => setExportScope("selected")}
+          />
+          <span>手动选择订单（已选 {pickedIds.length} 条）</span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              setExportOpen(false);
+              setPickerOpen(true);
+            }}
+          >
+            选择订单…
+          </button>
+        </label>
+        {exportScope === "selected" && pickedIds.length === 0 && (
+          <p className="hint">还没有选任何订单，先点「选择订单…」。</p>
+        )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pickerOpen}
+        title="选择要导出的订单"
+        confirmLabel={`使用选中的 ${pickedIds.length} 条`}
+        confirmDisabled={pickedIds.length === 0}
+        onCancel={() => {
+          setPickerOpen(false);
+          setExportOpen(true);
+        }}
+        onConfirm={() => {
+          setPickerOpen(false);
+          setExportScope("selected");
+          setExportOpen(true);
+        }}
+      >
+        <input
+          className="list-search"
+          value={pickerQuery}
+          onChange={(e) => setPickerQuery(e.target.value)}
+          placeholder="搜索标题 / 编号 / 客户"
+          aria-label="搜索要导出的订单"
+        />
+        <p className="muted">
+          已选 {pickedIds.length} 条 · 改变搜索不会清空已勾选的订单
+        </p>
+        <div className="pick-list" role="group" aria-label="可选订单">
+          {pickerOrders.length === 0 ? (
+            <p className="muted">没有匹配的订单。</p>
+          ) : (
+            pickerOrders.map((order) => (
+              <label key={order.id} className="pick-row">
+                <input
+                  type="checkbox"
+                  aria-label={`选择订单 ${order.code}`}
+                  checked={pickedIds.includes(order.id)}
+                  onChange={() => togglePick(order.id)}
+                />
+                <span className="pick-title">{order.title}</span>
+                <span className="pick-meta">
+                  {order.code} · {order.clientName ?? "未指定客户"}
+                </span>
+              </label>
+            ))
+          )}
+        </div>
+        <div className="actions">
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={pickedIds.length === 0}
+            onClick={() => setPickedIds([])}
+          >
+            清空选择
+          </button>
+        </div>
       </ConfirmDialog>
 
       <ConfirmDialog
@@ -1597,6 +1701,21 @@ function ActionBar({
   const caps = order.capabilities;
   /** 阶段入口只在真的无路可走时禁用：最后一个阶段仍可返工，不能因此把入口关掉。 */
   const stageEntryBlocked = stageEntryBlockedReason(order);
+  /** 中等/窄容器里把次级生命周期操作收进菜单，避免两组按钮各占一行。 */
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const [compact, setCompact] = useState(false);
+
+  useEffect(() => {
+    const node = barRef.current;
+    // jsdom 没有 ResizeObserver：测试环境保持宽布局，不抛错。
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? 0;
+      setCompact(width > 0 && width < 620);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   const lifecycleCall = (
     fn: (input: {
@@ -1604,95 +1723,128 @@ function ActionBar({
       expectedRevision: number;
       requestId?: string | null;
     }) => Promise<OrderView>,
-    order: OrderView,
+    target: OrderView,
     prefix: string,
   ) =>
     fn({
-      orderId: order.id,
-      expectedRevision: order.revision,
+      orderId: target.id,
+      expectedRevision: target.revision,
       requestId: newRequestId(prefix),
     });
 
+  const startButton = (
+    <button
+      type="button"
+      className={`btn${caps.canStartWork ? " btn-primary" : ""}`}
+      disabled={busy || !caps.canStartWork}
+      title={caps.canStartWork ? "" : "只有活动且未开工的订单可以开始制作"}
+      onClick={() => void onRun("已开始制作", (o) => lifecycleCall(api.startWork, o, "start"))}
+    >
+      开始制作
+    </button>
+  );
+
+  const undoButton = (
+    <button
+      type="button"
+      className="btn"
+      disabled={busy || !caps.canUndoStartWork}
+      title={caps.undoBlockedReason ?? ""}
+      onClick={() => void onRun("已撤销开工", (o) => lifecycleCall(api.undoStartWork, o, "undo-start"))}
+    >
+      撤销开工
+    </button>
+  );
+
+  const stageButton = (
+    <button
+      type="button"
+      className={`btn${!caps.canStartWork && caps.canAdvance ? " btn-primary" : ""}`}
+      disabled={busy || stageEntryBlocked !== null}
+      title={stageEntryBlocked ?? "推进到下一阶段，或返工到更早阶段"}
+      onClick={onOpenStage}
+    >
+      推进阶段…
+    </button>
+  );
+
+  const completeButton = (
+    <button
+      type="button"
+      className="btn"
+      disabled={busy || !caps.canComplete}
+      title={caps.canComplete ? "" : "必须已开工且位于最后一个阶段"}
+      onClick={() =>
+        onRequest({
+          title: "完成订单",
+          detail: "完成后会锁定制作流程与开工状态，只能在确认后重新打开。",
+          confirmLabel: "确认完成",
+          run: () => onRun("订单已完成", (o) => lifecycleCall(api.completeOrder, o, "complete")),
+        })
+      }
+    >
+      完成
+    </button>
+  );
+
+  const cancelButton = (
+    <button
+      type="button"
+      className="btn btn-quiet-danger"
+      disabled={busy || !caps.canCancel}
+      onClick={onCancelOrder}
+    >
+      取消订单…
+    </button>
+  );
+
+  const reopenButton = (
+    <button
+      type="button"
+      className="btn"
+      disabled={busy || !caps.canReopen}
+      title={caps.canReopen ? "" : "只有已完成或已取消的订单可以重新打开"}
+      onClick={() =>
+        onRequest({
+          title: "重新打开订单",
+          detail: "订单将回到活动状态并加入队列末尾，保留当前阶段与开工记录。",
+          confirmLabel: "确认重新打开",
+          run: () => onRun("订单已重新打开", (o) => lifecycleCall(api.reopenOrder, o, "reopen")),
+        })
+      }
+    >
+      重新打开
+    </button>
+  );
+
   return (
-    <div className="action-bar">
+    <div className="action-bar" ref={barRef}>
       <div className="action-group" role="group" aria-label="制作进度">
-      <button
-        type="button"
-        className={`btn${caps.canStartWork ? " btn-primary" : ""}`}
-        disabled={busy || !caps.canStartWork}
-        title={caps.canStartWork ? "" : "只有活动且未开工的订单可以开始制作"}
-        onClick={() => void onRun("已开始制作", (o) => lifecycleCall(api.startWork, o, "start"))}
-      >
-        开始制作
-      </button>
-
-      <button
-        type="button"
-        className="btn"
-        disabled={busy || !caps.canUndoStartWork}
-        title={caps.undoBlockedReason ?? ""}
-        onClick={() =>
-          void onRun("已撤销开工", (o) => lifecycleCall(api.undoStartWork, o, "undo-start"))
-        }
-      >
-        撤销开工
-      </button>
-
-      <button
-        type="button"
-        className={`btn${!caps.canStartWork && caps.canAdvance ? " btn-primary" : ""}`}
-        disabled={busy || stageEntryBlocked !== null}
-        title={stageEntryBlocked ?? "推进到下一阶段，或返工到更早阶段"}
-        onClick={onOpenStage}
-      >
-        推进阶段…
-      </button>
+        {startButton}
+        {compact ? null : undoButton}
+        {stageButton}
       </div>
 
-      <div className="action-group action-group-end" role="group" aria-label="订单状态">
-      <button
-        type="button"
-        className="btn"
-        disabled={busy || !caps.canComplete}
-        title={caps.canComplete ? "" : "必须已开工且位于最后一个阶段"}
-        onClick={() =>
-          onRequest({
-            title: "完成订单",
-            detail: "完成后会锁定制作流程与开工状态，只能在确认后重新打开。",
-            confirmLabel: "确认完成",
-            run: () => onRun("订单已完成", (o) => lifecycleCall(api.completeOrder, o, "complete")),
-          })
-        }
-      >
-        完成
-      </button>
-
-      <button
-        type="button"
-        className="btn btn-quiet-danger"
-        disabled={busy || !caps.canCancel}
-        onClick={onCancelOrder}
-      >
-        取消订单…
-      </button>
-
-      <button
-        type="button"
-        className="btn"
-        disabled={busy || !caps.canReopen}
-        title={caps.canReopen ? "" : "只有已完成或已取消的订单可以重新打开"}
-        onClick={() =>
-          onRequest({
-            title: "重新打开订单",
-            detail: "订单将回到活动状态并加入队列末尾，保留当前阶段与开工记录。",
-            confirmLabel: "确认重新打开",
-            run: () => onRun("订单已重新打开", (o) => lifecycleCall(api.reopenOrder, o, "reopen")),
-          })
-        }
-      >
-        重新打开
-      </button>
-      </div>
+      {compact ? (
+        <div className="action-group" role="group" aria-label="其它订单操作">
+          {caps.canComplete ? completeButton : null}
+          <details className="action-more">
+            <summary className="btn">更多操作</summary>
+            <div className="action-more-menu" role="menu" aria-label="更多订单操作">
+              {undoButton}
+              {completeButton}
+              {cancelButton}
+              {reopenButton}
+            </div>
+          </details>
+        </div>
+      ) : (
+        <div className="action-group" role="group" aria-label="订单状态">
+          {completeButton}
+          {cancelButton}
+          {reopenButton}
+        </div>
+      )}
 
       {onDirtyGuard() && (
         <span className="muted action-hint">资料有未保存修改，生命周期操作不受影响</span>

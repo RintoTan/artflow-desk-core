@@ -34,17 +34,9 @@ import {
   type ThemeChoice,
   type ThemeMode,
 } from "../lib/theme";
+import { resolveZone, searchZones, zoneLabel } from "../lib/timezones";
 
-const COMMON_ZONES = [
-  "Asia/Shanghai",
-  "Asia/Tokyo",
-  "Asia/Singapore",
-  "Europe/London",
-  "Europe/Berlin",
-  "America/New_York",
-  "America/Los_Angeles",
-  "UTC",
-];
+const TZ_RESULTS_LIMIT = 8;
 
 /** 离页提示要说清"哪些东西还没存"，否则用户不知道关掉会丢什么。 */
 function dirtyLabel(parts: { timezoneDirty: boolean; themeDirty: boolean; iconDirty: boolean }) {
@@ -68,6 +60,8 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
+  const [tzOpen, setTzOpen] = useState(false);
+  const [tzActive, setTzActive] = useState(0);
 
   const [themeDraft, setThemeDraft] = useState<ThemeChoice>(() => savedChoice());
   const [themeSaved, setThemeSaved] = useState<ThemeChoice>(() => savedChoice());
@@ -126,6 +120,7 @@ export default function SettingsPage() {
     normalizeAccent(themeDraft.accent) !== normalizeAccent(themeSaved.accent);
   const iconDirty = iconDraft !== iconSaved;
   const dirty = timezoneDirty || themeDirty || iconDirty;
+  const tzResults = searchZones(draft).slice(0, TZ_RESULTS_LIMIT);
   themeDirtyRef.current = themeDirty;
   iconDirtyRef.current = iconDirty;
 
@@ -297,22 +292,71 @@ export default function SettingsPage() {
           </div>
         )}
 
-        <div className="field">
-          <label htmlFor="tz">IANA 时区名称</label>
+        <div className="field tz-field">
+          <label htmlFor="tz">工作时区</label>
           <input
             id="tz"
-            list="tz-options"
+            role="combobox"
+            aria-expanded={tzOpen}
+            aria-controls="tz-listbox"
+            aria-autocomplete="list"
+            aria-activedescendant={tzOpen ? `tz-option-${tzActive}` : undefined}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              setTzActive(0);
+              setTzOpen(true);
+            }}
+            onFocus={() => setTzOpen(true)}
+            onBlur={() => window.setTimeout(() => setTzOpen(false), 140)}
+            onKeyDown={(e) => {
+              const results = tzResults;
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setTzOpen(true);
+                setTzActive((i) => Math.min(i + 1, Math.max(results.length - 1, 0)));
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setTzActive((i) => Math.max(i - 1, 0));
+              } else if (e.key === "Enter" && tzOpen && results[tzActive]) {
+                e.preventDefault();
+                setDraft(results[tzActive].iana);
+                setTzOpen(false);
+              } else if (e.key === "Escape") {
+                setTzOpen(false);
+              }
+            }}
             spellCheck={false}
-            placeholder="例如 Asia/Shanghai"
+            autoComplete="off"
+            placeholder="搜索城市、地区或 IANA，例如 上海 / Tokyo"
           />
-          <datalist id="tz-options">
-            {COMMON_ZONES.map((zone) => (
-              <option key={zone} value={zone} />
-            ))}
-          </datalist>
-          <p className="hint">必须是有效的 IANA 名称；非法值会被拒绝保存。</p>
+          {tzOpen && tzResults.length > 0 && (
+            <ul id="tz-listbox" className="tz-list" role="listbox" aria-label="时区候选">
+              {tzResults.map((zone, index) => (
+                <li key={zone.iana}>
+                  <button
+                    type="button"
+                    id={`tz-option-${index}`}
+                    role="option"
+                    aria-selected={index === tzActive}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setDraft(zone.iana);
+                      setTzOpen(false);
+                    }}
+                  >
+                    <span className="tz-name">{zone.zh} · {zone.city}</span>
+                    <span className="tz-meta">{zoneLabel(zone.iana)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="hint">
+            {resolveZone(draft)
+              ? `将保存为 ${resolveZone(draft)} · ${zoneLabel(resolveZone(draft) as string)}`
+              : "不是有效的 IANA 时区；保存会被拒绝。可以按城市名搜索。"}
+          </p>
         </div>
       </section>
 
@@ -482,7 +526,13 @@ export default function SettingsPage() {
           )}
         </div>
         <div className="settings-savebar-actions">
-          <button type="button" className="btn btn-primary" onClick={apply} disabled={busy || !dirty}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={apply}
+            disabled={busy || !dirty || !resolveZone(draft)}
+            title={resolveZone(draft) ? "" : "工作时区不是有效的 IANA 名称，先改好再保存"}
+          >
             {busy ? "保存中…" : "保存设置"}
           </button>
           <button

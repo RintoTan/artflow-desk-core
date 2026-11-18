@@ -153,4 +153,24 @@ describe("设置页主题编辑", () => {
     expect(document.querySelector(".settings-grid")).not.toBeNull();
     expect(document.querySelectorAll(".settings-savebar")).toHaveLength(1);
   });
+
+  it("时区可以按中文城市搜索并选中，非法值禁止保存", async () => {
+    const user = userEvent.setup();
+    await renderSettings();
+
+    const input = screen.getByRole("combobox");
+    await user.clear(input);
+    await user.type(input, "东京");
+
+    const list = await screen.findByRole("listbox", { name: "时区候选" });
+    expect(list).toHaveTextContent("日本标准时间");
+    await user.click(within(list).getByRole("option", { name: /日本标准时间/ }));
+
+    expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe("Asia/Tokyo");
+
+    await user.clear(screen.getByRole("combobox"));
+    await user.type(screen.getByRole("combobox"), "Mars/Base");
+    expect(screen.getByText(/不是有效的 IANA 时区/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存设置" })).toBeDisabled();
+  });
 });

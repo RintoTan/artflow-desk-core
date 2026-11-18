@@ -701,6 +701,27 @@ code.mono {
   min-width: 0;
 }
 
+/* 客户详情：宽了才把"资料"和"概览/标签"并排，断点看详情容器。 */
+.client-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.client-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+@container detail (min-width: 720px) {
+  .client-columns {
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  }
+}
+
 .panel-head.compact {
   align-items: center;
   margin-bottom: 10px;
@@ -1234,11 +1255,51 @@ code.mono {
   min-width: 0;
 }
 
-/* 危险/终态操作与制作操作分区：竖线分隔，按钮靠右，不和主操作抢视线。 */
+/* 危险/终态操作与制作操作分区：只用一条竖线，不再把第二组推到右端。
+   之前的 margin-left:auto 在中等宽度会把 2~3 个按钮顶到第二行右侧，形成奇怪空白。 */
 .action-group + .action-group {
-  margin-left: auto;
   padding-left: 12px;
   border-left: 1px solid var(--border);
+}
+
+/* 窄容器里次级操作收进原生 details 菜单，键盘可直接展开。 */
+.action-more {
+  position: relative;
+}
+
+.action-more > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.action-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.action-more[open] > summary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.action-more-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  min-width: 176px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.action-more-menu .btn {
+  width: 100%;
+  justify-content: flex-start;
 }
 
 .btn-quiet-danger {
@@ -2620,6 +2681,7 @@ body:has(.row-dragging) {
 
 /* 数据环境的五项指标：等宽自适应，窄了就换行，不压成一条。 */
 .stat-row-metrics {
+  display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
 }
@@ -2812,11 +2874,11 @@ body:has(.row-dragging) {
   }
 }
 
-/* 保存区：粘在主滚动视口底部，随内容滚动但不遮住输入。 */
+/* 保存区：普通文档流的一块，钉在所有模块之后。
+   SETTINGS-QA 反馈吸底会变成大面积白色浮层遮挡内容，因此不再 sticky / fixed，
+   也不再用 backdrop-filter 制造"悬浮"观感。 */
 .settings-savebar {
-  position: sticky;
-  bottom: -1px;
-  z-index: 3;
+  position: static;
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
@@ -2825,9 +2887,8 @@ body:has(.row-dragging) {
   padding: 12px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  backdrop-filter: blur(8px);
-  box-shadow: var(--shadow);
+  background: var(--surface);
+  box-shadow: none;
 }
 
 .settings-savebar-status {
@@ -2847,14 +2908,6 @@ body:has(.row-dragging) {
   flex-wrap: wrap;
   gap: 8px;
   flex: 0 0 auto;
-}
-
-/* 矮窗口（≤560px 高）里吸底保存栏会盖住半个模块，改为随内容走。 */
-@media (max-height: 560px) {
-  .settings-savebar {
-    position: static;
-    backdrop-filter: none;
-  }
 }
 
 @container workspace (max-width: 640px) {
@@ -2914,19 +2967,8 @@ body:has(.row-dragging) {
   color: var(--text-faint);
 }
 
-[data-theme="dark"] ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-[data-theme="dark"] ::-webkit-scrollbar-thumb {
-  background: #33455a;
-  border-radius: 999px;
-}
-
-[data-theme="dark"] ::-webkit-scrollbar-track {
-  background: transparent;
-}
+/* 深色主题不自定义滚动条：自定义 10px 轨道在列表里显得又粗又常驻，
+   交还 macOS 原生覆盖式滚动条，也尊重系统的"总是显示"偏好。 */
 
 /* 图片查看器本来就是深底，深色主题下只需要保证边框与按钮可见 */
 [data-theme="dark"] .viewer-overlay {
@@ -3416,7 +3458,9 @@ body:has(.row-dragging) {
   gap: 10px;
 }
 
-.stat-row {
+/* 这一条是客户概览的 <dl class="stat-row">；用 dl 限定，否则会覆盖
+   数据环境页的 .stat-row-metrics 网格（5 项指标全挤到左侧）。 */
+dl.stat-row {
   display: flex;
   flex-wrap: wrap;
   gap: 24px;
@@ -4212,4 +4256,187 @@ body:has(.row-dragging) {
   max-width: 72px;
   padding: 2px;
   min-height: var(--control-h);
+}
+
+/* ------------------------------------------------------------ STABILIZATION-01 */
+/* 历史统计：标题 + 口径说明 + 范围 + 导出 组成一个工具区，不再挤在左上角。 */
+.stats-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.stats-heading {
+  flex: 1 1 340px;
+  min-width: 0;
+}
+
+.page-title {
+  margin: 0 0 3px;
+  font-size: 19px;
+  letter-spacing: 0.01em;
+}
+
+.stats-heading p {
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.stats-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* 六项 KPI：等宽自适应，数字优先。 */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.kpi-grid .metric-card {
+  padding: 16px 18px;
+  gap: 4px;
+}
+
+.kpi-grid .metric-value {
+  font-size: 24px;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-grid .metric-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 只有一个月时不要把单根柱子拉满整幅图：给柱子固定上限并居中。 */
+.chart-frame[data-single="true"] .chart {
+  width: 100%;
+  min-width: 0;
+  justify-content: center;
+}
+
+.chart-frame[data-single="true"] .chart-col {
+  flex: 0 0 88px;
+}
+
+/* 月度明细：数字右对齐，月份保持等宽左对齐。 */
+.table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 导出：手动选单对话框 */
+.pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.pick-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.pick-row:last-child {
+  border-bottom: 0;
+}
+
+.pick-row:hover {
+  background: var(--surface-alt);
+}
+
+.pick-row input {
+  grid-row: 1 / span 2;
+  align-self: center;
+  margin: 0;
+}
+
+.pick-title {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pick-meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+/* 时区搜索候选 */
+.tz-field {
+  position: relative;
+}
+
+.tz-list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% - 22px);
+  z-index: 20;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.tz-list li button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tz-list li button[aria-selected="true"],
+.tz-list li button:hover {
+  background: var(--surface-alt);
+}
+
+.tz-name {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tz-meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 客户右栏里的标签编辑器：窄列下改为纵向，不把按钮挤成小方块 */
+.client-col-side .tag-editor {
+  flex-direction: column;
+  align-items: stretch;
 }
