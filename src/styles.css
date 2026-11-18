@@ -4569,7 +4569,9 @@ dl.stat-row {
   justify-content: center;
   gap: 1px;
   min-width: 0;
-  padding: 8px 12px;
+  /* 56 = 12（编号）+17（标题）+12（客户/阶段）+2（gap）+12（上下内边距）+1（底边），
+     三行都设了固定 line-height 且 flex:none，所以不会再被压扁。 */
+  padding: 6px 12px;
   border-bottom: 1px solid var(--border);
   color: inherit;
   text-decoration: none;
@@ -4590,13 +4592,18 @@ dl.stat-row {
 
 .timeline-code {
   font-size: 10.5px;
+  line-height: 12px;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
+  flex: none;
 }
 
 .timeline-title {
   font-size: 12.5px;
+  line-height: 17px;
   font-weight: 600;
+  flex: none;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4604,7 +4611,10 @@ dl.stat-row {
 
 .timeline-sub {
   font-size: 11px;
+  line-height: 12px;
   color: var(--text-muted);
+  flex: none;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4793,6 +4803,42 @@ dl.stat-row {
 
 .timeline-mark.is-planStart.tone-overdue { box-shadow: inset 0 0 0 2px var(--danger); }
 .timeline-mark.is-planStart.tone-terminal { box-shadow: inset 0 0 0 2px var(--text-faint); }
+
+/* UX-TL-01：排期图形上的日期提示。
+   用 fixed + 门户渲染：横向滚动容器不会裁掉它，fixed 元素也不参与页面滚动尺寸计算，
+   所以既不会被 .timeline-scroll 的 overflow 切掉，也不会撑出横向溢出。 */
+.timeline-tip {
+  position: fixed;
+  z-index: 60;
+  transform: translate(-50%, calc(-100% - 10px));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 240px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(15 35 60 / 22%);
+  color: var(--text);
+  font-size: 11.5px;
+  line-height: 15px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.timeline-tip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 键盘聚焦排期图形时给出可见焦点环，提示与鼠标一致。 */
+.timeline-bar:focus-visible,
+.timeline-mark:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
 .timeline-mark[data-overflow]::before {
   content: "";

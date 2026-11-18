@@ -22,13 +22,18 @@ import { join } from "node:path";
 
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const URL_BASE = process.argv[2] ?? "http://127.0.0.1:1425/";
-const PORT = 9441;
+const PORT = Number(process.env.AUTOQA_PORT ?? 9441);
 const SHOT_DIR = process.env.AUTOQA_SHOT_DIR ?? "/tmp/timeline-autoqa";
 const WINDOW_W = Number(process.env.AUTOQA_WIDTH ?? 1400);
 const WINDOW_H = Number(process.env.AUTOQA_HEIGHT ?? 1300);
+// 0 = 不改容器，按视口原生宽度量（900 / 1400 / 1680 布局回归用）。
 const CONTAINER = Number(process.env.AUTOQA_CONTAINER ?? 900);
 
 const STAGE_TITLES = ["草稿", "线稿", "固有色", "细化", "最终调整"];
+
+/** 必须长到在 235px 的信息列里放不下，才能验证省略号而不是"刚好塞得下"。 */
+const LONG_TITLE =
+  "封面主视觉重绘与全彩上色第二版修订稿第三轮细化和背景补画以及最终交付前的整体检查IllustrationFullRedrawRevisionWithoutAnySpaces";
 
 function order(id, code, title, position, dates) {
   const stageIndex = (position - 1) % STAGE_TITLES.length;
@@ -87,6 +92,7 @@ const ORDERS = [
   order("q4", "AF-2026-1004", "AUTOQA 仅交付", 4, { start: null, delivery: "2026-11-21" }),
   order("q5", "AF-2026-1005", "AUTOQA 十二月区间", 5, { start: "2026-11-26", delivery: "2026-12-06" }),
   order("q6", "AF-2026-1006", "AUTOQA 完全未排期", 6, { start: null, delivery: null }),
+  order("q7", "AF-2026-1007", LONG_TITLE, 7, { start: "2026-11-05", delivery: "2026-11-09" }),
 ];
 
 const fixtures = {
@@ -161,11 +167,15 @@ const mockScript = `
   window.isTauri = true;
 
   // 容器宽度是这一轮的自变量：只改主内容容器，不动时间线自身样式。
-  document.addEventListener("DOMContentLoaded", () => {
+  ${
+    CONTAINER > 0
+      ? `document.addEventListener("DOMContentLoaded", () => {
     const style = document.createElement("style");
     style.textContent = ".main-inner { width: ${CONTAINER}px !important; padding-inline: 0 !important; }";
     document.head.appendChild(style);
-  });
+  });`
+      : ""
+  }
 })();
 `;
 
@@ -322,19 +332,35 @@ const MEASURE = `(() => {
     rowCount: rows.length,
     infoCount: infos.length,
     unscheduledText: (document.querySelector(".timeline-unscheduled")?.textContent || "").trim().slice(0, 120),
-    // ISSUE-01：标题是否被行高裁掉（记录，不作为本轮门禁）。
-    titleClipped: infos.map((el) => {
+    // ISSUE-01：直接量 .timeline-title 自己的行盒与溢出，不用父元素代替。
+    titleGeom: infos.map((el) => {
       const t = el.querySelector(".timeline-title");
+      const infoBox = el.getBoundingClientRect();
       if (!t) return null;
+      const box = t.getBoundingClientRect();
+      const cs = getComputedStyle(t);
       return {
-        text: (t.textContent || "").slice(0, 12),
-        infoH: Math.round(el.getBoundingClientRect().height * 100) / 100,
-        infoScrollH: el.scrollHeight,
-        titleH: Math.round(t.getBoundingClientRect().height * 100) / 100,
+        text: (t.textContent || "").slice(0, 18),
+        fullLength: (t.textContent || "").length,
+        infoH: Math.round(infoBox.height * 100) / 100,
+        titleTop: Math.round(box.top * 100) / 100,
+        titleBottom: Math.round(box.bottom * 100) / 100,
+        titleH: Math.round(box.height * 100) / 100,
+        titleClientH: t.clientHeight,
         titleScrollH: t.scrollHeight,
-        clipped: el.scrollHeight > el.clientHeight + 1,
+        clientWidth: t.clientWidth,
+        scrollWidth: t.scrollWidth,
+        lineHeight: cs.lineHeight,
+        overflow: cs.overflow,
+        textOverflow: cs.textOverflow,
+        whiteSpace: cs.whiteSpace,
+        // 纵向：行盒装不下内容 → 被压扁；横向：内容超宽 → 应当出现省略号
+        verticallyClipped: t.scrollHeight > t.clientHeight + 1,
+        horizontallyTruncated: t.scrollWidth > t.clientWidth + 1,
+        insideInfo: box.top >= infoBox.top - 0.5 && box.bottom <= infoBox.bottom + 0.5,
       };
     }),
+    horizontalScrollbar: scroller ? scroller.offsetWidth - scroller.clientWidth : null,
   };
 })()`;
 
@@ -343,8 +369,8 @@ async function evaluate(send, expression) {
   return res.result?.value;
 }
 
-async function shot(send, name) {
-  const res = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
+async function shot(send, name, beyondViewport = true) {
+  const res = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: beyondViewport });
   const path = join(SHOT_DIR, name);
   writeFileSync(path, Buffer.from(res.data, "base64"));
   return path;
@@ -387,16 +413,28 @@ async function main() {
   const shotBefore = await shot(send, "01-容器900-滚动前.png");
 
   // ---------------- U6-D：容器 900 几何
-  check("主内容容器 ≈900px", Math.abs(before.mainInner - 900) <= 2, `mainInner=${before.mainInner}`);
   const frameExpected = before.mainInner - 2 * parseFloat(before.panelPad) - 2;
-  check(
-    "时间线框 = 容器 − 面板内边距 − 边框",
-    Math.abs(before.frame.w - frameExpected) <= 2,
-    `frame=${before.frame.w} 期望≈${frameExpected}（容器 ${before.mainInner} − 2×${before.panelPad} − 2）`,
-  );
-  check("信息列 ≈235px", Math.abs(before.infoW - 235) <= 3, `infoWidth=${before.infoW}`);
-  check("轨道可视宽 ≈622px", Math.abs(before.clientWidth - 622) <= 6, `trackWidth=${before.clientWidth}`);
-  check("行高 ≈56px", Math.abs(before.rowH - 56) <= 1, `rowHeight=${before.rowH}`);
+  if (CONTAINER > 0) {
+    check("主内容容器 ≈900px", Math.abs(before.mainInner - CONTAINER) <= 2, `mainInner=${before.mainInner}`);
+    check(
+      "时间线框 = 容器 − 面板内边距 − 边框",
+      Math.abs(before.frame.w - frameExpected) <= 2,
+      `frame=${before.frame.w} 期望≈${frameExpected}（容器 ${before.mainInner} − 2×${before.panelPad} − 2）`,
+    );
+  } else {
+    results.measurements.layout = {
+      mainInner: before.mainInner,
+      frame: before.frame.w,
+      info: before.infoW,
+      track: before.clientWidth,
+      row: before.rowH,
+    };
+  }
+  if (CONTAINER > 0) {
+    check("信息列 ≈235px", Math.abs(before.infoW - 235) <= 3, `infoWidth=${before.infoW}`);
+    check("轨道可视宽 ≈622px", Math.abs(before.clientWidth - 622) <= 6, `trackWidth=${before.clientWidth}`);
+  }
+  check("行高 ≈56px 或窄窗 52px", before.rowH === 56 || before.rowH === 52, `rowHeight=${before.rowH}`);
   check(
     "信息列 + 轨道 ≤ 时间线框（无溢出）",
     before.infoW + before.clientWidth <= before.frame.w + 1,
@@ -428,6 +466,42 @@ async function main() {
     JSON.stringify(before.barX),
   );
   check("信息列与轨道逐行 y 对齐", before.infoTops.every((t, i) => Math.abs(t - before.rowTops[i]) <= 0.6), JSON.stringify(before.rowTops));
+
+  // ---------------- ISSUE-01：标题行盒完整、省略号只发生在横向
+  const titles = before.titleGeom.filter(Boolean);
+  check(
+    "标题行盒不被纵向压缩（clientHeight 装得下 scrollHeight）",
+    titles.every((t) => !t.verticallyClipped),
+    titles.map((t) => `${t.titleClientH}/${t.titleScrollH}`).join(" · "),
+  );
+  check(
+    "标题行高恒为 17px，且落在信息列矩形内",
+    titles.every((t) => t.lineHeight === "17px" && Math.abs(t.titleH - 17) <= 0.6 && t.insideInfo),
+    titles.map((t) => `${t.lineHeight}/${t.titleH}`).join(" · "),
+  );
+  check(
+    "行高没有被标题撑高（与设计值一致且每行等高）",
+    (before.rowH === 56 || before.rowH === 52) &&
+      before.rowHAll.every((h) => Math.abs(h - before.rowH) <= 0.6),
+    `rowH=${before.rowH}`,
+  );
+  const longTitle = titles.find((t) => t.fullLength > 40);
+  const shortTitles = titles.filter((t) => t.fullLength <= 40);
+  check(
+    "超长标题走横向省略号（scrollWidth > clientWidth 且 text-overflow: ellipsis）",
+    Boolean(longTitle) && longTitle.horizontallyTruncated && longTitle.textOverflow === "ellipsis" && longTitle.whiteSpace === "nowrap",
+    longTitle ? `client ${longTitle.clientWidth} / scroll ${longTitle.scrollWidth} / ${longTitle.textOverflow}` : "没有找到长标题行",
+  );
+  check(
+    "短标题不触发截断",
+    shortTitles.length > 0 && shortTitles.every((t) => !t.horizontallyTruncated),
+    shortTitles.map((t) => `${t.clientWidth}/${t.scrollWidth}`).join(" · "),
+  );
+  check(
+    "标题 DOM 文本是完整原文（截断只在视觉层）",
+    titles.every((t) => !t.text.endsWith("…")) && Boolean(longTitle) && longTitle.fullLength >= LONG_TITLE.length,
+    `最长一行 ${longTitle?.fullLength ?? 0} 字，源标题 ${LONG_TITLE.length} 字`,
+  );
   check("轨道没有纵向滚动", before.verticalScroll === false, `verticalScroll=${before.verticalScroll}`);
   check(
     "轨道可横向滚动（否则 U6-E 无对象）",
@@ -436,7 +510,10 @@ async function main() {
   );
 
   // ---------------- U6-E：横向滚动
-  const target = Math.min(320, (before.scrollWidth ?? 0) - (before.clientWidth ?? 0));
+  // 目标位置相对当前位置取，保证在任意视口都能产生一段可观测的位移
+  // （进页面会自动把今天放到 45%，初始 scrollLeft 不是 0）。
+  const maxScroll = (before.scrollWidth ?? 0) - (before.clientWidth ?? 0);
+  const target = Math.min(maxScroll, (before.scrollLeft ?? 0) + 200);
   const applied = await evaluate(
     send,
     `(() => { const el = document.querySelector(".timeline-scroll"); el.scrollLeft = ${target}; return el.scrollLeft; })()`,
@@ -515,6 +592,273 @@ async function main() {
   );
 
   results.screenshots = { before: shotBefore, after: shotAfter };
+
+  // ---------------- ISSUE-02：周视图范围诊断（A 窗口 / B 可视 / C 末刻度 / D 画布）
+  await evaluate(
+    send,
+    `(() => {
+      const btn = [...document.querySelectorAll(".segmented button")].find((b) => (b.textContent || "").trim() === "周");
+      if (btn) btn.click();
+      return Boolean(btn);
+    })()`,
+  );
+  await sleep(400);
+  await evaluate(send, `(() => { document.querySelector(".timeline-scroll").scrollLeft = 0; return 0; })()`);
+  await sleep(250);
+  const week = await evaluate(
+    send,
+    `(() => {
+      const scroller = document.querySelector(".timeline-scroll");
+      const text = document.querySelector('[data-testid="timeline-range"]').textContent || "";
+      const ticks = [...document.querySelectorAll(".timeline-tier-2 .timeline-tick")].map((el) => ({
+        label: (el.textContent || "").trim(),
+        left: Math.round(el.getBoundingClientRect().left * 100) / 100,
+        width: Math.round(el.getBoundingClientRect().width * 100) / 100,
+      }));
+      const grid = [...document.querySelectorAll(".timeline-grid-line")].map(
+        (el) => Math.round(el.getBoundingClientRect().left * 100) / 100,
+      );
+      const canvas = document.querySelector(".timeline-canvas");
+      const bars = [...document.querySelectorAll(".timeline-bar")].map((el) => {
+        const b = el.getBoundingClientRect();
+        return { right: Math.round(b.right * 100) / 100 };
+      });
+      return {
+        rangeText: text,
+        ticks,
+        gridCount: grid.length,
+        lastGridLeft: grid.length ? grid[grid.length - 1] : null,
+        canvasWidth: Math.round(canvas.getBoundingClientRect().width),
+        scrollWidth: scroller.scrollWidth,
+        clientWidth: scroller.clientWidth,
+        horizontalScrollbar: scroller.offsetWidth - scroller.clientWidth,
+        canvasRight: Math.round(canvas.getBoundingClientRect().right * 100) / 100,
+        maxBarRight: bars.length ? Math.max(...bars.map((b) => b.right)) : null,
+      };
+    })()`,
+  );
+  await evaluate(
+    send,
+    `(() => { const el = document.querySelector(".timeline-scroll"); el.scrollLeft = el.scrollWidth; return el.scrollLeft; })()`,
+  );
+  await sleep(300);
+  const weekAtEnd = await evaluate(
+    send,
+    `(() => {
+      const text = document.querySelector('[data-testid="timeline-range"]').textContent || "";
+      const scroller = document.querySelector(".timeline-scroll");
+      return { rangeText: text, scrollLeft: Math.round(scroller.scrollLeft), maxScroll: scroller.scrollWidth - scroller.clientWidth };
+    })()`,
+  );
+  results.measurements.week = { start: week, end: weekAtEnd };
+
+  const dayNum = (key) => {
+    const [y, m, d] = key.split("-").map(Number);
+    return Date.UTC(y, m - 1, d) / 86400000;
+  };
+  const winMatch = /窗口\s*(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2})/.exec(week.rangeText);
+  const visMatch0 = /可见\s*(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2})/.exec(week.rangeText);
+  const visMatchEnd = /可见\s*(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2})/.exec(weekAtEnd.rangeText);
+  const weekDays = winMatch ? dayNum(winMatch[2]) - dayNum(winMatch[1]) + 1 : null;
+
+  check(
+    "周窗口 = 2026-10-26 ~ 2027-01-17",
+    Boolean(winMatch) && winMatch[1] === "2026-10-26" && winMatch[2] === "2027-01-17",
+    week.rangeText.slice(0, 90),
+  );
+  check("周窗口天数 = 84（12 个完整自然周）", weekDays === 84, `${weekDays} 天`);
+  check(
+    "首刻度 10-26、末刻度 01-11，共 12 个周一刻度",
+    week.ticks.length === 12 && week.ticks[0].label === "10-26" && week.ticks[11].label === "01-11",
+    week.ticks.map((t) => t.label).join(" "),
+  );
+  check(
+    "末刻度右缘 = 画布右缘（01-11 起算 7 天到 01-18 半开，视觉到 01-17）",
+    Math.abs(week.ticks[11].left + week.ticks[11].width - week.canvasRight) <= 1.5,
+    `末刻度右缘 ${Math.round((week.ticks[11].left + week.ticks[11].width) * 100) / 100}，画布右缘 ${week.canvasRight}`,
+  );
+  check("画布宽 = 84 × 26 = 2184", week.canvasWidth === 2184, `${week.canvasWidth}px`);
+  check(
+    "滚动到最右时可视范围止于 2027-01-17（窗口终点，而不是末刻度 01-11）",
+    Boolean(visMatchEnd) && visMatchEnd[2] === "2027-01-17",
+    weekAtEnd.rangeText.slice(0, 90),
+  );
+  check(
+    "滚到 0 时可视范围从 10-26 起（10-16 在窗口之前，任何滚动位置都不会出现）",
+    Boolean(visMatch0) && visMatch0[1] === "2026-10-26",
+    `${visMatch0?.[1]} ~ ${visMatch0?.[2]}`,
+  );
+  observe(
+    "周视图横向滚动条占位",
+    `${week.horizontalScrollbar}px（scrollWidth ${week.scrollWidth} / clientWidth ${week.clientWidth}）`,
+    "占位取决于平台滚动条；画布按 84 天算，滚动条不会裁掉最后几天",
+  );
+  observe(
+    "末条网格线位置",
+    `${week.lastGridLeft}（共 ${week.gridCount} 条，均在周一）`,
+    "网格线画在刻度左缘：最后一条在 01-11，画布仍延伸到 01-17",
+  );
+
+  // ---------------- UX-TL-01：日期提示（hover / 键盘 / 不挡住点击）
+  let pointerPrimed = false;
+  const hoverAt = async (selector, dx = 0.5) => {
+    if (!pointerPrimed) {
+      await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 8, y: 8, buttons: 0 });
+      await sleep(60);
+      pointerPrimed = true;
+    }
+    const box = await evaluate(
+      send,
+      `(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        return { x: b.left + b.width * ${dx}, y: b.top + b.height / 2 };
+      })()`,
+    );
+    if (!box) return null;
+    await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y, buttons: 0 });
+    await sleep(220);
+    return box;
+  };
+  const readTip = () =>
+    evaluate(
+      send,
+      `(() => {
+        const tip = document.querySelector(".timeline-tip");
+        if (!tip) return null;
+        const b = tip.getBoundingClientRect();
+        return {
+          text: (tip.textContent || "").trim(),
+          lines: [...tip.querySelectorAll("span")].map((s) => (s.textContent || "").trim()),
+          left: Math.round(b.left),
+          right: Math.round(b.right),
+          top: Math.round(b.top),
+          bottom: Math.round(b.bottom),
+          pointerEvents: getComputedStyle(tip).pointerEvents,
+          pageScrollWidth: document.documentElement.scrollWidth,
+          pageClientWidth: document.documentElement.clientWidth,
+          rowHeight: Math.round(document.querySelector(".timeline-row").getBoundingClientRect().height),
+        };
+      })()`,
+    );
+
+  // 切回月尺度：条与标记都在窗口内，提示内容好对照
+  await evaluate(
+    send,
+    `(() => {
+      const btn = [...document.querySelectorAll(".segmented button")].find((b) => (b.textContent || "").trim() === "月");
+      if (btn) btn.click();
+      return true;
+    })()`,
+  );
+  // 切尺度会触发"把今天放到视口 45%"，等它落定再手动归零，
+  // 否则后面按旧坐标悬浮会落空（这是脚本时序问题，不是产品行为）。
+  await sleep(600);
+  await evaluate(send, `(() => { const el = document.querySelector(".timeline-scroll"); el.scrollLeft = 0; return 0; })()`);
+  await sleep(300);
+
+  const pageBefore = await evaluate(send, `document.documentElement.scrollWidth`);
+  const rowHBefore = await evaluate(
+    send,
+    `Math.round(document.querySelector(".timeline-row").getBoundingClientRect().height)`,
+  );
+
+  await hoverAt('.timeline-row[data-order-id="q1"] .timeline-bar');
+  const tipBar = await readTip();
+  check(
+    "双日期：悬浮区间条给出完整起止日期",
+    Boolean(tipBar) && tipBar.text.includes("开始日期：2026-11-04") && tipBar.text.includes("交付日期：2026-11-12"),
+    tipBar?.text ?? "没有出现提示",
+  );
+  check(
+    "提示不改变行高、不撑出页面横向溢出，且不吃鼠标事件",
+    Boolean(tipBar) &&
+      tipBar.pointerEvents === "none" &&
+      tipBar.rowHeight === rowHBefore &&
+      tipBar.pageScrollWidth === pageBefore,
+    `rowH ${rowHBefore} → ${tipBar?.rowHeight}；scrollWidth ${pageBefore} → ${tipBar?.pageScrollWidth}；pointer-events ${tipBar?.pointerEvents}`,
+  );
+  check(
+    "提示落在视口内",
+    Boolean(tipBar) && tipBar.left >= 0 && tipBar.right <= pageBefore && tipBar.top >= 0,
+    tipBar ? `left ${tipBar.left} right ${tipBar.right} top ${tipBar.top}` : "无提示",
+  );
+  const shotTip = await shot(send, "04-双日期提示.png", false);
+
+  await hoverAt('.timeline-row[data-order-id="q2"] .timeline-bar');
+  const tipSingle = await readTip();
+  check(
+    "同日订单：提示单日排期且只给一个日期",
+    Boolean(tipSingle) &&
+      tipSingle.text.includes("2026-11-16") &&
+      tipSingle.text.includes("单日排期") &&
+      (tipSingle.text.match(/2026-11-16/g) || []).length === 1,
+    tipSingle?.text ?? "没有出现提示",
+  );
+
+  await hoverAt('.timeline-row[data-order-id="q3"] .timeline-mark');
+  const tipStart = await readTip();
+  check(
+    "仅开始：提示「仅开始」+ 开始日期",
+    Boolean(tipStart) && tipStart.text.includes("仅开始") && tipStart.text.includes("开始日期：2026-11-09"),
+    tipStart?.text ?? "没有出现提示",
+  );
+  const shotMark = await shot(send, "05-仅开始提示.png", false);
+
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 4, y: 4, buttons: 0 });
+  await sleep(250);
+  const tipGone = await evaluate(send, `Boolean(document.querySelector(".timeline-tip"))`);
+  check("鼠标离开后提示消失", tipGone === false, `tip 存在=${tipGone}`);
+
+  // 键盘：聚焦排期图形同样能看到日期
+  await evaluate(
+    send,
+    `(() => {
+      const el = document.querySelector('.timeline-row[data-order-id="q1"] .timeline-bar');
+      el.focus();
+      return document.activeElement === el;
+    })()`,
+  );
+  await sleep(250);
+  const tipKeyboard = await readTip();
+  check(
+    "键盘聚焦区间条也能看到日期提示",
+    Boolean(tipKeyboard) && tipKeyboard.text.includes("开始日期：2026-11-04"),
+    tipKeyboard?.text ?? "没有出现提示",
+  );
+  const shotKeyboard = await shot(send, "06-键盘聚焦提示.png", false);
+  await evaluate(send, `(() => { document.activeElement.blur(); return true; })()`);
+  await sleep(200);
+  const tipBlur = await evaluate(send, `Boolean(document.querySelector(".timeline-tip"))`);
+  check("失焦后提示消失", tipBlur === false, `tip 存在=${tipBlur}`);
+
+  results.screenshots.tip = { hover: shotTip, mark: shotMark, keyboard: shotKeyboard };
+
+  // 提示不能吃鼠标事件，也不能改变排期图形本身的命中目标。
+  // 真实跳转由组件测试覆盖（jsdom + MemoryRouter）：本脚本的夹具只喂了工作台
+  // 需要的命令，直接导航到 /orders 会因缺少订单页数据而回退，不能当作产品缺陷。
+  const hit = await evaluate(
+    send,
+    `(() => {
+      const bar = document.querySelector('.timeline-row[data-order-id="q1"] .timeline-bar');
+      const b = bar.getBoundingClientRect();
+      const el = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return {
+        hitSelf: el === bar,
+        hitClass: el ? el.className : null,
+        tipPointerEvents: (() => {
+          const tip = document.querySelector(".timeline-tip");
+          return tip ? getComputedStyle(tip).pointerEvents : null;
+        })(),
+      };
+    })()`,
+  );
+  check(
+    "排期图形自身仍在鼠标命中链上（提示不吃点击）",
+    hit.hitSelf === true,
+    `elementFromPoint=${hit.hitClass}`,
+  );
 
   // ---------------- U7-B：失焦/重新获得焦点后的重取（用真实调用计数，不靠推断）
   const countList = `window.__AUTOQA_CALLS__.filter((c) => c === "list_orders").length`;

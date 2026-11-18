@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 
 import { api, describeError, type OrderView } from "../bridge/commands";
-import { formatDayKey, localDayIndex, shortDate, type DayIndex } from "../lib/scheduleBar";
+import {
+  formatDayKey,
+  localDayIndex,
+  parseDayKey,
+  shortDate,
+  type DayIndex,
+} from "../lib/scheduleBar";
 import {
   SCALE_CONFIG,
   buildTicks,
@@ -47,6 +54,32 @@ function rangeText(from: DayIndex, to: DayIndex): string {
   return `${formatDayKey(from)} ~ ${formatDayKey(to)}`;
 }
 
+type DateTip = { x: number; y: number; lines: string[] };
+
+const TIP_HALF_WIDTH = 120;
+
+/**
+ * 排期图形上的日期提示文案。
+ *
+ * 只读原始 `plannedStartDate` / `plannedDeliveryDate`：即使区间被窗口裁切，
+ * 提示里依旧是完整起止日期；两个日期都为空的订单不会走到这里（它们不在轨道上）。
+ */
+export function dateTipLines(order: OrderView): string[] {
+  const start = order.plannedStartDate;
+  const delivery = order.plannedDeliveryDate;
+  if (start && delivery) {
+    if (start === delivery) {
+      const day = parseDayKey(start);
+      return [day === null ? start : formatDayKey(day), "单日排期"];
+    }
+    return [`开始日期：${start}`, `交付日期：${delivery}`];
+  }
+  if (start) return ["仅开始", `开始日期：${start}`];
+  if (delivery) return ["仅交付", `交付日期：${delivery}`];
+  return [];
+}
+
+
 /**
  * 工作台里的跨订单项目时间线。
  *
@@ -67,6 +100,7 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
   const [scrollLeft, setScrollLeft] = useState(0);
   const [viewport, setViewport] = useState(0);
   const [centerOn, setCenterOn] = useState<DayIndex | null>(null);
+  const [tip, setTip] = useState<DateTip | null>(null);
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const requestRef = useRef(0);
@@ -149,6 +183,16 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
     setCenterOn(today);
   }, [orders, today]);
 
+  const showTip = useCallback((element: HTMLElement, lines: string[]) => {
+    if (lines.length === 0) return;
+    const rect = element.getBoundingClientRect();
+    const half = TIP_HALF_WIDTH;
+    const x = Math.min(Math.max(rect.left + rect.width / 2, half + 8), window.innerWidth - half - 8);
+    setTip({ x, y: rect.top, lines });
+  }, []);
+
+  const hideTip = useCallback(() => setTip(null), []);
+
   const gotoOrder = useCallback(
     (id: string) => {
       navigate(`/orders?orderId=${encodeURIComponent(id)}`);
@@ -199,6 +243,11 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
   }
 
   const total = canvasWidth(win, scale);
+  // 周视图最后一个刻度是「末周的周一」，不是窗口终点；文案里点明，避免把 01-11 误读成 01-17。
+  const lastWeekTick =
+    scale === "week" && ticks.tier2.length > 0
+      ? formatDayKey(ticks.tier2[ticks.tier2.length - 1]!.day)
+      : "";
   const todayX = dayToX(today, win, scale) + SCALE_CONFIG[scale].pxPerDay / 2;
   const todayInside = today >= win.from && today <= win.to;
   const visible = visibleRange(win, scale, scrollLeft, viewport);
@@ -251,6 +300,7 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
           {" · "}
           {SCALE_CONFIG[scale].label}尺度 · 时间线 {split.scheduled.length} 单 · 完全未排期{" "}
           {split.unscheduled.length} 单 · 共 {orders.length} 单
+          {scale === "week" && " · 周一刻度，末周起 " + lastWeekTick}
         </p>
         <ul className="timeline-legend" aria-label="排期状态图例">
           {LEGEND.map((item) => (
@@ -348,7 +398,10 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
             tabIndex={0}
             role="group"
             aria-label="时间轨道，可横向滚动"
-            onScroll={(event) => setScrollLeft(event.currentTarget.scrollLeft)}
+            onScroll={(event) => {
+              setScrollLeft(event.currentTarget.scrollLeft);
+              setTip(null);
+            }}
           >
             <div className="timeline-canvas" style={{ width: `${total}px` }} data-testid="timeline-canvas">
               <div className="timeline-axis">
@@ -403,6 +456,7 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
                     order.plannedStartDate === order.plannedDeliveryDate;
                   // 标签不能钉在画布左端：画布比视口宽，钉死会滚出视野。
                   const pinnedLeft = scrollLeft + 12;
+                  const tipLines = dateTipLines(order);
                   const startMarker = geo.markers.find((marker) => marker.kind === "planStart");
                   const deliveryMarker = geo.markers.find((marker) => marker.kind === "delivery");
                   return (
@@ -412,7 +466,6 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
                       data-order-id={order.id}
                       data-tone={tone}
                       onClick={() => gotoOrder(order.id)}
-                      title={`${order.code} · ${order.title}`}
                     >
                       {geo.band && (
                         <span
@@ -421,6 +474,13 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
                           data-clip={
                             geo.band.clippedLeft ? "left" : geo.band.clippedRight ? "right" : undefined
                           }
+                          tabIndex={0}
+                          role="img"
+                          aria-label={`${order.code} 排期：${tipLines.join("；")}`}
+                          onPointerEnter={(event) => showTip(event.currentTarget, tipLines)}
+                          onPointerLeave={hideTip}
+                          onFocus={(event) => showTip(event.currentTarget, tipLines)}
+                          onBlur={hideTip}
                         />
                       )}
                       {geo.band?.clippedLeft && (
@@ -450,7 +510,13 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
                             className={`timeline-mark is-${marker.kind} tone-${marker.tone === "neutral" ? "terminal" : marker.tone}`}
                             style={{ left: `${marker.x}px` }}
                             data-overflow={marker.overflow ?? undefined}
-                            title={`${marker.kind === "planStart" ? "计划开始" : "计划交付"} ${formatDayKey(marker.day)}`}
+                            tabIndex={0}
+                            role="img"
+                            aria-label={`${order.code} 排期：${tipLines.join("；")}`}
+                            onPointerEnter={(event) => showTip(event.currentTarget, tipLines)}
+                            onPointerLeave={hideTip}
+                            onFocus={(event) => showTip(event.currentTarget, tipLines)}
+                            onBlur={hideTip}
                           />
                         ))}
                       {geo.invalidRange && (
@@ -487,6 +553,20 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
           </div>
         </div>
       )}
+
+      {tip &&
+        createPortal(
+          <div
+            className="timeline-tip"
+            role="tooltip"
+            style={{ left: `${tip.x}px`, top: `${tip.y}px` }}
+          >
+            {tip.lines.map((line) => (
+              <span key={line}>{line}</span>
+            ))}
+          </div>,
+          document.body,
+        )}
 
       <div className="timeline-unscheduled">
         <h3>
