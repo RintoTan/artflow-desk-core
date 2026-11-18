@@ -878,6 +878,10 @@ code.mono {
   margin: 0;
   padding: 0;
   overflow-y: auto;
+  /* 滚动条交给系统：不预留槽位，也不自定义宽度。
+     macOS 选择「总是显示」时会占 15px，这里留 4px 让排序箭头不贴轨道。 */
+  scrollbar-gutter: auto;
+  padding-inline-end: 4px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1262,34 +1266,19 @@ code.mono {
   border-left: 1px solid var(--border);
 }
 
-/* 窄容器里次级操作收进原生 details 菜单，键盘可直接展开。 */
-.action-more {
-  position: relative;
+/* 「更多操作」：受控菜单，portal 到 body，不继承滚动容器的裁切。 */
+.action-more-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
-.action-more > summary {
-  list-style: none;
-  cursor: pointer;
-}
-
-.action-more > summary::-webkit-details-marker {
-  display: none;
-}
-
-.action-more[open] > summary {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.action-more-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 30;
-  min-width: 176px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.action-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 184px;
+  max-width: 260px;
   padding: 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1297,28 +1286,19 @@ code.mono {
   box-shadow: var(--shadow);
 }
 
-.action-more-menu .btn {
+.action-menu-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(60dvh, 320px);
+  overflow-y: auto;
+  scrollbar-gutter: auto;
+}
+
+.action-menu .btn {
   width: 100%;
   justify-content: flex-start;
-}
-
-.btn-quiet-danger {
-  color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
-}
-
-.btn-quiet-danger:hover:not(:disabled) {
-  background: var(--danger-soft);
-  border-color: var(--danger);
-}
-
-@container workspace (max-width: 780px) {
-  /* 单栏时右侧分区换行后不再有"右边"，分隔线只会显得错位。 */
-  .action-group + .action-group {
-    margin-left: 0;
-    padding-left: 0;
-    border-left: 0;
-  }
+  text-align: left;
 }
 
 .action-hint {
@@ -2877,17 +2857,20 @@ body:has(.row-dragging) {
 /* 保存区：普通文档流的一块，钉在所有模块之后。
    SETTINGS-QA 反馈吸底会变成大面积白色浮层遮挡内容，因此不再 sticky / fixed，
    也不再用 backdrop-filter 制造"悬浮"观感。 */
+/* 根因：早先用 flex-wrap + 窄容器时按钮换行，flex 的多行 align-content
+   默认 stretch 会把两行拉开，保存区被撑成一块很大的淡色矩形（之前是白色
+   悬浮面板的观感）。这里改成 grid，高度只由内容决定。 */
 .settings-savebar {
   position: static;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 16px;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
+  padding: 16px 4px 4px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
   box-shadow: none;
 }
 
@@ -2910,14 +2893,13 @@ body:has(.row-dragging) {
   flex: 0 0 auto;
 }
 
-@container workspace (max-width: 640px) {
+@container workspace (max-width: 720px) {
   .settings-savebar {
-    flex-direction: column;
-    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .settings-savebar-actions .btn {
-    flex: 1 1 auto;
+  .settings-savebar-actions {
+    justify-content: flex-start;
   }
 }
 
@@ -3854,14 +3836,9 @@ dl.stat-row {
 
 
 
-/* 滚动条对齐：内层负责留白，滚动条贴滚动视口边缘 */
-.orders-detail {
-  padding-right: 8px;
-}
-
-.orders-detail > * {
-  margin-right: 12px;
-}
+/* 旧版为了躲滚动条给详情整体加了 8px padding + 每个子块 12px margin，
+   结果是右侧多出一条没有内容的窄条，也让两列布局不对称。留白统一交给
+   .main-inner，这里不再二次内缩。 */
 
 /* 全局 .main 的 15px 槽位会让右侧出现一条明显的空隙，改为不预留 */
 .main {

@@ -14,3 +14,10 @@ declare module "node:path" {
   export function resolve(...segments: string[]): string;
 }
 declare const process: { cwd(): string };
+
+/** 构建时由 vite.config.ts 注入的提交号。 */
+declare const __BUILD_ID__: string;
+
+declare module "node:child_process" {
+  export function execSync(command: string, options: { encoding: "utf8" }): string;
+}

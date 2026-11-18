@@ -7,6 +7,7 @@ import OrderBoard from "../components/OrderBoard";
 import { planStageMove, type StageMovePlan } from "../lib/board";
 import FilterMenu from "../components/FilterMenu";
 import OrderTable from "../components/OrderTable";
+import ActionMenu from "../components/ActionMenu";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { ScheduleOverview } from "../components/ScheduleOverview";
 import { TruncatedTitle } from "../components/TitleTooltip";
@@ -1828,15 +1829,12 @@ function ActionBar({
       {compact ? (
         <div className="action-group" role="group" aria-label="其它订单操作">
           {caps.canComplete ? completeButton : null}
-          <details className="action-more">
-            <summary className="btn">更多操作</summary>
-            <div className="action-more-menu" role="menu" aria-label="更多订单操作">
-              {undoButton}
-              {completeButton}
-              {cancelButton}
-              {reopenButton}
-            </div>
-          </details>
+          <ActionMenu label="更多操作">
+            {undoButton}
+            {completeButton}
+            {cancelButton}
+            {reopenButton}
+          </ActionMenu>
         </div>
       ) : (
         <div className="action-group" role="group" aria-label="订单状态">

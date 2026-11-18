@@ -351,7 +351,7 @@ export default function App() {
           {qa && (
             <p className="qa-banner" role="status">
               <strong>QA 测试环境</strong>（{qa.scenario === "clean" ? "空白场景" : "预置场景"}）·
-              数据目录与正式台账完全隔离
+              数据目录与正式台账完全隔离 · 构建 {typeof __BUILD_ID__ === "string" ? __BUILD_ID__ : "dev"}
             </p>
           )}
           <Outlet />
