@@ -202,14 +202,13 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
   const todayX = dayToX(today, win, scale) + SCALE_CONFIG[scale].pxPerDay / 2;
   const todayInside = today >= win.from && today <= win.to;
   const visible = visibleRange(win, scale, scrollLeft, viewport);
+  // 只要现存订单里存在终态、且当前没有可见订单，就说明"活动订单已全部结束"。
+  // 这里不能要求终态订单有日期：已完成/已取消的订单通常两个日期都为空。
   const hiddenByTerminal =
     !showTerminal &&
     split.scheduled.length === 0 &&
     split.unscheduled.length === 0 &&
-    orders.some(
-      (order) =>
-        order.status !== "active" && (order.plannedStartDate || order.plannedDeliveryDate),
-    );
+    orders.some((order) => order.status !== "active");
 
   return (
     <section className="panel" aria-labelledby="timeline-title">

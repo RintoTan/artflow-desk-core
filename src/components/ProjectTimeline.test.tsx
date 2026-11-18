@@ -275,6 +275,31 @@ describe("ProjectTimeline 空状态", () => {
     expect(screen.getByTestId("timeline-range")).toHaveTextContent("完全未排期 1 单");
   });
 
+  it("只剩终态订单且都没有计划日期时，仍显示终态空状态（FIX-01）", async () => {
+    hoisted.listOrders.mockResolvedValue([
+      order({
+        id: "id-done",
+        code: "AF-DONE",
+        status: "complete",
+        plannedStartDate: null,
+        plannedDeliveryDate: null,
+        completedAt: "2026-11-05T02:00:00.000Z",
+      }),
+      order({
+        id: "id-cancelled",
+        code: "AF-CANCELLED",
+        status: "cancelled",
+        plannedStartDate: null,
+        plannedDeliveryDate: null,
+        cancelledAt: "2026-11-06T02:00:00.000Z",
+      }),
+    ]);
+    renderTimeline();
+    expect(await screen.findByText("活动订单已全部结束")).toBeInTheDocument();
+    expect(screen.queryByText("没有任何订单填入计划日期")).not.toBeInTheDocument();
+    expect(screen.queryByText("尚无订单")).not.toBeInTheDocument();
+  });
+
   it("活动订单全部被终态过滤", async () => {
     hoisted.listOrders.mockResolvedValue([
       order({
