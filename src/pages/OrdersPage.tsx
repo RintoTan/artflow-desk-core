@@ -1293,7 +1293,7 @@ export default function OrdersPage() {
       <ConfirmDialog
         open={exportOpen}
         title="导出订单明细 CSV"
-        confirmLabel="选择保存位置"
+        confirmLabel="导出 CSV"
         busy={busy}
         error={null}
         onCancel={() => setExportOpen(false)}
@@ -1323,7 +1323,13 @@ export default function OrdersPage() {
           }
         }}
       >
-        <p>只导出业务字段，不包含客户联系方式、私人备注或任何文件路径。</p>
+        <p>
+          导出格式：UTF-8 CSV，逗号分隔，首行是表头。只包含业务字段，不包含客户联系方式、
+          私人备注或任何文件路径。
+        </p>
+        <p className="muted">
+          选择范围后仍需在 macOS 保存对话框里确认文件名；取消保存不会创建文件。
+        </p>
         <label className="radio-row">
           <input
             type="radio"

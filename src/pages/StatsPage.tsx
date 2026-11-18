@@ -219,7 +219,7 @@ export default function StatsPage() {
           </div>
         </header>
 
-        <div className="filter-row" role="group" aria-label="统计范围">
+        <div className="segmented" role="group" aria-label="统计范围">
           {RANGES.map((item) => (
             <button
               key={item.key}

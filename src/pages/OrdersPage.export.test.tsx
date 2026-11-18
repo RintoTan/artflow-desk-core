@@ -140,7 +140,7 @@ describe("订单明细导出", () => {
     await setup();
     await user.click(screen.getByRole("button", { name: "导出" }));
     await screen.findByRole("alertdialog");
-    await user.click(screen.getByRole("button", { name: "选择保存位置" }));
+    await user.click(screen.getByRole("button", { name: "导出 CSV" }));
 
     await waitFor(() => expect(saveDialog).toHaveBeenCalled());
     expect(exportOrders).not.toHaveBeenCalled();
@@ -153,7 +153,7 @@ describe("订单明细导出", () => {
     await setup();
     await user.click(screen.getByRole("button", { name: "导出" }));
     await screen.findByRole("alertdialog");
-    await user.click(screen.getByRole("button", { name: "选择保存位置" }));
+    await user.click(screen.getByRole("button", { name: "导出 CSV" }));
 
     await waitFor(() => expect(exportOrders).toHaveBeenCalledTimes(1));
     expect(exportOrders).toHaveBeenCalledWith({
@@ -171,7 +171,7 @@ describe("订单明细导出", () => {
     await user.click(screen.getByRole("button", { name: "导出" }));
     await screen.findByRole("alertdialog");
     await user.click(screen.getByRole("radio", { name: /全部订单/ }));
-    await user.click(screen.getByRole("button", { name: "选择保存位置" }));
+    await user.click(screen.getByRole("button", { name: "导出 CSV" }));
 
     await waitFor(() => expect(exportOrders).toHaveBeenCalledTimes(1));
     expect(exportOrders).toHaveBeenCalledWith({
@@ -198,7 +198,7 @@ describe("订单明细导出", () => {
     await setup();
     await user.click(screen.getByRole("button", { name: "导出" }));
     await screen.findByRole("alertdialog");
-    await user.click(screen.getByRole("button", { name: "选择保存位置" }));
+    await user.click(screen.getByRole("button", { name: "导出 CSV" }));
 
     await waitFor(() => expect(screen.getByText(/磁盘只读/)).toBeInTheDocument());
     expect(screen.queryByText(/已导出/)).not.toBeInTheDocument();

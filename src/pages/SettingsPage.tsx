@@ -232,6 +232,8 @@ export default function SettingsPage() {
           </span>
         </div>
 
+        <div className="settings-modules">
+        <section className="settings-module">
         <div className="field">
           <span>主题模式</span>
           <div className="segmented" role="group" aria-label="主题模式">
@@ -250,6 +252,8 @@ export default function SettingsPage() {
           <p className="hint">切换会立刻预览，但只有点「保存设置」才会写入。</p>
         </div>
 
+        </section>
+        <section className="settings-module">
         <div className="field">
           <label htmlFor="accent">
             <span>强调色</span>
@@ -295,6 +299,8 @@ export default function SettingsPage() {
           )}
         </div>
 
+        </section>
+        <section className="settings-module settings-module-wide">
         <div className="field field-wide">
           <span>应用图标</span>
           <div className="icon-grid" role="group" aria-label="应用图标">
@@ -369,6 +375,8 @@ export default function SettingsPage() {
             目前只切换<b>应用内</b>品牌图标。macOS Dock 图标与安装包图标不随此设置变化，
             原因与可选方案见 <code>docs/DEV06B-ICON-RESULTS.md</code>。
           </p>
+        </div>
+        </section>
         </div>
 
         <div className="actions">

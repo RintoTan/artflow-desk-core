@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import ConfirmDialog from "./ConfirmDialog";
 import ImageViewer from "./ImageViewer";
 import { attachmentApi, describeError, type AttachmentView } from "../bridge/commands";
+import { partitionImagePaths } from "../lib/attachmentDrop";
 
 const STATE_LABEL: Record<string, string> = {
   ok: "正常",
@@ -31,6 +33,11 @@ export default function AttachmentPanel({
   const [busy, setBusy] = useState(false);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [removeTarget, setRemoveTarget] = useState<AttachmentView | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const [importing, setImporting] = useState(0);
+  const sectionRef = useRef<HTMLElement | null>(null);
+  /** 事件订阅只建一次，用 ref 指向最新实现，避免 orderId 变化后闭包过期。 */
+  const importPathsRef = useRef<(paths: string[]) => Promise<void>>(async () => {});
 
   const load = useCallback(async () => {
     const list = await attachmentApi.list(orderId);
@@ -68,8 +75,27 @@ export default function AttachmentPanel({
       const paths = Array.isArray(picked) ? picked : [picked];
       if (paths.length === 0) return;
 
-      setBusy(true);
-      const outcomes = await attachmentApi.import({ orderId, sourcePaths: paths });
+      await importPaths(paths);
+    } catch (e) {
+      onError(describeError(e));
+    }
+  }
+
+  /**
+   * 统一入口：对话框与拖拽都走这里。
+   * 先按扩展名过滤（后端仍会做魔数校验），避免一张 GIF 让整批静默失败。
+   */
+  async function importPaths(paths: string[]) {
+    const { accepted, rejected } = partitionImagePaths(paths);
+    if (rejected.length > 0) {
+      onError(rejected.map((r) => `${r.name}：${r.reason}`).join("；"));
+    }
+    if (accepted.length === 0) return;
+
+    setBusy(true);
+    setImporting(accepted.length);
+    try {
+      const outcomes = await attachmentApi.import({ orderId, sourcePaths: accepted });
       await load();
 
       const ok = outcomes.filter((o) => o.ok).length;
@@ -88,8 +114,58 @@ export default function AttachmentPanel({
       onError(describeError(e));
     } finally {
       setBusy(false);
+      setImporting(0);
     }
   }
+
+  /**
+   * 真实的文件拖拽由 Tauri 在窗口层接管，HTML5 drop 拿不到磁盘路径。
+   * 所以订阅 webview 的拖拽事件，再用落点是否在面板内决定高亮与接收。
+   */
+  useEffect(() => {
+    let dispose: (() => void) | null = null;
+    const inside = (position?: { x: number; y: number }) => {
+      const node = sectionRef.current;
+      if (!node || !position) return false;
+      const scale = window.devicePixelRatio || 1;
+      const x = position.x / scale;
+      const y = position.y / scale;
+      const r = node.getBoundingClientRect();
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    };
+
+    try {
+      const webview = getCurrentWebview();
+      void webview
+        .onDragDropEvent((event) => {
+          const payload = event.payload;
+          if (payload.type === "over") {
+            setDragActive(inside(payload.position));
+          } else if (payload.type === "leave") {
+            setDragActive(false);
+          } else if (payload.type === "drop") {
+            const hit = inside(payload.position);
+            setDragActive(false);
+            if (hit && payload.paths.length > 0) {
+              void importPathsRef.current(payload.paths);
+            }
+          }
+        })
+        .then((unlisten) => {
+          dispose = unlisten;
+        })
+        .catch(() => {
+          /* 浏览器预览里没有 webview 事件，退回点击选择 */
+        });
+    } catch {
+      /* 非 Tauri 环境 */
+    }
+    return () => {
+      dispose?.();
+    };
+  }, []);
+
+  importPathsRef.current = importPaths;
 
   async function verifyAll() {
     setBusy(true);
@@ -181,7 +257,7 @@ export default function AttachmentPanel({
             onClick={() => void importImages()}
             disabled={busy}
           >
-            导入图片
+            {items.length === 0 ? "选择图片" : "添加图片"}
           </button>
           {items.length > 0 && (
             <>
@@ -204,11 +280,18 @@ export default function AttachmentPanel({
       {loading ? (
         <p className="muted">正在读取图片…</p>
       ) : items.length === 0 ? (
-        <div className="empty">
-          <p>还没有参考图片。</p>
-          <p className="muted">支持 PNG / JPEG / WebP，单张最大 100 MB。</p>
-        </div>
+        <button
+          type="button"
+          className="attach-dropzone"
+          onClick={() => void importImages()}
+          disabled={busy}
+        >
+          <strong>{importing > 0 ? `正在导入 ${importing} 张…` : dragActive ? "松开即可导入" : "把参考图片拖到这里"}</strong>
+          <span className="muted">或点击选择图片 · 支持 PNG / JPEG / WebP，单张最大 100 MB</span>
+        </button>
       ) : (
+        <>
+        {dragActive && <p className="attach-drop-hint">松开鼠标，把图片追加到这张订单</p>}
         <ul className="attach-grid">
           {items.map((item, index) => (
             <li key={item.id} className={`attach-card attach-${item.state}`}>
@@ -261,6 +344,7 @@ export default function AttachmentPanel({
             </li>
           ))}
         </ul>
+        </>
       )}
 
       <ConfirmDialog

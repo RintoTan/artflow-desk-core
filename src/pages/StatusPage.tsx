@@ -86,7 +86,7 @@ export default function StatusPage() {
           <h2>当前数据</h2>
           <p className="muted">只统计真实存在的记录，不包含任何演示数据。</p>
         </header>
-        <div className="stat-row">
+        <div className="stat-row stat-row-metrics">
           {[
             { label: "订单", value: status.orders },
             { label: "客户", value: status.clients },

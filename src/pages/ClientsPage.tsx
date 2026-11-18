@@ -305,7 +305,7 @@ export default function ClientsPage() {
   if (loading) return <section className="panel">正在读取客户…</section>;
 
   return (
-    <div className="orders-layout">
+    <div className="orders-layout clients-page">
       <aside className="orders-list panel">
         <header className="panel-head compact">
           <div>

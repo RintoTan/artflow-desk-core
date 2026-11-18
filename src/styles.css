@@ -681,6 +681,26 @@ code.mono {
   overflow: hidden;
 }
 
+/* 客户页：列表略窄，详情拿走剩余宽度；滚动条交给系统原生覆盖式，
+   不预留槽位，避免右侧常驻一条轨道。 */
+.clients-page {
+  grid-template-columns: 290px minmax(0, 1fr);
+}
+
+.clients-page .orders-list {
+  max-height: calc(100dvh - 96px);
+}
+
+.clients-page .order-rows {
+  overflow-y: auto;
+  scrollbar-gutter: auto;
+  overscroll-behavior: contain;
+}
+
+.clients-page .orders-detail {
+  min-width: 0;
+}
+
 .panel-head.compact {
   align-items: center;
   margin-bottom: 10px;
@@ -1796,6 +1816,46 @@ body:has(.row-dragging) {
   flex-wrap: wrap;
 }
 
+/* 拖拽导入：空状态整块可点，也接受拖入；高亮只在指针落在面板内时出现。 */
+.attach-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 132px;
+  padding: 20px 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+
+.attach-dropzone:hover:not(:disabled),
+.attach-dropzone:focus-visible {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.attach-panel.is-drop-target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.attach-drop-hint {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .attach-grid {
   list-style: none;
   margin: 0;
@@ -2487,10 +2547,94 @@ body:has(.row-dragging) {
   filter: drop-shadow(0 1px 1px rgba(16, 32, 48, 0.18));
 }
 
+/* 分段控件：紧凑胶囊，不把选项平均撑到整行两端。 */
 .segmented {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-alt);
+  max-width: 100%;
+  width: fit-content;
+}
+
+.segmented .btn,
+.segmented .filter-chip {
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 7px;
+  font-size: 12.5px;
+  line-height: 1.2;
+}
+
+.segmented .btn:hover:not(:disabled),
+.segmented .filter-chip:hover {
+  background: var(--surface-soft);
+}
+
+/* 选中态只抬一层，不用主色大面积填充，避免四个按钮抢眼。 */
+.segmented .btn[aria-pressed="true"],
+.segmented .filter-chip-active {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(15, 30, 45, 0.08);
+}
+
+.segmented .btn[aria-pressed="true"]:hover {
+  background: var(--surface);
+}
+
+/* 数据环境的五项指标：等宽自适应，窄了就换行，不压成一条。 */
+.stat-row-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.stat-row-metrics .stat {
+  min-width: 0;
+  padding: 14px 16px;
+}
+
+.stat-row-metrics .stat-value {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-row-metrics .stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 设置页模块：外观 / 强调色 / 图标各有边界，宽屏并排但不拉满阅读宽度。 */
+.settings-modules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.settings-module {
+  min-width: 0;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+}
+
+.settings-module .field,
+.settings-module .field-wide {
+  margin-top: 0;
+}
+
+.settings-module-wide {
+  grid-column: 1 / -1;
 }
 
 .inline-row {
@@ -3802,3 +3946,39 @@ body:has(.row-dragging) {
 .stage-adjust-row.is-off { color: var(--text-muted); }
 .stage-adjust-name { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .stage-adjust-note { flex: 0 0 auto; font-size: 10px; color: var(--text-muted); max-width: 55%; text-align: right; overflow-wrap: anywhere; }
+
+/* ------------------------------------------------------------ POLISH-02 统一件 */
+/* 表单控件高度/圆角/边框统一：只补缺省值，不覆盖各控件自己的宽度与布局。 */
+.field select,
+.field textarea,
+.row select {
+  min-height: var(--control-h);
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.field textarea {
+  min-height: 88px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+/* 保存 / 还原这类并排按钮统一 8px 间距，不再依赖行内空白。 */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 强调色：颜色块只做色卡，不跟着模块宽度拉成一条。 */
+.settings-module .color-input {
+  max-width: 72px;
+  padding: 2px;
+  min-height: var(--control-h);
+}

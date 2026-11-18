@@ -488,42 +488,48 @@ export default function TemplatesPage() {
               <span className="muted">最多 20 个阶段</span>
             </div>
 
-            <div className="actions">
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => void save()}
-                disabled={busy || !dirty}
-              >
-                保存模板
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setDraft(draftFrom(selected))}
-                disabled={busy || !dirty}
-              >
-                还原修改
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => void makeDefault()}
-                disabled={busy || selected.isDefault}
-              >
-                设为默认
-              </button>
-              <button type="button" className="btn" onClick={() => void duplicate()} disabled={busy}>
-                复制为新模板
-              </button>
-              <button
-                type="button"
-                className="btn btn-danger"
-                onClick={requestDelete}
-                disabled={busy || templates.length <= 1}
-              >
-                删除模板
-              </button>
+            <div className="actions action-bar">
+              <div className="action-group" role="group" aria-label="保存模板">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => void save()}
+                  disabled={busy || !dirty}
+                >
+                  保存模板
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setDraft(draftFrom(selected))}
+                  disabled={busy || !dirty}
+                >
+                  还原修改
+                </button>
+              </div>
+              <div className="action-group" role="group" aria-label="模板操作">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => void makeDefault()}
+                  disabled={busy || selected.isDefault}
+                >
+                  设为默认
+                </button>
+                <button type="button" className="btn" onClick={() => void duplicate()} disabled={busy}>
+                  复制为新模板
+                </button>
+              </div>
+              <div className="action-group action-group-end" role="group" aria-label="危险操作">
+                <button
+                  type="button"
+                  className="btn btn-quiet-danger"
+                  onClick={requestDelete}
+                  disabled={busy || templates.length <= 1}
+                >
+                  删除模板…
+                </button>
+              </div>
             </div>
 
             <p className="muted">

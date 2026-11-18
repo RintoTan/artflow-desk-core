@@ -70,7 +70,7 @@ describe("模板删除确认", () => {
     await setup();
     await selectTemplate(user, "简版流程");
 
-    await user.click(screen.getByRole("button", { name: "删除模板" }));
+    await user.click(screen.getByRole("button", { name: "删除模板…" }));
 
     const dialog = await screen.findByRole("alertdialog");
     expect(dialog).toHaveTextContent("确认删除流程模板？");
@@ -84,7 +84,7 @@ describe("模板删除确认", () => {
     await setup();
     await selectTemplate(user, "简版流程");
 
-    await user.click(screen.getByRole("button", { name: "删除模板" }));
+    await user.click(screen.getByRole("button", { name: "删除模板…" }));
     await screen.findByRole("alertdialog");
     await user.click(screen.getByRole("button", { name: "取消" }));
 
@@ -97,7 +97,7 @@ describe("模板删除确认", () => {
     await setup();
     await selectTemplate(user, "简版流程");
 
-    await user.click(screen.getByRole("button", { name: "删除模板" }));
+    await user.click(screen.getByRole("button", { name: "删除模板…" }));
     await screen.findByRole("alertdialog");
     await user.keyboard("{Escape}");
 
@@ -110,7 +110,7 @@ describe("模板删除确认", () => {
     await setup();
     await selectTemplate(user, "简版流程");
 
-    await user.click(screen.getByRole("button", { name: "删除模板" }));
+    await user.click(screen.getByRole("button", { name: "删除模板…" }));
     await screen.findByRole("alertdialog");
 
     await waitFor(() =>
@@ -123,7 +123,7 @@ describe("模板删除确认", () => {
     await setup();
     await selectTemplate(user, "简版流程");
 
-    await user.click(screen.getByRole("button", { name: "删除模板" }));
+    await user.click(screen.getByRole("button", { name: "删除模板…" }));
     await screen.findByRole("alertdialog");
     await user.click(screen.getByRole("button", { name: "确认删除" }));
 
@@ -140,7 +140,7 @@ describe("模板删除确认", () => {
     await setup();
     await selectTemplate(user, "通用制作流程");
 
-    await user.click(screen.getByRole("button", { name: "删除模板" }));
+    await user.click(screen.getByRole("button", { name: "删除模板…" }));
     const dialog = await screen.findByRole("alertdialog");
     expect(dialog).toHaveTextContent("请先选择替代的默认模板");
 
@@ -167,7 +167,7 @@ describe("模板删除确认", () => {
     await setup();
     await selectTemplate(user, "通用制作流程");
 
-    await user.click(screen.getByRole("button", { name: "删除模板" }));
+    await user.click(screen.getByRole("button", { name: "删除模板…" }));
     await screen.findByRole("alertdialog");
     await user.click(screen.getByRole("button", { name: "确认删除" }));
 
@@ -185,7 +185,7 @@ describe("模板删除确认", () => {
     await setup();
     await selectTemplate(user, "简版流程");
 
-    await user.click(screen.getByRole("button", { name: "删除模板" }));
+    await user.click(screen.getByRole("button", { name: "删除模板…" }));
     await screen.findByRole("alertdialog");
     await user.click(screen.getByRole("button", { name: "确认删除" }));
 
@@ -208,7 +208,7 @@ describe("模板删除确认", () => {
     await setup();
     await selectTemplate(user, "简版流程");
 
-    await user.click(screen.getByRole("button", { name: "删除模板" }));
+    await user.click(screen.getByRole("button", { name: "删除模板…" }));
     await screen.findByRole("alertdialog");
     const confirm = screen.getByRole("button", { name: "确认删除" });
     await user.click(confirm);

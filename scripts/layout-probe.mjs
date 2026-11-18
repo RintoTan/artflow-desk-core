@@ -149,6 +149,10 @@ const fixtures = {
     month: "2026-11",
   },
   client_tag_list: [{ id: "t1", name: "长期客户", clientCount: 1 }],
+  client_detail: (args) => {
+    const base = fixtures.list_clients.find((c) => c.id === args?.clientId) ?? fixtures.list_clients[0];
+    return { ...base, tags: fixtures.client_tag_list, orders: [], recentEvents: [] };
+  },
   attachment_list: [],
 };
 

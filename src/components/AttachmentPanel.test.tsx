@@ -66,8 +66,10 @@ describe("参考图片面板", () => {
     const { default: AttachmentPanel } = await import("./AttachmentPanel");
     render(<AttachmentPanel orderId="order-1" onError={vi.fn()} onNotice={vi.fn()} />);
 
-    await waitFor(() => expect(screen.getByText("还没有参考图片。")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "导入图片" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /把参考图片拖到这里/ })).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "选择图片" })).toBeInTheDocument();
   });
 
   it("正常图片显示缩略图网格与尺寸", async () => {
