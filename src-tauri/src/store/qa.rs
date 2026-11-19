@@ -105,14 +105,38 @@ pub fn scenario_from_env() -> AppResult<Scenario> {
     }
 }
 
-/// 正式应用的数据目录（用于交叉检查；只依赖 HOME，不依赖当前进程身份）。
+/// 正式应用的数据目录（用于交叉检查；不依赖当前进程身份）。
+///
+/// 与 Tauri 的 `app_data_dir()` 保持一致：
+/// - macOS：`$HOME/Library/Application Support/<identifier>`
+/// - Windows：`%APPDATA%\<identifier>`（即 `C:\Users\<user>\AppData\Roaming\<identifier>`）
+///
+/// 返回 `None` 表示取不到该平台的基础目录，调用方必须把 `None` 当作"无法交叉校验"处理，
+/// 而不是当成"不冲突"。
 pub fn production_data_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|home| {
-        PathBuf::from(home)
-            .join("Library")
-            .join("Application Support")
-            .join(PRODUCTION_IDENTIFIER)
-    })
+    platform_app_data_base().map(|base| base.join(PRODUCTION_IDENTIFIER))
+}
+
+/// 当前平台的应用数据基础目录（与 Tauri 的 `app_data_dir()` 同源）。
+fn platform_app_data_base() -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        std::env::var_os("HOME").map(|home| {
+            PathBuf::from(home)
+                .join("Library")
+                .join("Application Support")
+        })
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var_os("APPDATA").map(PathBuf::from)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+    }
 }
 
 /// 取"最长存在祖先"的 canonical 路径，再接回不存在的尾部。
@@ -206,11 +230,7 @@ pub fn verify_marker(dir: &Path) -> AppResult<()> {
 
 /// `qa_seed` 与测试用：默认 QA 根（`~/Library/Application Support/dev.artflow.minidesk.qa/<scenario>`）。
 pub fn default_root(scenario: Scenario) -> AppResult<PathBuf> {
-    let home = std::env::var_os("HOME")
-        .ok_or_else(|| AppError::env("无法读取 HOME，不能定位 QA 目录"))?;
-    let base = PathBuf::from(home)
-        .join("Library")
-        .join("Application Support")
-        .join(QA_IDENTIFIER);
-    Ok(scenario_root(&base, scenario))
+    let base = platform_app_data_base()
+        .ok_or_else(|| AppError::env("无法定位应用数据目录，不能定位 QA 目录"))?;
+    Ok(scenario_root(&base.join(QA_IDENTIFIER), scenario))
 }
