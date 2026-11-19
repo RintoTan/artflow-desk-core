@@ -24,7 +24,8 @@
 
 | 项 | 说明 |
 | --- | --- |
-| 尚未实机验证 | 构建在本机无法完成（缺 Windows 资源编译器），改由 CI 构建；产物尚未在 Windows 上跑过 |
+| 尚未实机验证 | 由 GitHub Actions `windows-latest` 构建；CI 只覆盖进程/窗口生命周期，安装、卸载、DPI、中文路径、SmartScreen 仍需实机确认 |
+| 单实例提示 | 同一数据目录只允许一个实例；第二个实例会弹出「已有实例在运行」并退出，不会聚焦已有窗口 |
 | 仅 x64 | 未构建 arm64 |
 | 打包带入开发 CLI | `minidesk-probe` / `attachments-probe` / `qa_seed` 会被一起打包（功能不受影响，体积偏大） |
 | QA 默认进演示数据 | 需要空白环境要用 `启动 QA Clean（空白环境）.cmd` |

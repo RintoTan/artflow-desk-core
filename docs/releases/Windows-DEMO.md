@@ -1,47 +1,60 @@
 # Windows Demo
 
-## 当前状态
+## 构建来源
 
-| 项 | 状态 |
+| 项 | 值 |
 | --- | --- |
-| 构建工作流 | 已就绪：`.github/workflows/windows-build.yml` |
-| 正式版 `.exe` + NSIS | **尚未生成**（等待 CI 运行） |
-| QA 版 `.exe` + NSIS | **尚未生成** |
-| 实机验收 | **未执行**（当前开发环境是 macOS） |
+| 应用版本 | 0.1.0 |
+| 构建方式 | GitHub Actions `windows-latest`（原生 MSVC，非交叉编译） |
+| 目标三元组 | `x86_64-pc-windows-msvc` |
+| 打包器 | Tauri 2 + NSIS |
+| 配置 | Production 用 `src-tauri/tauri.conf.json`；QA 用 `src-tauri/tauri.qa.conf.json` |
+| 工作流 | `.github/workflows/windows-build.yml` |
 
-## 构建方式
+本仓库不使用 macOS 交叉编译 Windows 的方案：`llvm-rc` 在本机不可得，早期尝试已被判定为阻断。
 
-GitHub Actions → `windows-build` → Run workflow（勾选 `build_qa`）：
+## 产物
 
-1. `windows-latest` 上装 Node 20 + Rust MSVC；
-2. `npm ci` → `npm run typecheck` → `npm run build` → `cargo test`；
-3. `tauri build --target x86_64-pc-windows-msvc --bundles nsis`；
-4. 正式版与 QA 版分别在两个 job 里构建，互不覆盖；
-5. 产物 + `SHA256SUMS.txt` 上传为 artifact。
+| 文件 | 说明 |
+| --- | --- |
+| `ArtFlowDesk-Core-Windows-v0.1.0-Production-Portable.exe` | 正式版免安装主程序，标识 `dev.artflow.minidesk` |
+| `ArtFlowDesk-Core-Windows-v0.1.0-Production-Setup.exe` | 正式版 NSIS 安装包 |
+| `ArtFlowDesk-Core-Windows-v0.1.0-QA-Portable.exe` | QA 版免安装主程序，标识 `dev.artflow.minidesk.qa` |
+| `ArtFlowDesk-Core-Windows-v0.1.0-QA-Setup.exe` | QA 版 NSIS 安装包 |
+| `SHA256SUMS.txt` | 上述四个文件的 SHA-256 |
+| `启动 QA Clean（空白环境）.cmd` | 已安装 QA 版时进入 clean 场景 |
+| `启动 QA Clean（Portable 便携版）.cmd` | 便携版进入 clean 场景（与 exe 放同一目录） |
 
-## 产物形态（预期）
+安装包与 Portable 的主程序内部文件名都是 `artflow-minidesk.exe`；版本信息 `FileVersion=0.1.0`，
+产品名分别为 `ArtFlow Desk Core` 与 `ArtFlow Desk Core QA`。
 
+## 校验
+
+Windows（PowerShell）：
+
+```powershell
+Get-FileHash .\*.exe -Algorithm SHA256 | Format-Table -AutoSize
 ```
-ArtFlowDesk-Windows-Production/
-├── artflow-minidesk.exe
-├── ArtFlow Desk Core_0.1.0_x64-setup.exe
-└── SHA256SUMS.txt
 
-ArtFlowDesk-Windows-QA/
-├── artflow-minidesk.exe
-├── ArtFlow Desk Core QA_0.1.0_x64-setup.exe
-├── SHA256SUMS.txt
-└── Launchers/启动 QA Clean（空白环境）.cmd
-```
+`SHA256SUMS.txt` 由 PowerShell 生成，行尾是 CRLF；在 macOS/Linux 上比对前先 `tr -d '\r'`。
 
-实际文件名以 CI 输出为准。
+## 自动化冒烟测试
 
-## WebView2
+工作流在构建后真实启动产物，执行：启动 → 等待主窗口 → 发送 `WM_CLOSE` → 等待进程退出 → 检查无残留子进程 → 再启动一次 → 再关闭。
+Production 与 QA（clean / seeded）各自执行两轮，并检查数据目录与场景隔离。
 
-未显式配置 `webviewInstallMode`，采用 Tauri 默认的 `downloadBootstrapper`：安装时若缺 WebView2 运行时会引导联网下载。
+- 脚本：`scripts/windows/smoke-test.ps1`
+- 日志：随 artifact 一起上传（`smoke-test.log` / `smoke-clean.log` / `smoke-seeded.log`）
+- 覆盖：进程启动、窗口创建、关闭后进程退出、二次启动、数据目录与隔离
+- **不覆盖**：界面内容是否渲染正确（Runner 无法可靠判定）、安装/卸载、DPI、中文路径、SmartScreen
 
-## 待实机验证
+## 实机验收
 
-WebView2 运行时、`http://asset.localhost` 的 scope 行为、`%APPDATA%` 落盘路径、中文与空格路径、125%/150% DPI、Ctrl 快捷键、资源管理器拖拽导入、NSIS 安装/卸载/重装后的数据保留、与 macOS 的备份互恢复。
+尚未在任何一台真实 Windows 电脑上执行。清单见 [WINDOWS-MANUAL-TEST.md](../development/WINDOWS-MANUAL-TEST.md)，全部标记 NOT RUN。
 
-验收清单见[docs/development/WINDOWS-MANUAL-TEST.md](../development/WINDOWS-MANUAL-TEST.md)（T01–T59）。
+## 已知限制
+
+- 未做代码签名：首次运行有 SmartScreen 提示。
+- 同一数据目录只允许一个实例：第二个实例提示「已有实例在运行」后退出，不会聚焦已有窗口。
+- 仅构建 x64，未构建 arm64。
+- 打包会把 `minidesk-probe` / `attachments-probe` / `qa_seed` 三个开发用 CLI 一起带入，功能无影响但体积偏大。

@@ -90,8 +90,17 @@ function Get-DataDir {
 }
 
 function Get-LogTail {
-    param([string]$Dir)
-    $file = Join-Path (Join-Path $Dir 'logs') 'app.log'
+    param([string]$Kind)
+    # 日志写在"应用标识"的数据目录下，不是场景目录：
+    #   正式 dev.artflow.minidesk\logs\app.log
+    #   QA   dev.artflow.minidesk.qa\logs\app.log
+    if ($Kind -eq 'Production') {
+        $root = Join-Path $env:APPDATA 'dev.artflow.minidesk'
+    }
+    else {
+        $root = Join-Path $env:APPDATA 'dev.artflow.minidesk.qa'
+    }
+    $file = Join-Path (Join-Path $root 'logs') 'app.log'
     if (Test-Path $file) {
         return (Get-Content $file -Tail 20 -Encoding UTF8) -join "`n"
     }
@@ -119,17 +128,17 @@ for ($i = 1; $i -le $Cycles; $i++) {
 
     Start-Sleep -Milliseconds 1500
     if ($proc.HasExited) {
-        Record "$tag-start" 'FAIL' "启动后立即退出，ExitCode=$($proc.ExitCode)；日志：$(Get-LogTail $dataDir)"
+        Record "$tag-start" 'FAIL' "启动后立即退出，ExitCode=$($proc.ExitCode)；日志：$(Get-LogTail $Mode)"
         break
     }
 
     $hwnd = Wait-MainWindow -Proc $proc -TimeoutSec $WindowTimeoutSec
     if ($hwnd -eq $null) {
-        Record "$tag-start" 'FAIL' "进程在等待窗口期间退出；日志：$(Get-LogTail $dataDir)"
+        Record "$tag-start" 'FAIL' "进程在等待窗口期间退出；日志：$(Get-LogTail $Mode)"
         break
     }
     if ($hwnd -eq [IntPtr]::Zero) {
-        Record "$tag-window" 'FAIL' "进程存活但 $WindowTimeoutSec 秒内没有主窗口；日志：$(Get-LogTail $dataDir)"
+        Record "$tag-window" 'FAIL' "进程存活但 $WindowTimeoutSec 秒内没有主窗口；日志：$(Get-LogTail $Mode)"
         Stop-OwnTree -RootId $proc.Id
         break
     }
@@ -148,7 +157,7 @@ for ($i = 1; $i -le $Cycles; $i++) {
 
     $exited = $proc.WaitForExit($ExitTimeoutSec * 1000)
     if (-not $exited) {
-        $detail = "关闭窗口后 $ExitTimeoutSec 秒内进程未退出（疑似窗口消失但进程残留）；日志：$(Get-LogTail $dataDir)"
+        $detail = "关闭窗口后 $ExitTimeoutSec 秒内进程未退出（疑似窗口消失但进程残留）；日志：$(Get-LogTail $Mode)"
         Record "$tag-exit" 'FAIL' $detail
         try {
             Get-Process -Id $proc.Id | Select-Object Id, ProcessName, MainWindowHandle, StartTime |
@@ -210,7 +219,7 @@ else {
 
 $summary = "SUMMARY|$Mode|total=$($results.Count)|failures=$failures"
 Write-Log $summary
-Write-Log "INFO|dataDir-log $(Get-LogTail $dataDir)"
+Write-Log "INFO|dataDir-log $(Get-LogTail $Mode)"
 
 if ($failures -gt 0) { exit 1 }
 exit 0
