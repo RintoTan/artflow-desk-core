@@ -12,6 +12,7 @@ param(
     [int]$Cycles = 2,
     [int]$WindowTimeoutSec = 60,
     [int]$ExitTimeoutSec = 25,
+    [int]$ChildGraceSec = 15,
     [string]$LogPath = ''
 )
 
@@ -170,16 +171,26 @@ for ($i = 1; $i -le $Cycles; $i++) {
 
     Record "$tag-exit" 'PASS' "退出码=$($proc.ExitCode)"
 
-    # 退出后不应留下本次启动的子进程
-    Start-Sleep -Milliseconds 800
+    # 退出后不应留下本次启动的子进程。
+    # WebView2 的渲染进程是异步收尾的，主进程退出后可能还要一两秒才消失，
+    # 所以这里给一个收敛窗口（默认 15 秒），超时仍存活才算残留。
     $left = Get-ProcessTree -RootId $proc.Id | Where-Object { $_ -ne $proc.Id }
+    $deadline = (Get-Date).AddSeconds($ChildGraceSec)
     $alive = @()
-    foreach ($id in $left) {
-        if (Get-Process -Id $id -ErrorAction SilentlyContinue) { $alive += $id }
-    }
+    do {
+        $alive = @()
+        foreach ($id in $left) {
+            $p2 = Get-Process -Id $id -ErrorAction SilentlyContinue
+            if ($p2) { $alive += $p2 }
+        }
+        if ($alive.Count -eq 0) { break }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+
     if ($alive.Count -gt 0) {
-        Record "$tag-children" 'FAIL' "主进程退出后仍有子进程存活：$($alive -join ',')"
-        foreach ($id in $alive) { try { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue } catch { } }
+        $desc = ($alive | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ','
+        Record "$tag-children" 'FAIL' "主进程退出 $ChildGraceSec 秒后仍有子进程存活：$desc"
+        foreach ($p2 in $alive) { try { Stop-Process -Id $p2.Id -Force -ErrorAction SilentlyContinue } catch { } }
     }
     else {
         Record "$tag-children" 'PASS' '无残留子进程'
