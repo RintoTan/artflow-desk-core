@@ -205,6 +205,71 @@ const doneDated = await ev(`(async () => {
 record("完成单（有历史日期）：临时显示并定位到历史日期",
   doneDated.inView === true && doneDated.focused === true, doneDated);
 
+// 居中：目标行中心与日历视口中心的距离
+const centered = await ev(`(async () => {
+  const pin = [...document.querySelectorAll(".cal-rail-pin")].find((b) => b.getAttribute("aria-label") === "定位 AF-2026-0001");
+  pin.click();
+  await new Promise((r) => setTimeout(r, 900));
+  const seg = document.querySelector('[data-order-id="s1"]')?.closest(".cal-seg");
+  const sc = document.querySelector(".cal-scroll").getBoundingClientRect();
+  const r = seg.getBoundingClientRect();
+  return { offset: Math.round(Math.abs((r.top + r.bottom) / 2 - (sc.top + sc.bottom) / 2)), half: Math.round(sc.height / 2), focused: seg.className.includes("is-focus-target") };
+})()`);
+record("定位后目标条接近日历可视区中央", centered.focused === true && centered.offset <= centered.half * 0.6, centered);
+
+// 3 秒自动解除
+await sleep(3400);
+const autoGone = await ev(`(() => ({ focused: Boolean(document.querySelector(".cal-seg.is-focus-target")), gridAttr: document.querySelector(".cal-grid").dataset.focusOrder ?? null }))()`);
+record("3 秒后聚焦自动解除（无需手动关闭）", autoGone.focused === false && autoGone.gridAttr === null, autoGone);
+
+// 未排期图钉：轻量提示、不改变日历
+const hint = await ev(`(async () => {
+  const before = document.querySelector(".cal-title").textContent.trim();
+  const pin = [...document.querySelectorAll(".cal-rail-pin")].find((b) => b.getAttribute("aria-label") === "定位 AF-2026-0004");
+  pin.click();
+  await new Promise((r) => setTimeout(r, 300));
+  const el = document.querySelector(".cal-rail-hint");
+  return { text: el?.textContent ?? null, after: document.querySelector(".cal-title").textContent.trim(), before, focused: Boolean(document.querySelector(".cal-seg.is-focus-target")) };
+})()`);
+record("未排期图钉显示悬浮提示且不动日历",
+  (hint.text ?? "").includes("尚未排期") && hint.after === hint.before && hint.focused === false, hint);
+
+// 完成单（无日期）提示
+const doneHint = await ev(`(async () => {
+  const pin = [...document.querySelectorAll(".cal-rail-pin")].find((b) => b.getAttribute("aria-label") === "定位 AF-2026-0006");
+  pin.click();
+  await new Promise((r) => setTimeout(r, 300));
+  return { text: document.querySelector(".cal-rail-hint")?.textContent ?? null };
+})()`);
+record("无日期完成单图钉提示「未参与排期」", (doneHint.text ?? "").includes("未参与排期"), doneHint);
+
+// 图钉列对齐
+const pinAlign = await ev(`(() => {
+  const rights = [...document.querySelectorAll(".cal-rail-card")].map((c) => {
+    const pin = c.querySelector(".cal-rail-pin").getBoundingClientRect();
+    const card = c.getBoundingClientRect();
+    return Math.round(card.right - pin.right);
+  });
+  return { uniq: [...new Set(rights)], cards: rights.length };
+})()`);
+record("所有卡片图钉处于同一水平位置", pinAlign.uniq.length === 1, pinAlign);
+
+// 周视图：至少 3 条可见订单轨道
+const weekView = await ev(`(async () => {
+  [...document.querySelectorAll("button")].find((b) => b.textContent === "周")?.click();
+  await new Promise((r) => setTimeout(r, 600));
+  const week = document.querySelector(".cal-week");
+  const style = getComputedStyle(week);
+  const rows = style.gridTemplateRows.split(" ").map((v) => parseFloat(v));
+  const lanes = rows.length - 2;
+  const laneH = rows[1];
+  const chips = document.querySelectorAll(".cal-chip");
+  return { lanes, laneH, rowH: Math.round(week.getBoundingClientRect().height), chips: chips.length,
+    chipH: chips[0] ? Math.round(chips[0].getBoundingClientRect().height) : null };
+})()`);
+record("周视图至少 3 条可见订单轨道且条高可读",
+  weekView.lanes >= 3 && weekView.laneH >= 18 && (weekView.chipH === null || weekView.chipH >= 14), weekView);
+
 await ev(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
 await sleep(300);
 record("Esc 取消聚焦", (await ev(`Boolean(document.querySelector(".cal-seg.is-focus-target"))`)) === false, null);

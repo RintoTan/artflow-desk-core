@@ -117,9 +117,30 @@ export function monthGridMetrics(
   return metricsFromRow(rowH, LANES_MAX_MONTH, moreRow);
 }
 
-/** 周视图保持自己的独立密度：6 条轨道、固定 118 行高，不随窗口缩放。 */
-export function weekGridMetrics(): GridMetrics {
-  return metricsFromRow(117, WEEK_LANES, true, false);
+/**
+ * 周视图：独立密度，**至少 3 条可见订单轨道**，行高随可用高度拉长。
+ *
+ * 之前是 6 条轨道塞进 117px，每条只有 12px，订单条几乎认不出来。
+ * 现在固定 3 条打底（不够就加），把高度优先给轨道和条高。
+ */
+export function weekGridMetrics(availableHeight = 0): GridMetrics {
+  const numH = 26;
+  const moreH = 20;
+  const minLanes = 3;
+  const target = availableHeight > 0 ? Math.max(122, Math.min(280, availableHeight - 1)) : 122;
+  const maxLanes = Math.max(minLanes, Math.floor((target - numH - moreH) / (CHIP_MIN_H + 7)));
+  const lanes = Math.min(WEEK_LANES, maxLanes);
+  const laneH = Math.max(CHIP_MIN_H + 4, Math.floor((target - numH - moreH) / lanes));
+  const chipH = Math.max(CHIP_MIN_H, Math.min(19, laneH - 5));
+  return {
+    lanes,
+    numH,
+    laneH,
+    moreH,
+    rowH: numH + lanes * laneH + moreH,
+    chipH,
+    fontPx: 11.5,
+  };
 }
 
 /** 当前月份在月视图里占几周（4 / 5 / 6）。 */

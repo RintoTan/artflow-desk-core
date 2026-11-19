@@ -428,8 +428,8 @@ describe("月视图网格度量", () => {
 
   it("周视图度量与月视图解耦", () => {
     const week = weekGridMetrics();
-    expect(week.lanes).toBe(6);
-    expect(week.rowH).toBe(week.numH + week.laneH * 6 + week.moreH);
+    expect(week.lanes).toBeGreaterThanOrEqual(3);
+    expect(week.rowH).toBe(week.numH + week.laneH * week.lanes + week.moreH);
   });
 });
 

@@ -123,7 +123,7 @@ export default function CalendarPage() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (dragRef.current !== null) return;  // 拖动中的 Esc 交给拖动自己的处理
-      setFocusOrderId(null);
+      clearFocus();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -164,6 +164,12 @@ export default function CalendarPage() {
   /** 头部被裁掉的行数：渲染后要把 scrollTop 往回退，否则视口会跳。 */
   const trimHeadRef = useRef(0);
   const scrollTargetRef = useRef<DayIndex | null>(null);
+  /** 刚做过"定位跳转"：下一帧不要按中心日补偿，否则会被拉回原处。 */
+  const jumpRef = useRef(false);
+  /** 跳转锚点：紧接着的行高变化要围绕它重新居中，而不是旧的视口中心日。 */
+  const jumpAnchorRef = useRef<{ day: DayIndex; at: number } | null>(null);
+  /** 聚焦计时器：定位完成后 3 秒自动解除，新的定位会先清掉旧的。 */
+  const focusTimerRef = useRef<number | null>(null);
   const scrollEl = useRef<HTMLDivElement | null>(null);
   const initializedRef = useRef(false);
 
@@ -178,7 +184,30 @@ export default function CalendarPage() {
       const heightChanged = Math.abs(measured - prev.rowH) > 0.5;
       const viewportChanged = Math.abs(el.clientHeight - prev.clientH) > 0.5;
       // 有明确的滚动目标（今天/跳转）时，目标优先，别让"保持视口中心"抢先返回
-      if ((heightChanged || viewportChanged) && scrollTargetRef.current === null) {
+      // 刚定位完就赶上行高变化（月份周数 5/6 切换）：围绕跳转目标重新居中，
+      // 否则会用"旧的视口中心日"把视口拉回去，看起来像没定位成功。
+      const jumpAnchor = jumpAnchorRef.current;
+      if (
+        (heightChanged || viewportChanged) &&
+        scrollTargetRef.current === null &&
+        !jumpRef.current &&
+        jumpAnchor !== null &&
+        Date.now() - jumpAnchor.at < 1500
+      ) {
+        const weeks = (weekStartOf(jumpAnchor.day) - rangeStart) / 7;
+        rowHRef.current = measured;
+        prevRowHRef.current = measured;
+        el.scrollTop = Math.max(0, (weeks + 0.5) * measured - el.clientHeight / 2);
+        lastFrameRef.current = {
+          rowH: measured,
+          clientH: el.clientHeight,
+          scrollTop: el.scrollTop,
+          centerDay: jumpAnchor.day,
+        };
+        return;
+      }
+
+      if ((heightChanged || viewportChanged) && scrollTargetRef.current === null && !jumpRef.current) {
         // 行高或视口高度变了：把"视口中心那一天"钉回原位。
         // 用具体日期而不是行序号/像素比例 —— 月份周数变化会让行高反复变，
         // 只有按天锚定才不会来回漂（实测按行序号连续缩放会漂到别的月份）。
@@ -225,6 +254,8 @@ export default function CalendarPage() {
     const target =
       scrollTargetRef.current ??
       (initializedRef.current || today === null || viewportH === 0 ? null : today);
+    // 只在"本帧开头就带着 jump 标记"时跳过补偿；进入这里说明本帧没有新的跳转要处理
+    if (target === null) jumpRef.current = false;
     if (target !== null && rangeStart !== null) {
       const targetWeek = weekStartOf(target);
       // 目标还不在当前窗口里（刚触发扩范围、要下一帧才生效）：先别用旧 rangeStart 换算，
@@ -236,6 +267,16 @@ export default function CalendarPage() {
       const centered = index * rowHRef.current - el.clientHeight / 2 + rowHRef.current / 2;
       el.scrollTop = Math.max(0, centered);
       scrollTargetRef.current = null;
+      // 跳转后立刻把"上一帧"重写成跳转后的状态：否则下一帧会拿旧的中心日做补偿，
+      // 把刚跳过去的位置又拉回原来的月份（远端定位失效的根因）。
+      jumpRef.current = true;
+      jumpAnchorRef.current = { day: target, at: Date.now() };
+      lastFrameRef.current = {
+        rowH: measured,
+        clientH: el.clientHeight,
+        scrollTop: el.scrollTop,
+        centerDay: target,
+      };
       setVisibleAnchor(target);
     }
   });
@@ -462,7 +503,7 @@ export default function CalendarPage() {
   const metrics =
     view === "month"
       ? monthGridMetrics(viewportH, weeksInMonth(monthAnchor ?? anchor), !topMore)
-      : weekGridMetrics();
+      : weekGridMetrics(viewportH);
 
   /**
    * 滚动窗口上限（周）。窗口本身是有界的，但**不是**用户能感觉到的墙：
@@ -540,7 +581,10 @@ export default function CalendarPage() {
     votes.forEach((entry) => {
       if (winner === null || entry.votes > winner.votes) winner = entry;
     });
-    if (winner !== null) {
+    // 刚做过定位跳转：短暂锁定目标月份，别让同一帧的滚动事件用多数票把标题盖回去
+    const jump = jumpAnchorRef.current;
+    const jumpFresh = jump !== null && Date.now() - jump.at < 1500;
+    if (winner !== null && !jumpFresh) {
       const current = visibleAnchor ?? anchor;
       if (current === null || monthKeyOf(current) !== monthKeyOf((winner as { day: DayIndex }).day)) {
         setVisibleAnchor((winner as { day: DayIndex }).day);
@@ -556,22 +600,44 @@ export default function CalendarPage() {
 
   /** 点击日期格：记录焦点；跨月时把当前可视月份切到那一天。 */
   function pickDay(day: DayIndex) {
-    setFocusOrderId(null);
+    clearFocus();
     setFocusedDay(day);
     const base = visibleAnchor ?? anchor;
     if (base === null || monthKeyOf(day) !== monthKeyOf(base)) setVisibleAnchor(day);
   }
 
   /** 把某一天滚到视口（用于「今天」、月份跳转与视图切换）。 */
+  function clearFocus() {
+    if (focusTimerRef.current !== null) {
+      window.clearTimeout(focusTimerRef.current);
+      focusTimerRef.current = null;
+    }
+    setFocusOrderId(null);
+  }
+
+  function startFocus(orderId: string) {
+    if (focusTimerRef.current !== null) window.clearTimeout(focusTimerRef.current);
+    setFocusOrderId(orderId);
+    // 从"定位完成"起算：跳转发生在下一帧的 layout effect 里，这里等两帧再开始计时
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        focusTimerRef.current = window.setTimeout(() => {
+          focusTimerRef.current = null;
+          setFocusOrderId(null);
+        }, 3000);
+      });
+    });
+  }
+
   /** 图钉定位：已排期 → 滚到日期并 A+B 聚焦；未排期/无历史日期 → 定位左侧卡片。 */
   function locateOrder(order: OrderView) {
     if (focusOrderId === order.id) {
-      setFocusOrderId(null);
+      clearFocus();
       return;
     }
     const span = orderSpan(order);
     if (span === null) {
-      setFocusOrderId(order.id);
+      startFocus(order.id);
       setRailFlash(order.id);
       window.setTimeout(() => setRailFlash((current) => (current === order.id ? null : current)), 1800);
       return;
@@ -582,7 +648,7 @@ export default function CalendarPage() {
     setFocusedDay(target);
     if (view === "month") scrollToDay(target);
     else setAnchor(target);
-    setFocusOrderId(order.id);
+    startFocus(order.id);
   }
 
   function scrollToDay(day: DayIndex) {
@@ -613,7 +679,7 @@ export default function CalendarPage() {
 
   function switchView(next: CalendarView) {
     // 切换视图时清掉聚焦，避免把上一个视图的目标带到新视图
-    setFocusOrderId(null);
+    clearFocus();
     if (next === "week") {
       // 月 → 周：停在当前可视日期所在的周
       if (visibleAnchor !== null) setAnchor(visibleAnchor);

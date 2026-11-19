@@ -70,6 +70,30 @@ export default function OrderRail({
     done: false,
   });
   const listRef = useRef<HTMLDivElement | null>(null);
+  const [hint, setHint] = useState<{ id: string; text: string; x: number; y: number } | null>(null);
+  const hintTimer = useRef<number | null>(null);
+
+  function showHint(order: OrderView, anchor: HTMLElement, terminal: boolean) {
+    if (hintTimer.current !== null) window.clearTimeout(hintTimer.current);
+    const rect = anchor.getBoundingClientRect();
+    setHint({
+      id: order.id,
+      text: terminal ? "该完成订单未参与排期" : "该订单尚未排期，无法定位到日历日期",
+      x: Math.max(8, Math.min(rect.left - 60, window.innerWidth - 248)),
+      y: rect.bottom + 6,
+    });
+    hintTimer.current = window.setTimeout(() => {
+      hintTimer.current = null;
+      setHint(null);
+    }, 2400);
+  }
+
+  useEffect(
+    () => () => {
+      if (hintTimer.current !== null) window.clearTimeout(hintTimer.current);
+    },
+    [],
+  );
   const needle = query.trim().toLowerCase();
 
   const buckets: Record<RailSection, OrderView[]> = { unscheduled: [], scheduled: [], done: [] };
@@ -164,21 +188,23 @@ export default function OrderRail({
                           .join(" ")}
                         data-rail-order={order.id}
                       >
-                        {!terminal && (
-                          <span
-                            className="cal-rail-grip"
-                            role="button"
-                            tabIndex={-1}
-                            aria-label={`拖动 ${order.code}`}
-                            onPointerDown={(event) => {
-                              if (event.button !== 0) return;
-                              event.preventDefault();
-                              onDragStart(order, event);
-                            }}
-                          >
-                            <GripIcon />
-                          </span>
-                        )}
+                        <span
+                          className={`cal-rail-grip${terminal ? " is-empty" : ""}`}
+                          role={terminal ? undefined : "button"}
+                          tabIndex={terminal ? undefined : -1}
+                          aria-label={terminal ? undefined : `拖动 ${order.code}`}
+                          onPointerDown={
+                            terminal
+                              ? undefined
+                              : (event) => {
+                                  if (event.button !== 0) return;
+                                  event.preventDefault();
+                                  onDragStart(order, event);
+                                }
+                          }
+                        >
+                          {!terminal && <GripIcon />}
+                        </span>
 
                         <button
                           type="button"
@@ -202,22 +228,25 @@ export default function OrderRail({
                           </span>
                         </button>
 
-                        {!terminal && (
-                          <button
-                            type="button"
-                            className="cal-rail-reschedule"
-                            onClick={() => onReschedule(order)}
-                            aria-label={`为 ${order.code} 改期`}
-                          >
-                            改期
-                          </button>
-                        )}
+                        <span className="cal-rail-action">
+                          {!terminal && (
+                            <button
+                              type="button"
+                              className="cal-rail-reschedule"
+                              onClick={() => onReschedule(order)}
+                              aria-label={`为 ${order.code} 改期`}
+                            >
+                              改期
+                            </button>
+                          )}
+                        </span>
 
                         <button
                           type="button"
                           className="cal-rail-pin"
                           onClick={(event) => {
                             event.stopPropagation();
+                            if (span === null) showHint(order, event.currentTarget, terminal);
                             onLocate(order);
                           }}
                           title="定位到日历"
@@ -235,6 +264,12 @@ export default function OrderRail({
           );
         })}
       </div>
+
+      {hint !== null && (
+        <div className="cal-rail-hint" role="status" style={{ left: hint.x, top: hint.y }}>
+          {hint.text}
+        </div>
+      )}
     </aside>
   );
 }
