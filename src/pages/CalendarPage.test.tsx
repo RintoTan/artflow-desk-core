@@ -311,7 +311,7 @@ describe("改期流程", () => {
     expect(hoisted.updateOrderDetails).not.toHaveBeenCalled();
   });
 
-  it("未排期订单改期：必须选写入哪一端", async () => {
+  it("未排期改期：两个日期都可自由填写，两端皆空时不能提交", async () => {
     const user = userEvent.setup();
     hoisted.updateOrderDetails.mockImplementation(async () => ipc(order()));
     await ready([
@@ -319,17 +319,62 @@ describe("改期流程", () => {
     ]);
     await user.click(screen.getByRole("button", { name: "为 AF-2026-0002 改期" }));
     const dialog = await screen.findByRole("alertdialog");
-    expect(within(dialog).getByText(/还没有计划日期/)).toBeInTheDocument();
 
-    const date = within(dialog).getByLabelText(/排期日期/);
-    fireEvent.change(date, { target: { value: "2026-11-20" } });
-    // 默认写交付端
+    // 不再有二选一单选，两个输入都可用
+    expect(within(dialog).queryByRole("radio")).not.toBeInTheDocument();
+    const startInput = within(dialog).getByLabelText(/计划开始/) as HTMLInputElement;
+    const deliveryInput = within(dialog).getByLabelText(/计划交付/) as HTMLInputElement;
+    expect(startInput.disabled).toBe(false);
+    expect(deliveryInput.disabled).toBe(false);
+    // 两端皆空 → 不能确认
+    expect(within(dialog).getByRole("button", { name: "确认改期" })).toBeDisabled();
+
+    // 只填开始日期
+    fireEvent.change(startInput, { target: { value: "2026-11-20" } });
+    expect(within(dialog).getByRole("button", { name: "确认改期" })).toBeEnabled();
     await user.click(within(dialog).getByRole("button", { name: "确认改期" }));
     await waitFor(() => expect(hoisted.updateOrderDetails).toHaveBeenCalledTimes(1));
     expect(hoisted.updateOrderDetails.mock.calls[0]![0]).toMatchObject({
-      plannedStartDate: null,
-      plannedDeliveryDate: "2026-11-20",
+      plannedStartDate: "2026-11-20",
+      plannedDeliveryDate: null,
     });
+  });
+
+  it("未排期改期：两端都填时按两端写入，且校验先后顺序", async () => {
+    const user = userEvent.setup();
+    hoisted.updateOrderDetails.mockImplementation(async () => ipc(order()));
+    await ready([
+      order({ id: "none", code: "AF-2026-0002", title: "完全未排期", plannedStartDate: null, plannedDeliveryDate: null }),
+    ]);
+    await user.click(screen.getByRole("button", { name: "为 AF-2026-0002 改期" }));
+    const dialog = await screen.findByRole("alertdialog");
+    const startInput = within(dialog).getByLabelText(/计划开始/);
+    const deliveryInput = within(dialog).getByLabelText(/计划交付/);
+
+    fireEvent.change(startInput, { target: { value: "2026-11-20" } });
+    fireEvent.change(deliveryInput, { target: { value: "2026-11-18" } });
+    expect(within(dialog).getByText("计划交付日期不能早于计划开始日期")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "确认改期" })).toBeDisabled();
+
+    fireEvent.change(deliveryInput, { target: { value: "2026-11-25" } });
+    await user.click(within(dialog).getByRole("button", { name: "确认改期" }));
+    await waitFor(() => expect(hoisted.updateOrderDetails).toHaveBeenCalledTimes(1));
+    expect(hoisted.updateOrderDetails.mock.calls[0]![0]).toMatchObject({
+      plannedStartDate: "2026-11-20",
+      plannedDeliveryDate: "2026-11-25",
+    });
+  });
+
+  it("清空一端后另一端保留", async () => {
+    const user = userEvent.setup();
+    await ready([order({ plannedStartDate: "2026-11-10", plannedDeliveryDate: "2026-11-14" })]);
+    await user.click(screen.getByRole("button", { name: "为 AF-2026-0001 改期" }));
+    const dialog = await screen.findByRole("alertdialog");
+    const startInput = within(dialog).getByLabelText(/计划开始/) as HTMLInputElement;
+    fireEvent.change(startInput, { target: { value: "" } });
+    expect(startInput.value).toBe("");
+    expect((within(dialog).getByLabelText(/计划交付/) as HTMLInputElement).value).toBe("2026-11-14");
+    expect(within(dialog).getByRole("button", { name: "确认改期" })).toBeEnabled();
   });
 
   it("revision 冲突：对话框保留并显示后端原文，自动重载", async () => {

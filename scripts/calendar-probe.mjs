@@ -371,13 +371,24 @@ async function main() {
       const cell = cellByText("20");
       const bg = cell ? bgOf(cell) : null;
       if (!chip || !bg) return { ok: false, reason: "找不到 chip 或目标格" };
-      const scroller = document.querySelector(".cal-main");
-      if (scroller) { scroller.scrollLeft = Math.max(0, bg.offsetLeft - 60); await new Promise((r) => setTimeout(r, 120)); }
+      const scroller = document.querySelector(".cal-scroll");
+      if (scroller) {
+        // offsetTop 是相对 offsetParent 的，必须换算成滚动容器内的坐标
+        const scRect = scroller.getBoundingClientRect();
+        const bgRect = bg.getBoundingClientRect();
+        const innerLeft = bgRect.left - scRect.left + scroller.scrollLeft;
+        const innerTop = bgRect.top - scRect.top + scroller.scrollTop;
+        scroller.scrollLeft = Math.max(0, innerLeft - 60);
+        scroller.scrollTop = Math.max(0, innerTop - 80);
+        await new Promise((r) => setTimeout(r, 180));
+      }
       const gridAtStart = (() => {
-        const g = document.querySelector(".cal-grid").getBoundingClientRect();
+        // 卡片（.cal-main）是外层不动的部分；网格本身会随内部滚动移动
+        const g = document.querySelector(".cal-main").getBoundingClientRect();
         return {
           top: Math.round(g.top), left: Math.round(g.left),
           width: Math.round(g.width), height: Math.round(g.height),
+          scrollTop: Math.round(scroller ? scroller.scrollTop : 0),
           scrollLeft: Math.round(scroller ? scroller.scrollLeft : 0),
         };
       })();
@@ -397,9 +408,9 @@ async function main() {
   );
   const gridDuring = await evaluate(
     send,
-    `(() => { const g = document.querySelector(".cal-grid").getBoundingClientRect();
-      const sc = document.querySelector(".cal-main");
-      return { top: Math.round(g.top), left: Math.round(g.left), width: Math.round(g.width), height: Math.round(g.height), scrollLeft: Math.round(sc ? sc.scrollLeft : 0) }; })()`,
+    `(() => { const g = document.querySelector(".cal-main").getBoundingClientRect();
+      const sc = document.querySelector(".cal-scroll");
+      return { top: Math.round(g.top), left: Math.round(g.left), width: Math.round(g.width), height: Math.round(g.height), scrollTop: Math.round(sc ? sc.scrollTop : 0), scrollLeft: Math.round(sc ? sc.scrollLeft : 0) }; })()`,
   );
   results.measurements.gridDuring = gridDuring;
   const gridAtStart = dragging.gridAtStart ?? null;
@@ -477,8 +488,17 @@ async function main() {
       const cell = cellByText("24");
       const bg = cell ? bgOf(cell) : null;
       if (!chip || !bg) return { ok: false, reason: "找不到 chip 或目标格" };
-      const scroller = document.querySelector(".cal-main");
-      if (scroller) { scroller.scrollLeft = Math.max(0, bg.offsetLeft - 60); await new Promise((r) => setTimeout(r, 120)); }
+      const scroller = document.querySelector(".cal-scroll");
+      if (scroller) {
+        // offsetTop 是相对 offsetParent 的，必须换算成滚动容器内的坐标
+        const scRect = scroller.getBoundingClientRect();
+        const bgRect = bg.getBoundingClientRect();
+        const innerLeft = bgRect.left - scRect.left + scroller.scrollLeft;
+        const innerTop = bgRect.top - scRect.top + scroller.scrollTop;
+        scroller.scrollLeft = Math.max(0, innerLeft - 60);
+        scroller.scrollTop = Math.max(0, innerTop - 80);
+        await new Promise((r) => setTimeout(r, 180));
+      }
       const from = chip.getBoundingClientRect();
       const to = bg.getBoundingClientRect();
       // 左端 → 改开始日期
@@ -558,8 +578,58 @@ async function main() {
     })()`,
   );
   results.measurements.poolDialog = poolDialog;
-  check("未排期池可打开改期并选择写入哪一端", poolDialog.ok === true && /写入计划/.test(poolDialog.text ?? ""), (poolDialog.text ?? "").slice(0, 80));
+  check(
+    "未排期池可打开改期，两端都可自由填写",
+    poolDialog.ok === true && /还没有计划日期/.test(poolDialog.text ?? "") && /计划开始/.test(poolDialog.text ?? ""),
+    (poolDialog.text ?? "").slice(0, 90),
+  );
   const shotPool = await shot(send, "04-未排期改期.png", false);
+
+  // 4.5) 独立纵向滚动：工具栏不动、外层不动、只有网格滚
+  const scrollCheck = await evaluate(
+    send,
+    `(async () => {
+      const sc = document.querySelector(".cal-scroll");
+      const bar = document.querySelector(".cal-toolbar");
+      const grid = document.querySelector(".cal-grid");
+      if (!sc || !bar || !grid) return null;
+      const before = {
+        barTop: Math.round(bar.getBoundingClientRect().top),
+        gridTop: Math.round(grid.getBoundingClientRect().top),
+        pageY: Math.round(window.scrollY),
+        scrollTop: Math.round(sc.scrollTop),
+        scrollable: sc.scrollHeight > sc.clientHeight + 1,
+        overflowY: getComputedStyle(sc).overflowY,
+        overscroll: getComputedStyle(sc).overscrollBehavior,
+      };
+      const maxScroll = sc.scrollHeight - sc.clientHeight;
+      const next = sc.scrollTop + 120 <= maxScroll ? sc.scrollTop + 120 : Math.max(0, sc.scrollTop - 120);
+      sc.scrollTop = next;
+      await new Promise((r) => setTimeout(r, 200));
+      const after = {
+        barTop: Math.round(bar.getBoundingClientRect().top),
+        gridTop: Math.round(grid.getBoundingClientRect().top),
+        pageY: Math.round(window.scrollY),
+        scrollTop: Math.round(sc.scrollTop),
+      };
+      return { before, after };
+    })()`,
+  );
+  results.measurements.scroll = scrollCheck;
+  check(
+    "日历网格可独立纵向滚动（overflow:auto + overscroll:contain）",
+    scrollCheck?.before?.overflowY === "auto" && scrollCheck?.before?.overscroll === "contain",
+    JSON.stringify(scrollCheck?.before ?? null),
+  );
+  check(
+    "滚动只发生在网格内：工具栏与外层页面不动",
+    scrollCheck !== null &&
+      scrollCheck.after.scrollTop !== scrollCheck.before.scrollTop &&
+      scrollCheck.after.barTop === scrollCheck.before.barTop &&
+      scrollCheck.after.pageY === scrollCheck.before.pageY &&
+      scrollCheck.after.gridTop !== scrollCheck.before.gridTop,
+    `${JSON.stringify(scrollCheck?.before)} → ${JSON.stringify(scrollCheck?.after)}`,
+  );
 
   // 5) 三段操作区：CSS 规则 + 键盘聚焦可见性（headless 下 CDP 悬停不生效，见报告）
   await evaluate(send, `document.querySelector(".cal-today")?.click()`);

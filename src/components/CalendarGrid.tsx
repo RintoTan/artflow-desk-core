@@ -85,6 +85,10 @@ function Chip({
           onOpenOrder(order.id);
         }
       }}
+      // 不让按下把焦点落到条上：聚焦会触发浏览器"滚动到可见"，拖动一开始网格就会跳一下
+      onMouseDown={(event) => {
+        if (!terminal) event.preventDefault();
+      }}
       onPointerDown={(event) => {
         if (terminal) return;
         if (event.button !== 0) return;

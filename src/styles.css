@@ -6267,3 +6267,68 @@ dl.stat-row {
   opacity: 0.55;
   cursor: pointer;
 }
+
+/* ---------------------------------------------------------------- DEV-06D-3-UI-06 日历独立纵向滚动 */
+/*
+ * 工具栏与状态浮层固定在卡片顶部，只有日期网格滚动。
+ * 用 min-height: 0 + flex 让滚动容器真正能收缩，不靠压缩格高。
+ */
+.cal-body {
+  align-items: stretch;
+}
+
+.cal-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* 留出页面头部与卡片外边距；矮窗口下自动变矮，不压缩日期格 */
+  max-height: calc(100dvh - 196px);
+  overflow: hidden;
+}
+
+.cal-toolbar {
+  flex: none;
+}
+
+.cal-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  /* 滚到边界时不把滚动传给外层页面 */
+  overscroll-behavior: contain;
+}
+
+/* 左池同样独立滚动，避免 50 单时把整页撑长 */
+.cal-pool {
+  max-height: calc(100dvh - 196px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* 滚动条保持系统原生（与 SCROLLBAR-01 的分治一致），只把角落压平 */
+.cal-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 拖动反馈槽位：固定高度，提示与浮层互换时不改变网格位置 */
+.cal-hint-slot {
+  position: relative;
+  flex: none;
+  min-height: 34px;
+  margin-top: 6px;
+}
+
+.cal-hint-slot .cal-hint {
+  margin: 0;
+}
+
+.cal-hint-slot .cal-drag-status {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  width: auto;
+  margin: 0;
+  pointer-events: none;
+}

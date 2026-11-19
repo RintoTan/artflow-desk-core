@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { OrderView } from "../bridge/commands";
 import { formatDayKey, parseDayKey } from "../lib/scheduleBar";
@@ -12,8 +12,6 @@ type Props = {
   order: OrderView | null;
   /** 拖放算出的目标日期；键盘路径为当前日期。 */
   initial: ReschedulePlan | null;
-  /** 未排期订单拖入时必须让用户选写哪一端。 */
-  allowFieldChoice?: boolean;
   /** 拖放来源的落点（用于"拖到过去日期"的提示）。 */
   droppedDay?: string | null;
   today: string;
@@ -41,7 +39,6 @@ export default function RescheduleDialog({
   open,
   order,
   initial,
-  allowFieldChoice = false,
   droppedDay = null,
   today,
   busy = false,
@@ -50,24 +47,20 @@ export default function RescheduleDialog({
   onConfirm,
 }: Props) {
   const [start, setStart] = useState("");
-  /** 未排期拖入时用户选定的那一天。 */
-  const [target, setTarget] = useState("");
   const [delivery, setDelivery] = useState("");
   const [reason, setReason] = useState("");
-  const [field, setField] = useState<"start" | "delivery">("delivery");
-  const fieldName = useId();
 
   useEffect(() => {
     if (!open) return;
     setStart(initial?.start ?? "");
     setDelivery(initial?.delivery ?? "");
-    setTarget(initial?.delivery ?? initial?.start ?? "");
     setReason("");
-    setField("delivery");
   }, [open, initial?.start, initial?.delivery]);
 
-  const nextStart = allowFieldChoice ? (field === "start" ? target : "") : start;
-  const nextDelivery = allowFieldChoice ? (field === "delivery" ? target : "") : delivery;
+  const nextStart = start;
+  const nextDelivery = delivery;
+  /** 两个端点都空时没有可写入的排期，直接禁用确认。 */
+  const bothEmpty = nextStart === "" && nextDelivery === "";
 
   const invalid = useMemo(() => {
     const s = nextStart === "" ? null : parseDayKey(nextStart);
@@ -98,7 +91,7 @@ export default function RescheduleDialog({
       cancelLabel="取消"
       busy={busy}
       error={error}
-      confirmDisabled={invalid !== null || unchanged || order === null}
+      confirmDisabled={invalid !== null || bothEmpty || unchanged || order === null}
       onCancel={onCancel}
       onConfirm={() =>
         onConfirm(
@@ -115,73 +108,36 @@ export default function RescheduleDialog({
             <span className="cal-dialog-sub">{describe(order)}</span>
           </p>
 
-          {allowFieldChoice && (
-            <fieldset className="cal-dialog-field">
-              <legend>这条订单还没有计划日期，请选择写入哪一端</legend>
-              <label>
-                <input
-                  type="radio"
-                  name={fieldName}
-                  checked={field === "start"}
-                  onChange={() => setField("start")}
-                />
-                写入计划开始日期
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name={fieldName}
-                  checked={field === "delivery"}
-                  onChange={() => setField("delivery")}
-                />
-                写入计划交付日期
-              </label>
-            </fieldset>
+          {(order.plannedStartDate === null && order.plannedDeliveryDate === null) && (
+            <p className="cal-dialog-hint">
+              这条订单还没有计划日期：可以只填一端，也可以两端都填；留空的一端不会被自动补上。
+            </p>
           )}
 
-          {allowFieldChoice ? (
-            <div className="cal-dialog-dates">
-              <label>
-                <span>排期日期</span>
-                <input type="date" value={target} onChange={(event) => setTarget(event.target.value)} />
-                <em>写入{field === "start" ? "计划开始日期" : "计划交付日期"}</em>
-              </label>
-              <label>
-                <span>另一端点</span>
-                <input type="date" value="" disabled aria-label="另一端点（保持为空）" />
-                <em>保持为空，不自动补日期</em>
-              </label>
-            </div>
-          ) : (
-            <div className="cal-dialog-dates">
-              <label>
-                <span>计划开始</span>
-                <input
-                  type="date"
-                  value={start}
-                  onChange={(event) => setStart(event.target.value)}
-                />
-                <em>
-                  {startChanged
-                    ? `原 ${pretty(order.plannedStartDate)} → ${pretty(nextStart === "" ? null : nextStart)}`
-                    : "保持不变"}
-                </em>
-              </label>
-              <label>
-                <span>计划交付</span>
-                <input
-                  type="date"
-                  value={delivery}
-                  onChange={(event) => setDelivery(event.target.value)}
-                />
-                <em>
-                  {deliveryChanged
-                    ? `原 ${pretty(order.plannedDeliveryDate)} → ${pretty(nextDelivery === "" ? null : nextDelivery)}`
-                    : "保持不变"}
-                </em>
-              </label>
-            </div>
-          )}
+          <div className="cal-dialog-dates">
+            <label>
+              <span>计划开始</span>
+              <input type="date" value={start} onChange={(event) => setStart(event.target.value)} />
+              <em>
+                {startChanged
+                  ? `原 ${pretty(order.plannedStartDate)} → ${pretty(nextStart === "" ? null : nextStart)}`
+                  : "保持不变"}
+              </em>
+            </label>
+            <label>
+              <span>计划交付</span>
+              <input
+                type="date"
+                value={delivery}
+                onChange={(event) => setDelivery(event.target.value)}
+              />
+              <em>
+                {deliveryChanged
+                  ? `原 ${pretty(order.plannedDeliveryDate)} → ${pretty(nextDelivery === "" ? null : nextDelivery)}`
+                  : "保持不变"}
+              </em>
+            </label>
+          </div>
 
           {invalid !== null && <p className="cal-dialog-invalid">{invalid}</p>}
 
