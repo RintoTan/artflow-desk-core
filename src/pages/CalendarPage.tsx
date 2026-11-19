@@ -809,10 +809,12 @@ export default function CalendarPage() {
                 type="button"
                 className="cal-today"
                 onClick={() => {
+                  if (today === null) return;
+                  // 两种视图都必须真的"滚过去"：周视图只改 anchor 的话，
+                  // 网格不动，今天所在周会停在第一行（标题却是中间行）—— 这就是定位失效的根因。
                   setAnchor(today);
                   setFocusedDay(today);
-                  if (view === "month") scrollToDay(today);
-                  else setAnchor(today);
+                  scrollToDay(today);
                 }}
               >
                 今天

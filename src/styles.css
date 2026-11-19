@@ -7104,3 +7104,24 @@ dl.stat-row {
   appearance: none;
   display: none;
 }
+
+/* ---------------------------------------------------------------- DEV-06D-3-UI-08E 浮层信息层级 */
+/* 订单标题是主信息，编号只是辅助：编号小一号、弱色，标题大一号、加重 */
+.cal-popover-order .mono {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
+}
+
+.cal-popover-order strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.25;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

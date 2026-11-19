@@ -133,7 +133,10 @@ export function weekGridMetrics(availableHeight = 0, rows = 1): GridMetrics {
   // 优先"少而厚"的轨道；空间紧张时也至少保留 3 条（宁可压薄，不减少轨道）
   const preferred = Math.floor(room / 22);
   const lanes = Math.max(1, Math.min(WEEK_LANES, room >= 45 ? Math.max(3, preferred) : preferred || 1));
-  const laneH = Math.max(16, Math.floor(room / Math.max(1, lanes)));
+  let laneH = Math.max(16, Math.floor(room / Math.max(1, lanes)));
+  // 三段之和必须 ≤ 单行预算，否则第三行会被裁掉几个像素（周视图"三行看不全"的真正原因）
+  const budget = perRow;
+  while (numH + lanes * laneH + moreH > budget && laneH > 14) laneH -= 1;
   const chipH = Math.max(12, Math.min(19, laneH - 3));
   return {
     lanes,
