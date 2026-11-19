@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OrderView } from "../bridge/commands";
-import { daysFromCivil } from "../lib/scheduleBar";
+import { weekdayIndex } from "../lib/timeline";
 import CalendarPage from "./CalendarPage";
 
 const hoisted = vi.hoisted(() => ({
@@ -143,14 +143,18 @@ afterEach(() => {
 });
 
 describe("日历页面骨架", () => {
-  it("默认月视图：6 周 × 7 天 = 42 格，周一起始", async () => {
+  it("默认月视图：连续周行，每周 7 天，周一起始", async () => {
     await ready([order()]);
     const weeks = document.querySelectorAll(".cal-week");
-    expect(weeks).toHaveLength(6);
+    // 连续式日历：初始前后各 30 周，滚动到边界再扩展
+    expect(weeks.length).toBeGreaterThanOrEqual(28);
     const cells = document.querySelectorAll(".cal-day-bg");
-    expect(cells).toHaveLength(42);
-    // 2026-11-01 是周日 → 网格从 2026-10-26（周一）开始
-    expect(Number(cells[0]?.getAttribute("data-day"))).toBe(daysFromCivil(2026, 10, 26));
+    expect(cells.length).toBe(weeks.length * 7);
+    const firstDay = Number(cells[0]?.getAttribute("data-day"));
+    expect(weekdayIndex(firstDay)).toBe(0); // 每周从周一开始
+    // 相邻格子严格 +1，不重复不跳号
+    const days = [...cells].map((c) => Number(c.getAttribute("data-day")));
+    expect(days.every((d, i) => i === 0 || d === days[i - 1]! + 1)).toBe(true);
     expect(screen.getByText("2026 年 11 月")).toBeInTheDocument();
   });
 

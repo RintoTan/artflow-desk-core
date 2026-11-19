@@ -168,7 +168,7 @@ export default function CalendarGrid({
   }, [more]);
 
   return (
-    <div className={`cal-grid cal-view-${view}`}>
+    <div className={`cal-grid cal-view-${view}`} data-weeks={weeks.length} data-view={view}>
       <div className="cal-weekdays" aria-hidden="true">
         {WEEKDAYS.map((label) => (
           <span key={label}>{label}</span>
@@ -257,7 +257,10 @@ export default function CalendarGrid({
                   style={{ gridColumn: col + 1, gridRow: maxLanes + 2 }}
                   onClick={(event) => {
                     const rect = event.currentTarget.getBoundingClientRect();
-                    setMore({ day, orders: hidden, x: rect.left, y: rect.bottom });
+                    // 浮层宽 300、最高 320：贴边时要往回收，避免跑出视口
+                    const x = Math.max(8, Math.min(rect.left, window.innerWidth - 308));
+                    const y = Math.max(8, Math.min(rect.bottom, window.innerHeight - 328));
+                    setMore({ day, orders: hidden, x, y });
                   }}
                 >
                   +{hidden.length}

@@ -258,6 +258,35 @@ async function main() {
   }
   await sleep(500);
 
+  // 可选：截图前先往下滚 N 周，用于"跨月连续滚动"的取证
+  const scrollWeeks = Number(process.env.PROBE_SCROLL_WEEKS ?? 0);
+  if (scrollWeeks > 0) {
+    await evaluate(
+      send,
+      `(async () => {
+        const sc = document.querySelector(".cal-scroll");
+        const row = document.querySelector(".cal-week")?.getBoundingClientRect().height ?? 105;
+        sc.scrollTop += ${scrollWeeks} * 7 * row;
+        await new Promise((r) => setTimeout(r, 300));
+        return true;
+      })()`,
+    );
+  }
+
+  if (process.env.PROBE_DUMP === "1") {
+    console.log(JSON.stringify(await evaluate(send, `(() => {
+      const weeks = [...document.querySelectorAll(".cal-week")].slice(0, 3).map((w) => ({
+        days: [...w.querySelectorAll(".cal-day-bg")].map((b) => b.dataset.day),
+        chips: [...w.querySelectorAll(".cal-seg")].map((s) => {
+          const r = s.getBoundingClientRect();
+          return { row: getComputedStyle(s).gridRow, col: getComputedStyle(s).gridColumn, top: Math.round(r.top), h: Math.round(r.height) };
+        }),
+      }));
+      const sc = document.querySelector(".cal-scroll");
+      return { weeks, scrollTop: Math.round(sc.scrollTop), gridTop: Math.round(document.querySelector(".cal-grid").getBoundingClientRect().top), weekH: Math.round(document.querySelector(".cal-week").getBoundingClientRect().height) };
+    })()`), null, 1));
+  }
+
   const month = await evaluate(
     send,
     `(() => {
@@ -274,6 +303,10 @@ async function main() {
         gridWidth: Math.round(grid.getBoundingClientRect().width),
         gridHeight: Math.round(grid.getBoundingClientRect().height),
         weeks: weeks.length,
+        monotonic: (() => {
+          const days = [...document.querySelectorAll(".cal-day-bg")].map((el) => Number(el.dataset.day));
+          return days.every((d, i) => i === 0 || d === days[i - 1] + 1);
+        })(),
         weekHeights: weeks.map((el) => Math.round(el.getBoundingClientRect().height)),
         gridBottom: Math.round(grid.getBoundingClientRect().bottom),
         mainBottom: main ? Math.round(main.getBoundingClientRect().bottom) : null,
@@ -296,8 +329,8 @@ async function main() {
   );
   results.measurements.month = month;
 
-  check("月视图 6 行", month.weeks === 6, `weeks=${month.weeks}`);
-  check("月视图 42 格", month.cells === 42, `cells=${month.cells}`);
+  check("月视图为连续周行（初始 ≥28 周）", month.weeks >= 28, `weeks=${month.weeks}`);
+  check("每周 7 天、日期连续不重复", month.cells === month.weeks * 7 && month.monotonic === true, `cells=${month.cells} monotonic=${month.monotonic}`);
   check("页面无横向溢出", month.pageScrollWidth <= month.pageClientWidth + 1, `${month.pageScrollWidth}/${month.pageClientWidth}`);
   check("左侧未排期池存在且宽度合理", month.poolWidth >= 150 && month.poolWidth <= 320, `pool=${month.poolWidth}`);
   check("同日 4 单触发 +N 折叠", month.moreButtons > 0 && month.moreLabels.some((t) => t === "+1"), JSON.stringify(month.moreLabels));
@@ -317,6 +350,8 @@ async function main() {
       const cells = [...document.querySelectorAll(".cal-day-bg")];
       return {
         weeks: document.querySelectorAll(".cal-week").length,
+        dataWeeks: Number(document.querySelector(".cal-grid")?.dataset.weeks ?? -1),
+        view: document.querySelector(".cal-grid")?.dataset.view ?? null,
         cells: cells.length,
         title: document.querySelector(".cal-title")?.textContent ?? null,
         chipCount: document.querySelectorAll(".cal-chip").length,
@@ -336,11 +371,11 @@ async function main() {
 
   const HELPERS = `
       const chip = document.querySelector('.cal-chip[data-order-id="a1"]');
-      const cellByText = (text) =>
-        [...document.querySelectorAll(".cal-day-num")].find((el) => el.textContent.trim() === text);
-      const bgOf = (numEl) => {
-        const col = Number(getComputedStyle(numEl).gridColumnStart);
-        return numEl.parentElement ? [...numEl.parentElement.querySelectorAll(".cal-day-bg")][col - 1] : null;
+      // 连续日历里 "20" 会在每个月出现，必须按 data-day 定位
+      const dayIndex = (y, m, d) => Math.round(Date.UTC(y, m - 1, d) / 86400000);
+      const cellFor = (iso) => {
+        const [y, m, d] = iso.split("-").map(Number);
+        return document.querySelector('.cal-day-bg[data-day="' + dayIndex(y, m, d) + '"]');
       };
       const opts = (x, y) => ({ bubbles: true, clientX: x, clientY: y, button: 0, pointerId: 1, pointerType: "mouse", isPrimary: true });
       const snapshot = () => ({
@@ -368,8 +403,7 @@ async function main() {
     send,
     `(async () => {
       ${HELPERS}
-      const cell = cellByText("20");
-      const bg = cell ? bgOf(cell) : null;
+      const bg = cellFor("2026-11-20");
       if (!chip || !bg) return { ok: false, reason: "找不到 chip 或目标格" };
       const scroller = document.querySelector(".cal-scroll");
       if (scroller) {
@@ -485,8 +519,7 @@ async function main() {
       }
       await new Promise((r) => setTimeout(r, 200));
       ${HELPERS}
-      const cell = cellByText("24");
-      const bg = cell ? bgOf(cell) : null;
+      const bg = cellFor("2026-11-24");
       if (!chip || !bg) return { ok: false, reason: "找不到 chip 或目标格" };
       const scroller = document.querySelector(".cal-scroll");
       if (scroller) {
@@ -538,9 +571,8 @@ async function main() {
     send,
     `(async () => {
       const chip = document.querySelector('.cal-chip[data-order-id="a1"]');
-      const cell = [...document.querySelectorAll(".cal-day-num")].find((el) => el.textContent.trim() === "22");
-      const col = cell ? Number(getComputedStyle(cell).gridColumnStart) : 0;
-      const bg = cell ? [...cell.parentElement.querySelectorAll(".cal-day-bg")][col - 1] : null;
+      const di = (y, m, d) => Math.round(Date.UTC(y, m - 1, d) / 86400000);
+      const bg = document.querySelector('.cal-day-bg[data-day="' + di(2026, 11, 22) + '"]');
       if (!chip || !bg) return { closed: false, writes: -1 };
       const from = chip.getBoundingClientRect();
       const to = bg.getBoundingClientRect();
@@ -584,6 +616,78 @@ async function main() {
     (poolDialog.text ?? "").slice(0, 90),
   );
   const shotPool = await shot(send, "04-未排期改期.png", false);
+
+  // 4.4) 连续滚动：跨月跨年、标题跟随、无重复日期、滚动条隐藏
+  const continuous = await evaluate(
+    send,
+    `(async () => {
+      const sc = document.querySelector(".cal-scroll");
+      const title = () => document.querySelector(".cal-title")?.textContent ?? "";
+      const firstDay = () => Number(document.querySelector(".cal-day-bg")?.dataset.day);
+      const before = { title: title(), first: firstDay(), scrollTop: Math.round(sc.scrollTop) };
+      sc.scrollTop += 12 * 7 * 105;      // 大约 12 周 ≈ 3 个月
+      await new Promise((r) => setTimeout(r, 220));
+      const down = { title: title(), first: firstDay(), scrollTop: Math.round(sc.scrollTop) };
+      sc.scrollTop -= 24 * 7 * 105;      // 往回 24 周 ≈ 半年
+      await new Promise((r) => setTimeout(r, 220));
+      const up = { title: title(), first: firstDay(), scrollTop: Math.round(sc.scrollTop) };
+      const days = [...document.querySelectorAll(".cal-day-bg")].map((el) => Number(el.dataset.day));
+      const dupes = days.length !== new Set(days).size;
+      const cs = getComputedStyle(sc);
+      return {
+        before, down, up, dupes,
+        scrollbarWidth: cs.scrollbarWidth,
+        verticalRule: (() => {
+          for (const sheet of document.styleSheets) {
+            let rules; try { rules = sheet.cssRules; } catch { continue; }
+            for (const r of rules) if (r.selectorText === ".cal-scroll::-webkit-scrollbar:vertical") return r.style.display || r.style.width;
+          }
+          return null;
+        })(),
+        overflowY: cs.overflowY,
+        webkitBar: (() => {
+          for (const sheet of document.styleSheets) {
+            let rules; try { rules = sheet.cssRules; } catch { continue; }
+            for (const r of rules) if (r.selectorText === ".cal-scroll::-webkit-scrollbar") return r.style.display || r.style.width;
+          }
+          return null;
+        })(),
+        weeks: document.querySelectorAll(".cal-week").length,
+        dataWeeks: Number(document.querySelector(".cal-grid")?.dataset.weeks ?? -1),
+        view: document.querySelector(".cal-grid")?.dataset.view ?? null,
+      };
+    })()`,
+  );
+  results.measurements.continuous = continuous;
+  check("向下滚可跨越月份，标题自动更新", continuous.down.title !== continuous.before.title, `${continuous.before.title} → ${continuous.down.title}`);
+  check("向上滚可回看过去", continuous.up.title !== continuous.down.title, `${continuous.down.title} → ${continuous.up.title}`);
+  check("连续滚动无重复日期", continuous.dupes === false, `dupes=${continuous.dupes}`);
+  check(
+    "纵向滚动条已隐藏、滚动能力保留",
+    continuous.overflowY === "auto" &&
+      String(continuous.webkitBar).startsWith("0") &&
+      String(continuous.verticalRule) === "none",
+    `overflow=${continuous.overflowY} bar-width=${continuous.webkitBar} vertical=${continuous.verticalRule}`,
+  );
+
+  // 今天：滚回今天所在周
+  const backToToday = await evaluate(
+    send,
+    `(async () => {
+      document.querySelector(".cal-today")?.click();
+      await new Promise((r) => setTimeout(r, 260));
+      const sc = document.querySelector(".cal-scroll");
+      const todayCell = document.querySelector(".cal-day-bg[data-today='1']");
+      const r = todayCell ? todayCell.getBoundingClientRect() : null;
+      return {
+        title: document.querySelector(".cal-title")?.textContent ?? "",
+        visible: r ? r.top >= 0 && r.bottom <= window.innerHeight : false,
+        scrollTop: Math.round(sc.scrollTop),
+      };
+    })()`,
+  );
+  results.measurements.backToToday = backToToday;
+  check("点「今天」回到今天所在月份且日期可见", /2026 年 11 月/.test(backToToday.title) && backToToday.visible === true, JSON.stringify(backToToday));
 
   // 4.5) 独立纵向滚动：工具栏不动、外层不动、只有网格滚
   const scrollCheck = await evaluate(
@@ -726,9 +830,8 @@ async function main() {
     send,
     `(async () => {
       const chip = document.querySelector('.cal-chip[data-order-id="a5"]');
-      const cell = [...document.querySelectorAll(".cal-day-num")].find((el) => el.textContent.trim() === "12");
-      const col = cell ? Number(getComputedStyle(cell).gridColumnStart) : 0;
-      const bg = cell ? [...cell.parentElement.querySelectorAll(".cal-day-bg")][col - 1] : null;
+      const di = (y, m, d) => Math.round(Date.UTC(y, m - 1, d) / 86400000);
+      const bg = document.querySelector('.cal-day-bg[data-day="' + di(2026, 11, 12) + '"]');
       if (!chip || !bg) return "no-target";
       const from = chip.getBoundingClientRect();
       const to = bg.getBoundingClientRect();

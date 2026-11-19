@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { api, describeError, isConflict, type OrderView } from "../bridge/commands";
@@ -9,13 +9,13 @@ import {
   compareUnscheduled,
   dropPlan,
   isTerminal,
-  monthMatrix,
   monthTitle,
   orderSpan,
   rescheduleInput,
   shiftMonth,
   shiftWeek,
   weekDays,
+  weekStartOf,
   weekTitle,
   type CalendarView,
   type DropMode,
@@ -48,6 +48,11 @@ export default function CalendarPage() {
   const [generation, setGeneration] = useState(0);
   const [view, setView] = useState<CalendarView>("month");
   const [anchor, setAnchor] = useState<DayIndex | null>(null);
+  /** 连续周行的起点（某周周一）与总周数；滚动到边界时向两侧扩展。 */
+  const [rangeStart, setRangeStart] = useState<DayIndex | null>(null);
+  const [rangeWeeks, setRangeWeeks] = useState(29);
+  /** 当前可视中心日期所属月份，用于月份标题与当月着色。 */
+  const [visibleAnchor, setVisibleAnchor] = useState<DayIndex | null>(null);
   const [showTerminal, setShowTerminal] = useState(false);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [dialog, setDialog] = useState<DialogState | null>(null);
@@ -109,6 +114,44 @@ export default function CalendarPage() {
   useEffect(() => {
     if (anchor === null && today !== null) setAnchor(today);
   }, [anchor, today]);
+
+  // 用今天初始化连续周范围：前后各 14 周（共 29 行），滚动到边界再自动扩
+  useEffect(() => {
+    if (today === null) return;
+    setRangeStart((prev) => prev ?? weekStartOf(today) - 14 * 7);
+    setVisibleAnchor((prev) => prev ?? today);
+  }, [today]);
+
+  const rowHRef = useRef(0);
+  const prependRef = useRef(0);
+  const scrollTargetRef = useRef<DayIndex | null>(null);
+  const scrollEl = useRef<HTMLDivElement | null>(null);
+  const initializedRef = useRef(false);
+
+  /** 记录真实行高，用于把 scrollTop 换算成周序号（每行等高）。 */
+  useLayoutEffect(() => {
+    const el = scrollEl.current;
+    const first = el?.querySelector<HTMLElement>(".cal-week");
+    if (!el || !first) return;
+    rowHRef.current = first.getBoundingClientRect().height || rowHRef.current;
+    if (prependRef.current > 0) {
+      // 向上补日期时把新增高度补给 scrollTop，视口内容保持不动
+      el.scrollTop += prependRef.current * rowHRef.current;
+      prependRef.current = 0;
+    }
+    // 首次渲染后把视口对准今天；之后只在显式跳转时才动
+    const target =
+      scrollTargetRef.current ?? (initializedRef.current || today === null ? null : today);
+    if (target !== null && rangeStart !== null) {
+      initializedRef.current = true;
+      const index = Math.round((weekStartOf(target) - rangeStart) / 7);
+      // 把目标周放到视口中部，这样 handleScroll 用"中心"推导月份时与目标一致
+      const centered = index * rowHRef.current - el.clientHeight / 2 + rowHRef.current / 2;
+      el.scrollTop = Math.max(0, centered);
+      scrollTargetRef.current = null;
+      setVisibleAnchor(target);
+    }
+  });
 
   // 拖放：在 window 上收尾，不用 setPointerCapture（会吞 click）
   useEffect(() => {
@@ -290,22 +333,88 @@ export default function CalendarPage() {
     return null;
   })();
 
-  const weeks =
-    view === "month"
-      ? Array.from({ length: 6 }, (_, row) => monthMatrix(anchor).slice(row * 7, row * 7 + 7))
-      : [weekDays(anchor)];
+  // 注意：这里必须用普通计算，不能用 useMemo —— 它位于条件 return 之后。
+  const weeks = (() => {
+    if (view === "week") return [weekDays(anchor)];
+    const start = rangeStart ?? weekStartOf(anchor);
+    return Array.from({ length: rangeWeeks }, (_, i) =>
+      Array.from({ length: 7 }, (_, col) => start + i * 7 + col),
+    );
+  })();
 
-  const title = view === "month" ? monthTitle(anchor) : weekTitle(anchor);
+  const monthAnchor = view === "month" ? (visibleAnchor ?? anchor) : anchor;
+  const title = view === "month" ? monthTitle(monthAnchor) : weekTitle(anchor);
+
+  /** 距离今天最多往回 / 往前各 60 周，超出就不再扩，避免 DOM 无限增长。 */
+  const MAX_BACK_WEEKS = 60;
+  const MAX_FWD_WEEKS = 60;
+
+  function extendWeeks(direction: "up" | "down") {
+    if (today === null || rangeStart === null) return;
+    const todayWeek = weekStartOf(today);
+    if (direction === "up") {
+      const nextStart = rangeStart - 12 * 7;
+      if (todayWeek - nextStart > MAX_BACK_WEEKS * 7) return;
+      prependRef.current = 12;
+      setRangeStart(nextStart);
+      setRangeWeeks((n) => n + 12);
+    } else {
+      const nextEnd = rangeStart + (rangeWeeks + 12) * 7;
+      if (nextEnd - todayWeek > MAX_FWD_WEEKS * 7) return;
+      setRangeWeeks((n) => n + 12);
+    }
+  }
+
+  function handleScroll() {
+    const el = scrollEl.current;
+    if (el === null || rangeStart === null || rowHRef.current === 0) return;
+    const rowH = rowHRef.current;
+    const index = Math.floor((el.scrollTop + el.clientHeight / 2) / rowH);
+    const clamped = Math.max(0, Math.min(rangeWeeks - 1, index));
+    setVisibleAnchor(rangeStart + clamped * 7 + 3);
+    // 接近上下边界时提前补数据，滚动本身不中断
+    if (el.scrollTop < rowH * 4) extendWeeks("up");
+    else if (el.scrollTop + el.clientHeight > el.scrollHeight - rowH * 4) extendWeeks("down");
+  }
+
+  /** 把某一天滚到视口（用于「今天」、月份跳转与视图切换）。 */
+  function scrollToDay(day: DayIndex) {
+    if (rangeStart === null) return;
+    const needStart = weekStartOf(day) - 2 * 7;
+    const needEnd = weekStartOf(day) + 3 * 7;
+    if (needStart < rangeStart) {
+      const add = Math.ceil((rangeStart - needStart) / 7) * 7;
+      setRangeStart(rangeStart - add);
+      setRangeWeeks((n) => n + add / 7);
+    } else if (needEnd > rangeStart + rangeWeeks * 7) {
+      const add = Math.ceil((needEnd - (rangeStart + rangeWeeks * 7)) / 7) * 7;
+      setRangeWeeks((n) => n + add / 7);
+    }
+    scrollTargetRef.current = day;
+    setVisibleAnchor(day);
+  }
 
   function shift(direction: -1 | 1) {
-    setAnchor((prev) =>
-      prev === null ? prev : view === "month" ? shiftMonth(prev, direction) : shiftWeek(prev, direction),
-    );
+    if (view === "week") {
+      setAnchor((prev) => (prev === null ? prev : shiftWeek(prev, direction)));
+      return;
+    }
+    const base = visibleAnchor ?? anchor;
+    if (base === null) return;
+    scrollToDay(shiftMonth(base, direction));
   }
 
   function switchView(next: CalendarView) {
-    // 保留当前浏览日期：只换视图，不回到今天
-    setView(next);
+    if (next === "week") {
+      // 月 → 周：停在当前可视日期所在的周
+      if (visibleAnchor !== null) setAnchor(visibleAnchor);
+      setView("week");
+      return;
+    }
+    // 周 → 月：把该周滚到视口中央附近
+    const day = anchor;
+    setView("month");
+    if (day !== null) scrollToDay(day);
   }
 
   return (
@@ -437,7 +546,15 @@ export default function CalendarPage() {
               <button type="button" onClick={() => shift(1)} aria-label="下一段">
                 ›
               </button>
-              <button type="button" className="cal-today" onClick={() => setAnchor(today)}>
+              <button
+                type="button"
+                className="cal-today"
+                onClick={() => {
+                  setAnchor(today);
+                  if (view === "month") scrollToDay(today);
+                  else setAnchor(today);
+                }}
+              >
                 今天
               </button>
             </div>
@@ -451,10 +568,10 @@ export default function CalendarPage() {
             </div>
           </div>
 
-          <div className="cal-scroll">
+          <div className="cal-scroll" ref={scrollEl} onScroll={handleScroll}>
           <CalendarGrid
             view={view}
-            anchor={anchor}
+            anchor={monthAnchor ?? anchor}
             today={today}
             weeks={weeks}
             orders={visible}

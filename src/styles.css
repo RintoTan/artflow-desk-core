@@ -5375,8 +5375,8 @@ dl.stat-row {
 .cal-popover {
   position: fixed;
   z-index: 70;
-  width: 300px;
-  max-height: 320px;
+  width: min(300px, calc(100vw - 16px));
+  max-height: min(320px, calc(100dvh - 16px));
   overflow: auto;
   border-radius: 10px;
   border: 1px solid var(--border-strong);
@@ -6331,4 +6331,45 @@ dl.stat-row {
   width: auto;
   margin: 0;
   pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- DEV-06D-3-UI-05 连续纵向日历 */
+/*
+ * 连续周行 + 隐藏滚动条：
+ *   - 滚动能力保留（overflow:auto），只是不给可见滚动条
+ *   - 上一轮已把工具栏固定在卡片顶部，这里不再改动
+ */
+/* 纵向滚动条隐藏；窄窗下横向仍需可滚动，保留 8px 细条 */
+.cal-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 8px;
+  background: transparent;
+}
+
+.cal-scroll::-webkit-scrollbar:vertical {
+  display: none;
+  width: 0;
+}
+
+.cal-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+
+.cal-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 连续周行之间不留缝，避免月份边界出现断层 */
+.cal-view-month .cal-week {
+  border-bottom: 1px solid var(--border);
+}
+
+.cal-view-month .cal-week:first-of-type {
+  border-top: 0;
+}
+
+/* 连续滚动时，周行沿用统一行高，保证 scrollTop 与周序号线性对应 */
+.cal-view-month .cal-week {
+  --cal-week-row: auto;
 }
