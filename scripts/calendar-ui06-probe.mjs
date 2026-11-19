@@ -95,6 +95,8 @@ const ORDERS = [
   order("t2", "AF-2026-0002", "今天格二", TODAY, TODAY, { deadlineState: "dueToday" }),
   order("t3", "AF-2026-0003", "今天格三", TODAY, TODAY, { deadlineState: "dueToday" }),
   order("t4", "AF-2026-0004", "今天格四", TODAY, TODAY, { deadlineState: "dueToday" }),
+  order("t5", "AF-2026-0011", "今天格五", TODAY, TODAY, { deadlineState: "dueToday" }),
+  order("t6", "AF-2026-0012", "今天格六", TODAY, TODAY, { deadlineState: "dueToday" }),
   order("o1", "AF-2026-0005", "下月格一", "2026-12-02", "2026-12-02"),
   order("o2", "AF-2026-0006", "下月格二", "2026-12-02", "2026-12-02"),
   order("o3", "AF-2026-0007", "下月格三", "2026-12-02", "2026-12-02"),
@@ -317,6 +319,8 @@ async function runSize(width, height, port) {
 
     void ((`JSON.stringify({more: document.querySelectorAll(".cal-more").length, chips: document.querySelectorAll(".cal-chip").length, rowH: Math.round(document.querySelector(".cal-week").getBoundingClientRect().height), scrollH: document.querySelector(".cal-scroll").clientHeight, weeks: document.querySelectorAll(".cal-week").length})`));
     // ---------------------------------------------------------------- +N 命中链
+    await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "今天")?.click()`);
+    await sleep(600);
     // 先把一个 +N 滚进视口：命中测试只能在可见区域做
     await evaluate(`(() => { const b = document.querySelector(".cal-more"); if (b) b.scrollIntoView({ block: "center" }); return true; })()`);
     await sleep(400);
@@ -400,7 +404,8 @@ async function runSize(width, height, port) {
     })()`);
     record(label, "点击今天格的 +N 打开浮层", opened.open === true, opened);
     record(label, "浮层列出全部折叠订单并保留详情/改期入口",
-      opened.open && opened.items === 1 && opened.details === 1 && opened.reschedule === 1, opened);
+      opened.open === true && opened.items >= 1 && opened.details === opened.items && opened.reschedule === opened.items,
+      opened);
     record(label, "浮层不超出视口", opened.open === true && opened.insideViewport === true, opened);
     await shot(send, `${label}-01-弹出浮层.png`);
 
@@ -464,6 +469,8 @@ async function runSize(width, height, port) {
       { from: switchState.first, to: afterSwitch.title, count: afterSwitch.count });
     await evaluate(`document.querySelector(".cal-title").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }))`);
 
+    await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "今天")?.click()`);
+    await sleep(600);
     // ---------------------------------------------------------------- 非当月日期交互
     const outsidePick = await evaluate(`(async () => {
       const cell = [...document.querySelectorAll(".cal-day-bg")].find((c) => c.dataset.outside === "1" && Number(c.dataset.day) > ${todayMore.day});
@@ -473,12 +480,12 @@ async function runSize(width, height, port) {
       await new Promise((r) => setTimeout(r, 200));
       const after = document.querySelector(".cal-title").textContent.trim();
       const live = [...document.querySelectorAll(".cal-day-bg")].find((c) => c.dataset.day === cell.dataset.day);
-      return { skipped: false, day: cell.dataset.day, before, after, focus: live?.dataset.focus === "1" };
+      return { skipped: false, day: cell.dataset.day, before, after, focus: live?.dataset.focus === "1",
+        expect: (() => { const d = new Date(Number(cell.dataset.day) * 86400000); return (d.getUTCFullYear()) + " 年 " + (d.getUTCMonth() + 1) + " 月"; })() };
     })()`);
     record(label, "点击非当月日期：焦点标记生效且月份跟随",
       outsidePick.skipped === true ||
-        (outsidePick.focus === true && outsidePick.after !== outsidePick.before &&
-          outsidePick.after.includes("12 月")),
+        (outsidePick.focus === true && outsidePick.after === outsidePick.expect),
       outsidePick);
     await shot(send, `${label}-02-点击非当月日期.png`);
 
@@ -487,6 +494,8 @@ async function runSize(width, height, port) {
     await sleep(300);
 
     // 跨月边界：让 11-30 所在行贴住视口底部 —— 此时视口里 11 月仍占多数
+    await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent === "今天")?.click()`);
+    await sleep(600);
     const boundary = await evaluate(`(() => {
       const sc = document.querySelector(".cal-scroll");
       const rows = [...document.querySelectorAll(".cal-week")];

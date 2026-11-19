@@ -135,7 +135,12 @@ export default function CalendarPage() {
   const prevRowHRef = useRef(0);
   const observedScrollRef = useRef<HTMLDivElement | null>(null);
   /** 上一帧的行高/视口/滚动位置：缩放时用它把视口中心钉在同一行。 */
-  const lastFrameRef = useRef<{ rowH: number; clientH: number; scrollTop: number } | null>(null);
+  const lastFrameRef = useRef<{
+    rowH: number;
+    clientH: number;
+    scrollTop: number;
+    centerDay: DayIndex | null;
+  } | null>(null);
   const viewportObserverRef = useRef<ResizeObserver | null>(null);
   const prependRef = useRef(0);
   const scrollTargetRef = useRef<DayIndex | null>(null);
@@ -149,17 +154,23 @@ export default function CalendarPage() {
     if (!el || !first) return;
     const measured = first.getBoundingClientRect().height || 0;
     const prev = lastFrameRef.current;
-    if (measured > 0 && prev !== null && prev.rowH > 0) {
+    if (measured > 0 && prev !== null && prev.rowH > 0 && prev.centerDay !== null && rangeStart !== null) {
       const heightChanged = Math.abs(measured - prev.rowH) > 0.5;
       const viewportChanged = Math.abs(el.clientHeight - prev.clientH) > 0.5;
       if (heightChanged || viewportChanged) {
-        // 行高或视口高度变了：用"视口中心落在第几行"重算 scrollTop。
-        // 用行序号而不是像素比例，连续缩放多少次都不会累积漂移。
-        const rowIndex = (prev.scrollTop + prev.clientH / 2) / prev.rowH;
+        // 行高或视口高度变了：把"视口中心那一天"钉回原位。
+        // 用具体日期而不是行序号/像素比例 —— 月份周数变化会让行高反复变，
+        // 只有按天锚定才不会来回漂（实测按行序号连续缩放会漂到别的月份）。
+        const weeks = (weekStartOf(prev.centerDay) - rangeStart) / 7;
         rowHRef.current = measured;
         prevRowHRef.current = measured;
-        el.scrollTop = Math.max(0, rowIndex * measured - el.clientHeight / 2);
-        lastFrameRef.current = { rowH: measured, clientH: el.clientHeight, scrollTop: el.scrollTop };
+        el.scrollTop = Math.max(0, (weeks + 0.5) * measured - el.clientHeight / 2);
+        lastFrameRef.current = {
+          rowH: measured,
+          clientH: el.clientHeight,
+          scrollTop: el.scrollTop,
+          centerDay: prev.centerDay,
+        };
         return;
       }
       rowHRef.current = measured;
@@ -168,7 +179,15 @@ export default function CalendarPage() {
       rowHRef.current = measured;
       prevRowHRef.current = measured;
     }
-    lastFrameRef.current = { rowH: measured, clientH: el.clientHeight, scrollTop: el.scrollTop };
+    lastFrameRef.current = {
+      rowH: measured,
+      clientH: el.clientHeight,
+      scrollTop: el.scrollTop,
+      centerDay:
+        measured > 0 && rangeStart !== null
+          ? rangeStart + Math.floor((el.scrollTop + el.clientHeight / 2) / measured) * 7 + 3
+          : null,
+    };
     if (prependRef.current > 0) {
       // 向上补日期时把新增高度补给 scrollTop，视口内容保持不动
       el.scrollTop += prependRef.current * rowHRef.current;

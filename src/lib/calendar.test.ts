@@ -413,10 +413,11 @@ describe("月视图网格度量", () => {
       const m = monthGridMetrics(available, 6);
       expect(m.rowH).toBe(m.numH + m.laneH * m.lanes + m.moreH);
       expect(m.lanes).toBeGreaterThanOrEqual(1);
-      expect(m.lanes).toBeLessThanOrEqual(3);
+      // 轨道数不再写死 3：空间够就更多，最多 6
+      expect(m.lanes).toBeLessThanOrEqual(6);
       expect(m.chipH).toBeLessThanOrEqual(m.laneH);
     }
-    expect(monthGridMetrics(1200, 4).lanes).toBe(3);
+    expect(monthGridMetrics(1600, 4).lanes).toBeGreaterThan(3);
     expect(monthGridMetrics(300, 6).lanes).toBe(1);
   });
 

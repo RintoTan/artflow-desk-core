@@ -206,6 +206,7 @@ export default function CalendarGrid({
     "--cal-more-h": `${metrics.moreH}px`,
     "--cal-chip-h": `${metrics.chipH}px`,
     "--cal-chip-font": `${metrics.fontPx}px`,
+    "--cal-lane-h": `${metrics.laneH}px`,
   } as React.CSSProperties;
 
   return (
@@ -295,12 +296,18 @@ export default function CalendarGrid({
               (() => {
                 const colStart = Math.max(0, preview.from - week[0]!);
                 const colEnd = Math.min(6, preview.to - week[0]!);
+                // 预览条贴在"这笔订单在这周占用的那条轨道"上；找不到（跨周/新落点）
+                // 就落到第 0 条轨道。绝不贴周行底部 —— 行高一变它就会跑到 +N 或下一行去。
+                const lane = layout.segments.find((seg) => seg.order.id === preview.orderId)?.lane ?? 0;
+                const top = metrics.numH + Math.min(lane, laneCount - 1) * metrics.laneH + 1;
                 return (
                   <div
                     className={`cal-preview${preview.valid ? "" : " is-invalid"}`}
                     style={{
                       left: `${(colStart / 7) * 100}%`,
                       width: `${((colEnd - colStart + 1) / 7) * 100}%`,
+                      top: `${top}px`,
+                      height: `${metrics.chipH}px`,
                     }}
                     data-valid={preview.valid ? "1" : "0"}
                     aria-hidden="true"
