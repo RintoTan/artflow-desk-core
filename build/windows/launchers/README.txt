@@ -13,3 +13,10 @@ ArtFlow Desk Core — Windows 启动脚本说明
   seeded  %APPDATA%\dev.artflow.minidesk.qa\seeded
   clean   %APPDATA%\dev.artflow.minidesk.qa\clean
   正式版  %APPDATA%\dev.artflow.minidesk
+
+「启动 QA Clean（Portable 便携版）.cmd」
+  作用：以 clean 场景启动「便携版」QA exe（不需要安装）。
+  用法：把本脚本和 ArtFlowDesk-Core-Windows-*-QA-Portable.exe 放在同一个文件夹，双击即可。
+
+  Portable 版与安装版的区别只是「要不要装」：数据同样写在 %APPDATA% 下，
+  Production 与 QA 的数据目录依然互相隔离。

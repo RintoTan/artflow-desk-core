@@ -1,6 +1,6 @@
-# Windows x64 原生构建（DEV-09B）
+# Windows x64 原生构建 + 启动/退出冒烟测试（DEV-09B / DEV-11）
 #
-# 只做构建与产物上传，不创建 Release、不发布下载链接。
+# 只做构建、冒烟与产物上传，不创建 Release、不发布下载链接。
 # 正式版与 QA 版分别构建，避免产物互相覆盖。
 name: windows-build
 
@@ -19,10 +19,14 @@ concurrency:
   group: windows-build-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  APP_VERSION: "0.1.0"
+
 jobs:
   production:
     name: Production (dev.artflow.minidesk)
     runs-on: windows-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -55,7 +59,7 @@ jobs:
       - name: 构建 Windows 安装包（NSIS）
         run: npx tauri build --target x86_64-pc-windows-msvc --bundles nsis
 
-      - name: 校验产物
+      - name: 校验并命名产物
         shell: pwsh
         run: |
           $root = "src-tauri/target/x86_64-pc-windows-msvc/release"
@@ -65,25 +69,39 @@ jobs:
           if (-not $setup) { throw "缺少 NSIS 安装包" }
           $info = (Get-Item $exe).VersionInfo
           Write-Host "EXE: $exe  $((Get-Item $exe).Length) bytes  FileVersion=$($info.FileVersion)  Product=$($info.ProductName)"
-          Write-Host "SETUP: $($setup.FullName)  $($setup.Length) bytes"
+
           New-Item -ItemType Directory -Force -Path out/Production | Out-Null
-          Copy-Item $exe   out/Production/artflow-minidesk.exe
-          Copy-Item $setup out/Production/$($setup.Name)
-          Get-FileHash out/Production/* -Algorithm SHA256 |
+          $portable = "out/Production/ArtFlowDesk-Core-Windows-v$env:APP_VERSION-Production-Portable.exe"
+          $installer = "out/Production/ArtFlowDesk-Core-Windows-v$env:APP_VERSION-Production-Setup.exe"
+          Copy-Item $exe   $portable
+          Copy-Item $setup.FullName $installer
+
+          Get-FileHash $portable, $installer -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLower())  $($_.Path | Split-Path -Leaf)" } |
             Set-Content out/Production/SHA256SUMS.txt
           Get-Content out/Production/SHA256SUMS.txt
 
+      - name: 启动与退出冒烟测试
+        shell: pwsh
+        run: |
+          $log = "out/Production/smoke-test.log"
+          pwsh -NoProfile -File scripts/windows/smoke-test.ps1 `
+            -ExePath "out/Production/ArtFlowDesk-Core-Windows-v$env:APP_VERSION-Production-Portable.exe" `
+            -Mode Production -Cycles 2 -LogPath $log
+          if ($LASTEXITCODE -ne 0) { throw "冒烟测试失败，详见 $log" }
+
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: ArtFlowDesk-Windows-Production
           path: out/Production
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
 
   qa:
     name: QA (dev.artflow.minidesk.qa)
     runs-on: windows-latest
+    timeout-minutes: 60
     if: ${{ inputs.build_qa }}
     steps:
       - uses: actions/checkout@v4
@@ -108,7 +126,7 @@ jobs:
       - name: 构建 QA 版安装包（NSIS，独立配置）
         run: npx tauri build --config src-tauri/tauri.qa.conf.json --target x86_64-pc-windows-msvc --bundles nsis
 
-      - name: 校验产物
+      - name: 校验并命名产物
         shell: pwsh
         run: |
           $root = "src-tauri/target/x86_64-pc-windows-msvc/release"
@@ -119,21 +137,57 @@ jobs:
           if ($setup.Name -notmatch "QA") { throw "QA 安装包名不含 QA：$($setup.Name)（可能用了正式版配置）" }
           $info = (Get-Item $exe).VersionInfo
           Write-Host "QA EXE: $exe  $((Get-Item $exe).Length) bytes  Product=$($info.ProductName)"
-          Write-Host "QA SETUP: $($setup.FullName)  $($setup.Length) bytes"
+
           New-Item -ItemType Directory -Force -Path out/QA | Out-Null
-          Copy-Item $exe   out/QA/artflow-minidesk.exe
-          Copy-Item $setup out/QA/$($setup.Name)
+          $portable = "out/QA/ArtFlowDesk-Core-Windows-v$env:APP_VERSION-QA-Portable.exe"
+          $installer = "out/QA/ArtFlowDesk-Core-Windows-v$env:APP_VERSION-QA-Setup.exe"
+          Copy-Item $exe   $portable
+          Copy-Item $setup.FullName $installer
           Copy-Item "build/windows/launchers/*" out/Launchers -Recurse -ErrorAction SilentlyContinue
-          Get-FileHash out/QA/* -Algorithm SHA256 |
+
+          Get-FileHash $portable, $installer -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLower())  $($_.Path | Split-Path -Leaf)" } |
             Set-Content out/QA/SHA256SUMS.txt
           Get-Content out/QA/SHA256SUMS.txt
 
+      - name: 冒烟测试（QA Clean）
+        shell: pwsh
+        run: |
+          $log = "out/QA/smoke-clean.log"
+          pwsh -NoProfile -File scripts/windows/smoke-test.ps1 `
+            -ExePath "out/QA/ArtFlowDesk-Core-Windows-v$env:APP_VERSION-QA-Portable.exe" `
+            -Mode QA -Scenario clean -Cycles 2 -LogPath $log
+          if ($LASTEXITCODE -ne 0) { throw "QA Clean 冒烟测试失败，详见 $log" }
+
+      - name: 冒烟测试（QA Seeded）
+        shell: pwsh
+        run: |
+          $log = "out/QA/smoke-seeded.log"
+          pwsh -NoProfile -File scripts/windows/smoke-test.ps1 `
+            -ExePath "out/QA/ArtFlowDesk-Core-Windows-v$env:APP_VERSION-QA-Portable.exe" `
+            -Mode QA -Scenario seeded -Cycles 2 -LogPath $log
+          if ($LASTEXITCODE -ne 0) { throw "QA Seeded 冒烟测试失败，详见 $log" }
+
+      - name: 核对 QA 场景目录互相独立
+        shell: pwsh
+        run: |
+          $base = Join-Path $env:APPDATA "dev.artflow.minidesk.qa"
+          $clean = Join-Path $base "clean"
+          $seeded = Join-Path $base "seeded"
+          if (-not (Test-Path $clean)) { throw "缺少 clean 场景目录" }
+          if (-not (Test-Path $seeded)) { throw "缺少 seeded 场景目录" }
+          $cleanGen = Get-ChildItem (Join-Path $clean "generations") -Directory | Select-Object -First 1
+          $seededGen = Get-ChildItem (Join-Path $seeded "generations") -Directory | Select-Object -First 1
+          Write-Host "clean generation: $($cleanGen.Name)"
+          Write-Host "seeded generation: $($seededGen.Name)"
+          if ($cleanGen.FullName -eq $seededGen.FullName) { throw "两个场景指向同一个代际目录" }
+
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: ArtFlowDesk-Windows-QA
           path: |
             out/QA
             out/Launchers
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30

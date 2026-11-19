@@ -1,7 +1,7 @@
 //! ArtFlow Desk Core —— 本地优先的单画师委托管理桌面应用。
 //!
 //! 分层：`commands`（薄壳） → `domain`（业务规则） → `store`（持久化与代际）
-//! 以及 `media`（附件路径与限制）、`backup`（备份包校验）、`infra`（锁与状态）。
+//! 以及 `media`（附件路径与限制）、`backup`（备份包校验）、`infra`（锁、状态与诊断）。
 //! 命令层不写 SQL，`lib.rs` 只做装配。
 
 pub mod backup;
@@ -15,114 +15,83 @@ pub mod store;
 
 use tauri::{Emitter, Manager};
 
+use error::{AppError, AppResult};
 use infra::state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
+    install_panic_hook();
+
+    let app = match build_app() {
+        Ok(app) => app,
+        Err(message) => {
+            // 连窗口都没建起来：没有界面可用，只能写日志 + 原生消息框。
+            crate::infra::diag::log_or_stderr("startup", &message);
+            crate::infra::diag::native_message("ArtFlow Desk Core 无法启动", &message);
+            std::process::exit(1);
+        }
+    };
+
+    app.run(|handle, event| {
+        match event {
+            tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::CloseRequested { .. },
+                ..
+            } => {
+                crate::infra::diag::log("window", &format!("close requested: {label}"));
+            }
+            tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::Destroyed,
+                ..
+            } => {
+                crate::infra::diag::log("window", &format!("destroyed: {label}"));
+            }
+            tauri::RunEvent::ExitRequested { api, code, .. } => {
+                let gate = handle.state::<infra::close::ExitGate>();
+                let has_window = !handle.webview_windows().is_empty();
+                let block = infra::close::should_block_exit(gate.is_allowed(), has_window, code);
+                crate::infra::diag::log(
+                    "exit",
+                    &format!(
+                        "requested code={} windows={} gate_open={} block={}",
+                        code.map(|c| c.to_string()).unwrap_or_else(|| "none".into()),
+                        has_window,
+                        gate.is_allowed(),
+                        block
+                    ),
+                );
+                if block {
+                    api.prevent_exit();
+                    let _ = handle.emit("app://exit-requested", ());
+                }
+            }
+            tauri::RunEvent::Exit => {
+                crate::infra::diag::log("exit", "process exiting");
+            }
+            _ => {}
+        }
+    });
+}
+
+fn build_app() -> Result<tauri::App, String> {
+    tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .on_menu_event(|handle, event| {
             crate::infra::menu::handle_menu_event(handle, event.id().as_ref());
         })
         .setup(|app| {
-            // 数据根只由"构建标识"决定：
-            // - 正式标识 → 正式目录，任何环境变量都不参与；
-            // - QA 标识  → <qa 目录>/<scenario>，场景名走白名单，不接受路径。
-            let identifier = app.config().identifier.clone();
-            let app_data_dir = app
-                .path()
-                .app_data_dir()
-                .map_err(|e| format!("无法解析应用数据目录：{e}"))?;
-
-            let (root, qa) = if crate::store::qa::is_qa_identifier(&identifier) {
-                let scenario = crate::store::qa::scenario_from_env()?;
-                let root = crate::store::qa::scenario_root(&app_data_dir, scenario);
-                crate::store::qa::ensure_not_production(&root)?;
-                crate::store::qa::write_marker(&root)?;
-                (root, Some(scenario))
-            } else {
-                crate::store::qa::guard_production_root(&app_data_dir)?;
-                (app_data_dir, None)
-            };
-
-            // 打开环境即取得跨进程独占锁；此后整个进程生命周期都持有它。
-            let state = AppState::open_qa(&root, qa)?;
-            let outcome = state.env.outcome();
-            println!(
-                "[minidesk] env ready mode={} scenario={} identifier={} path={} generation={} schema=v{} first_run={} tz={}",
-                if state.qa_mode() { "qa" } else { "production" },
-                state.qa_scenario().unwrap_or("-"),
-                identifier,
-                state.env.root().display(),
-                outcome.generation,
-                outcome.schema_version,
-                outcome.first_run,
-                outcome.working_timezone
-            );
-
-            // 启动维护：先按操作日志收敛崩溃遗留，再执行上次没做完的文件清理。
-            // 两件事都以"只删自己确认过的文件"为前提，失败不影响启动。
-            {
-                let mut conn = state.env.open_db()?;
-                let generation = state.env.active_generation().to_string();
-                let layout = state.env.layout().clone();
-                match crate::domain::attachments::recover(&mut conn, &layout, &generation) {
-                    Ok(report) => {
-                        if report.completed + report.rolled_back > 0
-                            || !report.quarantined.is_empty()
-                            || !report.kept_unknown.is_empty()
-                        {
-                            println!(
-                                "[minidesk] attachment recovery: completed={} rolled_back={} quarantined={} kept={} failed={}",
-                                report.completed,
-                                report.rolled_back,
-                                report.quarantined.len(),
-                                report.kept_unknown.len(),
-                                report.failed
-                            );
-                        }
-                    }
-                    Err(e) => eprintln!("[minidesk] attachment recovery failed: {}", e.message),
-                }
-                match crate::domain::attachments::run_cleanup(&mut conn, &layout, &generation) {
-                    Ok(report) => {
-                        if report.removed + report.failed + report.refused > 0 {
-                            println!(
-                                "[minidesk] cleanup: removed={} already_gone={} stale={} refused={} failed={}",
-                                report.removed,
-                                report.already_gone,
-                                report.skipped_stale,
-                                report.refused,
-                                report.failed
-                            );
-                        }
-                    }
-                    Err(e) => eprintln!("[minidesk] cleanup failed: {}", e.message),
-                }
+            if let Err(e) = setup_app(app) {
+                let handle = app.handle().clone();
+                crate::infra::diag::log_or_stderr("startup", &format!("初始化失败：{e}"));
+                crate::infra::diag::show_fatal(
+                    &handle,
+                    "ArtFlow Desk Core 无法启动",
+                    &fatal_message(&e),
+                );
+                std::process::exit(1);
             }
-
-            // 只把「当前代际的附件目录」交给 asset 协议。
-            //
-            // 静态 glob 一旦写成 `generations/*/attachments/**`，就等于允许通过 asset URL
-            // 读任意代际的附件（历史上确实这样配过，运行时实测能读到别的代际的图）。
-            // 这里改成运行时按代际授权：scope 里没有跨代际通配，别的代际目录不在允许列表内。
-            {
-                let attachments = state
-                    .env
-                    .layout()
-                    .attachments_dir(state.env.active_generation());
-                app.asset_protocol_scope()
-                    .allow_directory(&attachments, true)
-                    .map_err(|e| format!("无法授权附件目录给 asset 协议：{e}"))?;
-            }
-
-            app.manage(state);
-            app.manage(infra::close::ExitGate::new());
-
-            // macOS：默认菜单的 Quit 绑定 NSApplication terminate:，会绕过所有 Rust 事件，
-            // 必须换成自定义菜单项才能拦下 Cmd+Q。
-            #[cfg(target_os = "macos")]
-            infra::menu::install(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -188,22 +157,199 @@ pub fn run() {
             commands::maintenance::maintenance_jobs,
             commands::maintenance::maintenance_jobs_prune,
             infra::close::confirm_close,
+            commands::diag::diag_note,
             commands::theme::ui_theme_get,
             commands::theme::ui_theme_set,
             commands::app_icon::ui_icon_get,
             commands::app_icon::ui_icon_set
         ])
         .build(tauri::generate_context!())
-        .expect("ArtFlow Desk Core 启动失败");
+        .map_err(|e| format!("构建应用失败：{e}"))
+}
 
-    // Cmd+Q 与应用退出走这里：没被授权就拦下，交给界面问用户。
-    app.run(|handle, event| {
-        if let tauri::RunEvent::ExitRequested { api, .. } = event {
-            let gate = handle.state::<infra::close::ExitGate>();
-            if !gate.is_allowed() {
-                api.prevent_exit();
-                let _ = handle.emit("app://exit-requested", ());
+/// 装配顺序：先定数据根（决定 QA/正式），再开库与锁，最后才把资源交给界面。
+fn setup_app(app: &mut tauri::App) -> AppResult<()> {
+    let identifier = app.config().identifier.clone();
+    let version = app.package_info().version.to_string();
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::env(format!("无法解析应用数据目录：{e}")))?;
+
+    // 日志跟着应用标识走：正式与 QA 天然分目录，且都在用户可写的数据目录内。
+    crate::infra::diag::init(&app_data_dir.join(crate::infra::diag::LOG_DIR));
+    crate::infra::diag::log(
+        "startup",
+        &format!(
+            "identifier={identifier} version={version} os={} app_data={}",
+            std::env::consts::OS,
+            app_data_dir.display()
+        ),
+    );
+
+    // 数据根只由"构建标识"决定：
+    // - 正式标识 → 正式目录，任何环境变量都不参与；
+    // - QA 标识  → <qa 目录>/<scenario>，场景名走白名单，不接受路径。
+    let (root, qa) = if crate::store::qa::is_qa_identifier(&identifier) {
+        let scenario = crate::store::qa::scenario_from_env()?;
+        let root = crate::store::qa::scenario_root(&app_data_dir, scenario);
+        crate::store::qa::ensure_not_production(&root)?;
+        crate::store::qa::write_marker(&root)?;
+        (root, Some(scenario))
+    } else {
+        crate::store::qa::guard_production_root(&app_data_dir)?;
+        (app_data_dir, None)
+    };
+
+    // 打开环境即取得跨进程独占锁；此后整个进程生命周期都持有它。
+    let state = AppState::open_qa(&root, qa)?;
+    let outcome = state.env.outcome();
+    crate::infra::diag::log(
+        "startup",
+        &format!(
+            "env ready mode={} scenario={} root={} generation={} schema=v{} first_run={} tz={}",
+            if state.qa_mode() { "qa" } else { "production" },
+            state.qa_scenario().unwrap_or("-"),
+            state.env.root().display(),
+            outcome.generation,
+            outcome.schema_version,
+            outcome.first_run,
+            outcome.working_timezone
+        ),
+    );
+    println!(
+        "[minidesk] env ready mode={} scenario={} identifier={} path={} generation={} schema=v{} first_run={} tz={}",
+        if state.qa_mode() { "qa" } else { "production" },
+        state.qa_scenario().unwrap_or("-"),
+        identifier,
+        state.env.root().display(),
+        outcome.generation,
+        outcome.schema_version,
+        outcome.first_run,
+        outcome.working_timezone
+    );
+
+    // 启动维护：先按操作日志收敛崩溃遗留，再执行上次没做完的文件清理。
+    // 两件事都以"只删自己确认过的文件"为前提，失败不影响启动。
+    {
+        let mut conn = state.env.open_db()?;
+        let generation = state.env.active_generation().to_string();
+        let layout = state.env.layout().clone();
+        match crate::domain::attachments::recover(&mut conn, &layout, &generation) {
+            Ok(report) => {
+                if report.completed + report.rolled_back > 0
+                    || !report.quarantined.is_empty()
+                    || !report.kept_unknown.is_empty()
+                {
+                    println!(
+                        "[minidesk] attachment recovery: completed={} rolled_back={} quarantined={} kept={} failed={}",
+                        report.completed,
+                        report.rolled_back,
+                        report.quarantined.len(),
+                        report.kept_unknown.len(),
+                        report.failed
+                    );
+                    crate::infra::diag::log(
+                        "startup",
+                        &format!(
+                            "attachment recovery completed={} rolled_back={} quarantined={} kept={} failed={}",
+                            report.completed,
+                            report.rolled_back,
+                            report.quarantined.len(),
+                            report.kept_unknown.len(),
+                            report.failed
+                        ),
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!("[minidesk] attachment recovery failed: {}", e.message);
+                crate::infra::diag::log("startup", &format!("attachment recovery failed: {}", e.message));
             }
         }
-    });
+        match crate::domain::attachments::run_cleanup(&mut conn, &layout, &generation) {
+            Ok(report) => {
+                if report.removed + report.failed + report.refused > 0 {
+                    println!(
+                        "[minidesk] cleanup: removed={} already_gone={} stale={} refused={} failed={}",
+                        report.removed,
+                        report.already_gone,
+                        report.skipped_stale,
+                        report.refused,
+                        report.failed
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!("[minidesk] cleanup failed: {}", e.message);
+                crate::infra::diag::log("startup", &format!("cleanup failed: {}", e.message));
+            }
+        }
+    }
+
+    // 只把「当前代际的附件目录」交给 asset 协议。
+    //
+    // 静态 glob 一旦写成 `generations/*/attachments/**`，就等于允许通过 asset URL
+    // 读任意代际的附件（历史上确实这样配过，运行时实测能读到别的代际的图）。
+    // 这里改成运行时按代际授权：scope 里没有跨代际通配，别的代际目录不在允许列表内。
+    {
+        let attachments = state
+            .env
+            .layout()
+            .attachments_dir(state.env.active_generation());
+        app.asset_protocol_scope()
+            .allow_directory(&attachments, true)
+            .map_err(|e| AppError::env(format!("无法授权附件目录给 asset 协议：{e}")))?;
+    }
+
+    app.manage(state);
+    app.manage(infra::close::ExitGate::new());
+
+    // macOS：默认菜单的 Quit 绑定 NSApplication terminate:，会绕过所有 Rust 事件，
+    // 必须换成自定义菜单项才能拦下 Cmd+Q。
+    #[cfg(target_os = "macos")]
+    infra::menu::install(app).map_err(|e| AppError::env(format!("无法安装菜单：{e}")))?;
+
+    // 窗口由配置创建，这里只确认它真的建出来了——白屏与"窗口没建"要能分开。
+    match app.get_webview_window("main") {
+        Some(window) => {
+            let url = window
+                .url()
+                .map(|u| u.to_string())
+                .unwrap_or_else(|e| format!("<url error: {e}>"));
+            crate::infra::diag::log("window", &format!("main window created url={url}"));
+        }
+        None => {
+            crate::infra::diag::log("window", "main window missing after setup");
+        }
+    }
+
+    Ok(())
+}
+
+/// 给用户看的失败说明：先讲人话，再给诊断日志位置。
+fn fatal_message(e: &AppError) -> String {
+    let hint = if e.code == "BUSY" {
+        "\n\n可能还有一个 ArtFlow Desk Core 进程在后台运行。\n\
+         请先在任务管理器中结束残留的 ArtFlow Desk Core 进程，再重新启动。"
+    } else {
+        ""
+    };
+    let log = crate::infra::diag::log_path()
+        .map(|p| format!("\n\n诊断日志：{}", p.display()))
+        .unwrap_or_default();
+    format!("{}{}{}", e.message, hint, log)
+}
+
+/// 未捕获 panic 也要留痕：Windows 上没有控制台，否则只剩"进程消失了"。
+fn install_panic_hook() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_else(|| "<unknown>".into());
+        crate::infra::diag::log("panic", &format!("at {location}: {info}"));
+        previous(info);
+    }));
 }

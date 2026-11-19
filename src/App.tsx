@@ -224,6 +224,13 @@ export default function App() {
         if (closingRef.current) return;
         requestClose("quit");
       });
+
+      // 页面已能响应事件：给 Rust 日志留一个锚点，用来区分"白屏"与"页面正常"。
+      try {
+        await core.invoke("diag_note", { message: "ui ready" });
+      } catch {
+        /* 诊断回执失败不影响任何交互 */
+      }
     })().catch(() => {
       /* 非 Tauri 环境：没有桥，也就没有关窗拦截 */
     });

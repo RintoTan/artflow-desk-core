@@ -148,7 +148,13 @@ pub fn backup_set_reminder(state: State<'_, AppState>, days: u32) -> AppResult<B
 
 /// 恢复成功后必须让进程重新加载代际：直接退出，由用户重启（受控重启）。
 #[tauri::command]
-pub fn restart_app(app: tauri::AppHandle) -> AppResult<()> {
+pub fn restart_app(
+    app: tauri::AppHandle,
+    gate: State<'_, crate::infra::close::ExitGate>,
+) -> AppResult<()> {
+    // 重启走的是 ExitRequested(code=RESTART_EXIT_CODE)，会被退出闸门当成"用户要关窗"
+    // 拦下来问一句，然后永远等不到回答。这里是程序自己决定的退出，先放行。
+    gate.allow();
     app.restart();
 }
 

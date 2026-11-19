@@ -64,6 +64,8 @@ const APPROVED: &[&str] = &[
     "export_summary_csv",
     "export_orders_csv",
     "confirm_close",
+    // 只写诊断日志的短消息回执，不读写业务数据（DEV-11）。
+    "diag_note",
     "ui_theme_get",
     "ui_theme_set",
     "ui_icon_get",
