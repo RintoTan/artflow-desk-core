@@ -10,6 +10,8 @@
 | 打包器 | Tauri 2 + NSIS |
 | 配置 | Production 用 `src-tauri/tauri.conf.json`；QA 用 `src-tauri/tauri.qa.conf.json` |
 | 工作流 | `.github/workflows/windows-build.yml` |
+| 本次构建 | run `44636228801`，代码提交 `d8cef55` |
+| 发布 | `v0.1.0-demo.2`（Pre-release） |
 
 本仓库不使用 macOS 交叉编译 Windows 的方案：`llvm-rc` 在本机不可得，早期尝试已被判定为阻断。
 
@@ -22,8 +24,8 @@
 | `ArtFlowDesk-Core-Windows-v0.1.0-QA-Portable.exe` | QA 版免安装主程序，标识 `dev.artflow.minidesk.qa` |
 | `ArtFlowDesk-Core-Windows-v0.1.0-QA-Setup.exe` | QA 版 NSIS 安装包 |
 | `SHA256SUMS.txt` | 上述四个文件的 SHA-256 |
-| `启动 QA Clean（空白环境）.cmd` | 已安装 QA 版时进入 clean 场景 |
-| `启动 QA Clean（Portable 便携版）.cmd` | 便携版进入 clean 场景（与 exe 放同一目录） |
+| `qa-clean-installed.cmd` | 已安装 QA 版时进入 clean 场景（仓库内文件名为「启动 QA Clean（空白环境）.cmd」） |
+| `qa-clean-portable.cmd` | 便携版进入 clean 场景（与 exe 放同一目录；仓库内文件名为「启动 QA Clean（Portable 便携版）.cmd」） |
 
 安装包与 Portable 的主程序内部文件名都是 `artflow-minidesk.exe`；版本信息 `FileVersion=0.1.0`，
 产品名分别为 `ArtFlow Desk Core` 与 `ArtFlow Desk Core QA`。

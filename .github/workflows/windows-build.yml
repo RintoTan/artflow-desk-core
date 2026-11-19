@@ -143,7 +143,8 @@ jobs:
           $installer = "out/QA/ArtFlowDesk-Core-Windows-v$env:APP_VERSION-QA-Setup.exe"
           Copy-Item $exe   $portable
           Copy-Item $setup.FullName $installer
-          Copy-Item "build/windows/launchers/*" out/Launchers -Recurse -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path out/Launchers | Out-Null
+          Copy-Item "build/windows/launchers/*" out/Launchers -Force
 
           Get-FileHash $portable, $installer -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLower())  $($_.Path | Split-Path -Leaf)" } |
