@@ -6125,10 +6125,15 @@ dl.stat-row {
   color: var(--text-faint);
 }
 
-.cal-dialog-dates input,
+/* 文本输入抹掉原生气质；日期输入必须保留原生内部布局，
+   否则 WebKit 里日期文字与日历图标会顶到上边缘（不再垂直居中）。 */
 .cal-dialog-reason input {
   -webkit-appearance: none;
   appearance: none;
+}
+
+.cal-dialog-dates input,
+.cal-dialog-reason input {
   display: block;
   width: 100%;
   min-width: 0;
@@ -6219,4 +6224,46 @@ dl.stat-row {
   .cal-dialog-dates {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* ---------------------------------------------------------------- 日期控件垂直居中 */
+/* WebKit / Blink 都把 date 的内部字段放在 shadow DOM 里，height 只能撑外框，
+   文字与日历图标的居中要单独修正。 */
+.cal-dialog-dates input[type="date"] {
+  display: block;
+  line-height: normal;
+  padding: 0 8px 0 10px;
+}
+
+.cal-dialog-dates input[type="date"]::-webkit-datetime-edit {
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+}
+
+.cal-dialog-dates input[type="date"]::-webkit-datetime-edit-fields-wrapper {
+  margin: 0;
+  padding: 0;
+}
+
+.cal-dialog-dates input[type="date"]::-webkit-datetime-edit-text,
+.cal-dialog-dates input[type="date"]::-webkit-datetime-edit-month-field,
+.cal-dialog-dates input[type="date"]::-webkit-datetime-edit-day-field,
+.cal-dialog-dates input[type="date"]::-webkit-datetime-edit-year-field {
+  padding: 0;
+  line-height: 1;
+}
+
+.cal-dialog-dates input[type="date"]::-webkit-calendar-picker-indicator {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  /* 靠右对齐，同时保持垂直居中 */
+  margin: 0 0 0 auto;
+  padding: 0;
+  opacity: 0.55;
+  cursor: pointer;
 }
