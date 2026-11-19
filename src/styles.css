@@ -6667,3 +6667,85 @@ dl.stat-row {
 .cal-chip.is-ghost {
   opacity: 0.28;
 }
+
+/* ---------------------------------------------------------------- DEV-06D-3-UI-08A 日期格可读性 */
+/*
+ * 三条硬规范：
+ *   1) 字号固定（日期 12 / 订单 11.5 / +N 11），不再跟行高联动缩小；
+ *   2) +N 默认进日期行右侧，格子放不下才退回底部独立行；
+ *   3) 任何位置都与格子边缘留 ≥4px，且不参与行高计算。
+ */
+.cal-day-num {
+  padding: 5px 6px 2px;
+  font-size: 12px;
+  line-height: 1;
+  align-items: center;
+}
+
+.cal-day-num .cal-day-pill {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.cal-day-num[data-outside="1"] {
+  opacity: 1;
+}
+
+.cal-day-num[data-outside="1"] .cal-day-pill {
+  color: var(--text-faint);
+}
+
+.cal-chip {
+  font-size: 11.5px;
+  line-height: 1.1;
+}
+
+.cal-chip .cal-chip-code {
+  font-size: 11px;
+}
+
+.cal-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  height: 16px;
+  min-width: 20px;
+  max-width: calc(100% - 8px);
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: color-mix(in srgb, var(--accent) 72%, var(--text));
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: none;
+  transition: background-color 0.14s ease, color 0.14s ease;
+}
+
+.cal-more:hover {
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
+  color: var(--accent);
+}
+
+.cal-more:active {
+  background: color-mix(in srgb, var(--accent) 26%, var(--surface));
+}
+
+.cal-more[data-slot="top"] {
+  grid-row: 1;
+  justify-self: end;
+  align-self: center;
+  margin: 0 4px 0 0;
+}
+
+.cal-more[data-slot="bottom"] {
+  justify-self: start;
+  align-self: end;
+  margin: 0 4px 4px;
+}

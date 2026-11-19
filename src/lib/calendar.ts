@@ -57,18 +57,25 @@ export const LANE_MIN_H = 18;
 /** 月视图最多显示这么多条轨道，再多只会让每格变成一条缝。 */
 const LANES_MAX_MONTH = 6;
 
-function metricsFromRow(rowH: number, laneCap: number, adaptLanes = true): GridMetrics {
+function metricsFromRow(
+  rowH: number,
+  laneCap: number,
+  moreRow = true,
+  adaptLanes = true,
+): GridMetrics {
   // 三段预算：日期行、折叠行先按比例分，剩下的全给轨道
   // 日期行与折叠行按比例分，但都有绝对上下限；大窗口下把省下来的高度全给订单轨道
   // 折叠行留够 14px：+N 太小就点不准了
-  let moreH = Math.max(14, Math.min(18, Math.round(rowH * 0.12)));
+  // +N 放到日期行右侧时不占独立行（moreRow=false），省下的高度全部给订单轨道
+  // 底部槽位要有 16px 胶囊 + 4px 下边距，折叠行至少 20px
+  let moreH = moreRow ? Math.max(20, Math.min(22, Math.round(rowH * 0.14))) : 0;
   let numH = Math.max(18, Math.min(28, Math.round(rowH * 0.18)));
 
   let available = rowH - numH - moreH;
   if (available < LANE_MIN_H + 2) {
     // 实在放不下：先把日期行与折叠行压到最小，保证至少一条轨道
     numH = 16;
-    moreH = 14;
+    moreH = moreRow ? 20 : 0;
     available = Math.max(LANE_MIN_H, rowH - numH - moreH);
   }
 
@@ -79,9 +86,16 @@ function metricsFromRow(rowH: number, laneCap: number, adaptLanes = true): GridM
   let laneH = Math.floor(available / lanes);
   while (numH + lanes * laneH + moreH > rowH && laneH > CHIP_MIN_H) laneH -= 1;
   laneH = Math.max(CHIP_MIN_H, laneH);
+  // 兜底：三段加起来不许超过这一行的预算（否则整月会撑出滚动条）
+  const overflow = numH + lanes * laneH + moreH - rowH;
+  if (overflow > 0) {
+    if (moreH > 0) moreH = Math.max(12, moreH - overflow);
+    else numH = Math.max(16, numH - overflow);
+  }
 
   const chipH = Math.max(CHIP_MIN_H, Math.min(19, laneH - 3));
-  const fontPx = Math.max(9, Math.min(10.5, Math.round((chipH - 4) * 0.7 * 10) / 10));
+  // 字号是固定规范，不跟着行高缩：11.5px 在 14px 高的条里也放得下
+  const fontPx = 11.5;
   return { lanes, numH, laneH, moreH, rowH: numH + lanes * laneH + moreH, chipH, fontPx };
 }
 
@@ -91,17 +105,21 @@ function metricsFromRow(rowH: number, laneCap: number, adaptLanes = true): GridM
  * 窗口变大 → 行高变大；窗口变小 → 行高变小；任何尺寸下当前月份都能整月放下，
  * 不产生纵向滚动条。连续滚动仍然保留：网格总高度永远大于视口。
  */
-export function monthGridMetrics(availableHeight: number, weeks: number): GridMetrics {
+export function monthGridMetrics(
+  availableHeight: number,
+  weeks: number,
+  moreRow = true,
+): GridMetrics {
   const span = Math.max(1, Math.min(6, Math.round(weeks) || 6));
   const perRow = availableHeight > 0 ? Math.floor(availableHeight / span) : 118;
   // 周行之间各有 1px 分隔线，得先从每行预算里扣掉
   const rowH = Math.max(ROW_MIN_H, perRow - 1);
-  return metricsFromRow(rowH, LANES_MAX_MONTH);
+  return metricsFromRow(rowH, LANES_MAX_MONTH, moreRow);
 }
 
 /** 周视图保持自己的独立密度：6 条轨道、固定 118 行高，不随窗口缩放。 */
 export function weekGridMetrics(): GridMetrics {
-  return metricsFromRow(117, WEEK_LANES, false);
+  return metricsFromRow(117, WEEK_LANES, true, false);
 }
 
 /** 当前月份在月视图里占几周（4 / 5 / 6）。 */

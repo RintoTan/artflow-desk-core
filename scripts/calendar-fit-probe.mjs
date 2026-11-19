@@ -37,6 +37,11 @@ function order(id, code, title, start, delivery, extra = {}) {
   };
 }
 
+const DENSE = Number(process.env.FIT_DENSE ?? 0);
+for (let i = 0; i < DENSE; i += 1) {
+  // 同一天堆 N 笔，检验 +N 的数量与位置
+}
+
 const ORDERS = [
   order("t1", "AF-2026-0001", "今天格一", TODAY, TODAY, { deadlineState: "dueToday" }),
   order("t2", "AF-2026-0002", "今天格二", TODAY, TODAY, { deadlineState: "dueToday" }),
@@ -45,6 +50,9 @@ const ORDERS = [
   order("r1", "AF-2026-0005", "跨周区间订单", "2026-11-10", "2026-11-16"),
   order("r2", "AF-2026-0006", "跨月长订单", "2026-11-26", "2026-12-08"),
   order("n1", "AF-2026-0007", "完全未排期订单", null, null),
+  ...Array.from({ length: DENSE }, (_, i) =>
+    order(`d${i}`, `AF-2026-1${String(i).padStart(3, "0")}`, `同日压测 ${i + 1}`, TODAY, TODAY),
+  ),
 ];
 
 const fixtures = {
@@ -222,6 +230,65 @@ async function runSize(width, height, port) {
     record(label, "+N 仍可点（命中首位是按钮）",
       m.more === 0 || m.moreHit.filter((h) => h.inside).every((h) => h.top === "cal-more"),
       m.moreHit);
+
+    // ------------------------------------------------ UI-08A 日期格可读性 / +N 位置
+    const cellInfo = await evaluate(`(() => {
+      const chip = document.querySelector(".cal-chip");
+      const more = document.querySelector(".cal-more");
+      const dateNum = document.querySelector(".cal-day-num .cal-day-pill");
+      const sc = document.querySelector(".cal-scroll");
+      let cellW = 0;
+      const firstWeek = document.querySelector(".cal-week");
+      const firstCell = firstWeek?.querySelector(".cal-day-bg");
+      if (firstCell) cellW = Math.round(firstCell.getBoundingClientRect().width);
+      let overflow = 0, overlap = 0, marginMin = 999, slots = new Set();
+      for (const m of document.querySelectorAll(".cal-more")) {
+        slots.add(m.dataset.slot);
+        const cell = [...m.parentElement.querySelectorAll(".cal-day-bg")]
+          .find((c) => c.style.gridColumn === m.style.gridColumn);
+        if (!cell) continue;
+        const cr = cell.getBoundingClientRect();
+        const mr = m.getBoundingClientRect();
+        // 顶部槽位只要求左右留白（上边距由日期行决定）；底部槽位要求下边距
+        const sides = m.dataset.slot === "bottom"
+          ? [mr.left - cr.left, cr.right - mr.right, cr.bottom - mr.bottom]
+          : [mr.left - cr.left, cr.right - mr.right];
+        marginMin = Math.min(marginMin, ...sides);
+        if (mr.left < cr.left - 0.5 || mr.right > cr.right + 0.5 || mr.top < cr.top - 0.5 || mr.bottom > cr.bottom + 0.5) overflow += 1;
+        for (const seg of m.parentElement.querySelectorAll(".cal-seg")) {
+          const sc2 = [...seg.parentElement.querySelectorAll(".cal-day-bg")]
+            .find((c) => c.style.gridColumn === seg.style.gridColumn);
+          if (sc2 !== cell) continue;
+          const sr = seg.getBoundingClientRect();
+          const hit = !(mr.right <= sr.left || mr.left >= sr.right || mr.bottom <= sr.top || mr.top >= sr.bottom);
+          if (hit) overlap += 1;
+        }
+      }
+      return {
+        cellW,
+        dateFont: dateNum ? getComputedStyle(dateNum).fontSize : null,
+        chipFont: chip ? getComputedStyle(chip).fontSize : null,
+        moreFont: more ? getComputedStyle(more).fontSize : null,
+        slots: [...slots],
+        moreCount: document.querySelectorAll(".cal-more").length,
+        moreLabels: [...document.querySelectorAll(".cal-more")].map((m) => m.textContent).slice(0, 3),
+        overflow, overlap,
+        marginMin: marginMin === 999 ? null : Math.round(marginMin * 10) / 10,
+      };
+    })()`);
+
+    record(label, "字号固定：日期 12px / 订单 11.5px / +N 11px",
+      cellInfo.dateFont === "12px" && (cellInfo.chipFont === null || cellInfo.chipFont === "11.5px") &&
+        (cellInfo.moreFont === null || cellInfo.moreFont === "11px"),
+      cellInfo);
+    record(label, "+N 不超出日期格", cellInfo.overflow === 0, cellInfo);
+    record(label, "+N 不与订单条重叠", cellInfo.overlap === 0, cellInfo);
+    record(label, "+N 与格子边界留白 ≥4px",
+      cellInfo.marginMin === null || cellInfo.marginMin >= 3.5, cellInfo);
+    record(label, "+N 位置随格宽切换（宽格右上 / 窄格底部）",
+      cellInfo.moreCount === 0 ||
+        (cellInfo.cellW >= 46 ? cellInfo.slots.join() === "top" : cellInfo.slots.join() === "bottom"),
+      cellInfo);
 
     mkdirSync(SHOTS, { recursive: true });
     const png = await send("Page.captureScreenshot", { format: "png" });

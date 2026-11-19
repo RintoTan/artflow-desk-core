@@ -62,6 +62,7 @@ export default function CalendarPage() {
   const [focusedDay, setFocusedDay] = useState<DayIndex | null>(null);
   /** 日历可视高度：行高按它分配，窗口变化时跟着变。 */
   const [viewportH, setViewportH] = useState(0);
+  const [viewportW, setViewportW] = useState(0);
   const [showTerminal, setShowTerminal] = useState(false);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [dialog, setDialog] = useState<DialogState | null>(null);
@@ -233,7 +234,10 @@ export default function CalendarPage() {
     if (el === null) return;
     if (observedScrollRef.current === el) return;
     observedScrollRef.current = el;
-    const update = () => setViewportH(el.clientHeight);
+    const update = () => {
+      setViewportH(el.clientHeight);
+      setViewportW(el.clientWidth);
+    };
     update();
     if (typeof ResizeObserver === "undefined") return;
     viewportObserverRef.current?.disconnect();
@@ -440,9 +444,14 @@ export default function CalendarPage() {
 
   const monthAnchor = view === "month" ? (visibleAnchor ?? anchor) : anchor;
   const title = view === "month" ? monthTitle(monthAnchor) : weekTitle(anchor);
+  // 每个日期格的真实宽度（七列等分，扣掉网格左右各 1px 边框）。
+  // 够放"两位数字 + 胶囊"就放右上角，否则退回底部独立行。
+  const cellW = viewportW > 0 ? Math.floor((viewportW - 2) / 7) : 0;
+  // 需要的最小宽度 = 6px 左内边距 + 两位日期(~15) + 间距 + 胶囊(~20) + 4px 右边距
+  const topMore = view === "month" && cellW >= 46;
   const metrics =
     view === "month"
-      ? monthGridMetrics(viewportH, weeksInMonth(monthAnchor ?? anchor))
+      ? monthGridMetrics(viewportH, weeksInMonth(monthAnchor ?? anchor), !topMore)
       : weekGridMetrics();
 
   /**
@@ -711,6 +720,7 @@ export default function CalendarPage() {
             metrics={metrics}
             preview={previewRange}
             focused={focusedDay}
+            topMore={topMore}
             onOpenOrder={openOrder}
             onReschedule={openKeyboardDialog}
             onChipPointerDown={startDrag}

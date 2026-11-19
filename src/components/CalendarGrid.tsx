@@ -32,6 +32,8 @@ type Props = {
   preview: { orderId: string; from: DayIndex; to: DayIndex; valid: boolean } | null;
   /** 点击过（或当前聚焦）的日期。 */
   focused: DayIndex | null;
+  /** +N 放日期行右侧（格宽够时），否则占独立底部行。 */
+  topMore: boolean;
   onOpenOrder: (id: string) => void;
   onReschedule: (order: OrderView) => void;
   onChipPointerDown: (payload: ChipDragStart) => void;
@@ -153,6 +155,7 @@ export default function CalendarGrid({
   metrics,
   preview,
   focused,
+  topMore,
   onOpenOrder,
   onReschedule,
   onChipPointerDown,
@@ -335,7 +338,8 @@ export default function CalendarGrid({
                   key={`more-${day}`}
                   type="button"
                   className="cal-more"
-                  style={{ gridColumn: col + 1, gridRow: laneCount + 2 }}
+                  data-slot={topMore ? "top" : "bottom"}
+                  style={{ gridColumn: col + 1, gridRow: topMore ? 1 : laneCount + 2 }}
                   aria-expanded={open}
                   aria-label={`${formatDayKey(day)} 还有 ${hidden.length} 笔订单`}
                   // 按下不抢焦点：聚焦会触发 WebKit 把按钮滚进视口，
