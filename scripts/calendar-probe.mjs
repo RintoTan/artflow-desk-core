@@ -214,6 +214,7 @@ function cleanup(code) {
 
 const results = { width: WIDTH, checks: [], measurements: {} };
 const check = (name, pass, detail) => results.checks.push({ name, pass, detail });
+const observe = (name, value, note) => (results.observations ??= []).push({ name, value, note });
 
 async function evaluate(send, expression) {
   const res = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
@@ -355,6 +356,13 @@ async function main() {
       });
   `;
 
+  const gridBefore = await evaluate(
+    send,
+    `(() => { const g = document.querySelector(".cal-grid").getBoundingClientRect();
+      return { top: Math.round(g.top), left: Math.round(g.left), width: Math.round(g.width), height: Math.round(g.height) }; })()`,
+  );
+  results.measurements.gridBefore = gridBefore;
+
   // 1) 合法拖动：条身 → 11-20，先停在拖动中截屏
   const dragging = await evaluate(
     send,
@@ -377,6 +385,29 @@ async function main() {
       window.__TARGET__ = { x: to.left + to.width / 2, y: to.top + to.height / 2 };
       return { ok: true, ...snap };
     })()`,
+  );
+  const gridDuring = await evaluate(
+    send,
+    `(() => { const g = document.querySelector(".cal-grid").getBoundingClientRect();
+      return { top: Math.round(g.top), left: Math.round(g.left), width: Math.round(g.width), height: Math.round(g.height) }; })()`,
+  );
+  results.measurements.gridDuring = gridDuring;
+  check(
+    "拖动期间日历网格不位移（top/left/width 完全一致）",
+    JSON.stringify(gridBefore) === JSON.stringify(gridDuring),
+    `${JSON.stringify(gridBefore)} → ${JSON.stringify(gridDuring)}`,
+  );
+  const statusBox = await evaluate(
+    send,
+    `(() => { const el = document.querySelector(".cal-drag-status"); if (!el) return null;
+      const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
+      return { position: cs.position, pointerEvents: cs.pointerEvents, inViewport: r.top >= 0 && r.bottom <= window.innerHeight && r.left >= 0 && r.right <= window.innerWidth }; })()`,
+  );
+  results.measurements.dragStatus = statusBox;
+  check(
+    "拖动状态是浮层且不吃指针",
+    statusBox?.position === "absolute" && statusBox?.pointerEvents === "none" && statusBox?.inViewport === true,
+    JSON.stringify(statusBox),
   );
   results.measurements.dragging = dragging;
   check("拖动时原位置保留幽灵", dragging.ghost === true, `ghost=${dragging.ghost}`);
@@ -519,7 +550,149 @@ async function main() {
   check("未排期池可打开改期并选择写入哪一端", poolDialog.ok === true && /写入计划/.test(poolDialog.text ?? ""), (poolDialog.text ?? "").slice(0, 80));
   const shotPool = await shot(send, "04-未排期改期.png", false);
 
-  results.screenshots = { month: shotMonth, week: shotWeek, dragging: shotDragging, dialog: shotDialog, invalid: shotInvalid, pool: shotPool };
+  // 5) 三段操作区：CSS 规则 + 键盘聚焦可见性（headless 下 CDP 悬停不生效，见报告）
+  await evaluate(send, `document.querySelector(".cal-today")?.click()`);
+  await sleep(300);
+  const zoneRules = await evaluate(
+    send,
+    `(() => {
+      const found = [];
+      for (const sheet of document.styleSheets) {
+        let rules;
+        try { rules = sheet.cssRules; } catch { continue; }
+        for (const rule of rules) {
+          if (rule.selectorText && /cal-chip(:hover|:focus-visible) \.cal-chip-handle|cal-chip-handle\.is-(start|end)|cal-chip-grip/.test(rule.selectorText)) {
+            found.push(rule.selectorText);
+          }
+        }
+      }
+      return found;
+    })()`,
+  );
+  results.measurements.zoneRules = zoneRules;
+  check(
+    "订单条存在左/右抓手与移动握把的样式规则",
+    zoneRules.some((r) => r.includes("is-start")) &&
+      zoneRules.some((r) => r.includes("is-end")) &&
+      zoneRules.some((r) => r.includes("cal-chip-grip")),
+    JSON.stringify(zoneRules).slice(0, 160),
+  );
+
+  const focusZone = async (name) => {
+    await evaluate(
+      send,
+      `(() => { const chip = document.querySelector('.cal-chip[data-order-id="a5"]'); if (chip) chip.focus(); return true; })()`,
+    );
+    await sleep(250);
+    const state = await evaluate(
+      send,
+      `(() => {
+        const chip = document.querySelector('.cal-chip[data-order-id="a5"]');
+        if (!chip) return null;
+        const handles = [...chip.querySelectorAll(".cal-chip-handle")].map((h) => ({
+          side: h.className.includes("is-start") ? "start" : "end",
+          opacity: getComputedStyle(h).opacity,
+        }));
+        return {
+          handles,
+          cursor: getComputedStyle(chip).cursor,
+          focused: document.activeElement === chip,
+          focusVisible: chip.matches(":focus-visible"),
+        };
+      })()`,
+    );
+    const path = await shot(send, `${name}.png`, false);
+    return { state, path };
+  };
+  const zoneShot = await focusZone("06-三段抓手-聚焦");
+  results.measurements.zoneAffordance = zoneShot?.state;
+  observe(
+    "聚焦时抓手是否可见",
+    JSON.stringify(zoneShot?.state ?? null),
+    "headless 里程序化 focus 不满足 :focus-visible 时会保持 opacity 0；规则本身已验证存在",
+  );
+
+  // 6) 点击跳转 vs 拖动不跳转（用真实 DOM 事件验证应用逻辑；CDP 鼠标在本探针环境不投递）
+  const clickChip = async (id) => {
+    const hash = await evaluate(
+      send,
+      `(async () => {
+        const chip = document.querySelector('.cal-chip[data-order-id="${id}"]');
+        if (!chip) return "no-chip";
+        chip.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+        await new Promise((r) => setTimeout(r, 400));
+        return location.hash;
+      })()`,
+    );
+    await evaluate(send, `history.back()`);
+    await sleep(400);
+    for (let i = 0; i < 20; i += 1) {
+      if (await evaluate(send, `Boolean(document.querySelector(".cal-grid"))`)) break;
+      await sleep(150);
+    }
+    return hash;
+  };
+
+  const clickHash = await clickChip("a5");
+  results.measurements.clickNav = clickHash;
+  check(
+    "普通点击进入订单详情（#/orders?orderId=a5）",
+    typeof clickHash === "string" && clickHash.includes("/orders") && clickHash.includes("orderId=a5"),
+    String(clickHash),
+  );
+
+  const draggedHash = await evaluate(
+    send,
+    `(async () => {
+      const chip = document.querySelector('.cal-chip[data-order-id="a5"]');
+      const cell = [...document.querySelectorAll(".cal-day-num")].find((el) => el.textContent.trim() === "12");
+      const col = cell ? Number(getComputedStyle(cell).gridColumnStart) : 0;
+      const bg = cell ? [...cell.parentElement.querySelectorAll(".cal-day-bg")][col - 1] : null;
+      if (!chip || !bg) return "no-target";
+      const from = chip.getBoundingClientRect();
+      const to = bg.getBoundingClientRect();
+      const opts = (x, y) => ({ bubbles: true, clientX: x, clientY: y, button: 0, pointerId: 1, pointerType: "mouse", isPrimary: true });
+      chip.dispatchEvent(new PointerEvent("pointerdown", opts(from.left + from.width / 2, from.top + from.height / 2)));
+      await new Promise((r) => setTimeout(r, 40));
+      window.dispatchEvent(new PointerEvent("pointermove", opts(to.left + to.width / 2, to.top + to.height / 2)));
+      await new Promise((r) => setTimeout(r, 120));
+      window.dispatchEvent(new PointerEvent("pointerup", opts(to.left + to.width / 2, to.top + to.height / 2)));
+      chip.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+      await new Promise((r) => setTimeout(r, 400));
+      return location.hash;
+    })()`,
+  );
+  results.measurements.dragNav = draggedHash;
+  check(
+    "拖动后紧跟的 click 被吞掉（不跳详情）",
+    typeof draggedHash === "string" && !draggedHash.includes("orderId"),
+    String(draggedHash),
+  );
+
+  await evaluate(
+    send,
+    `(() => { const d = document.querySelector('[role="alertdialog"]');
+      const c = d ? [...d.querySelectorAll("button")].find((b) => b.textContent.trim() === "取消") : null;
+      if (c) c.click(); return true; })()`,
+  );
+  await sleep(300);
+  const clickAgain = await clickChip("a5");
+  results.measurements.clickAgain = clickAgain;
+  check(
+    "拖动之后普通点击仍然可以进详情",
+    typeof clickAgain === "string" && clickAgain.includes("orderId=a5"),
+    String(clickAgain),
+  );
+
+  results.screenshots = {
+    month: shotMonth,
+    week: shotWeek,
+    dragging: shotDragging,
+    dialog: shotDialog,
+    invalid: shotInvalid,
+    pool: shotPool,
+    zone: zoneShot?.path,
+  };
   const failed = results.checks.filter((c) => !c.pass);
   results.summary = { total: results.checks.length, passed: results.checks.length - failed.length, failed: failed.length };
   console.log(JSON.stringify(results, null, 2));

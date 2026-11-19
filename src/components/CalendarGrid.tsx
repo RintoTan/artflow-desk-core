@@ -72,7 +72,7 @@ function Chip({
       data-order-id={order.id}
       data-kind={kind}
       data-mode={terminal ? "none" : mode}
-      title={`${order.code} · ${order.title}`}
+      title={`${order.code} · ${order.title}（拖两端调整日期，拖中间整体移动）`}
       aria-label={`${order.code} ${order.title}`}
       onClick={(event) => {
         // 拖动过就不当成点击；单纯点击进入详情
@@ -105,6 +105,21 @@ function Chip({
     >
       <span className="cal-chip-mark" aria-hidden="true" />
       <span className="cal-chip-text">{order.title}</span>
+      {!single && !clippedLeft && (
+        <span
+          className="cal-chip-handle is-start"
+          aria-hidden="true"
+          title="调整开始日期"
+        />
+      )}
+      {!single && !clippedRight && (
+        <span
+          className="cal-chip-handle is-end"
+          aria-hidden="true"
+          title="调整交付日期"
+        />
+      )}
+      {!single && <span className="cal-chip-grip" aria-hidden="true" />}
     </button>
       {!terminal && (
         <button
@@ -158,10 +173,9 @@ export default function CalendarGrid({
 
       {weeks.map((week, index) => {
         const layout = layouts[index] ?? layoutWeek([], week[0] ?? 0, maxLanes);
-        const outside = !isSameMonth(week[3] ?? anchor, anchor);
         return (
           <div
-            className={`cal-week${outside ? " is-outside" : ""}`}
+            className="cal-week"
             key={week[0] ?? index}
             style={{ gridTemplateRows: `auto repeat(${maxLanes}, 22px) 18px` }}
           >

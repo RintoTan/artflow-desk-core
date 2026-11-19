@@ -5132,6 +5132,7 @@ dl.stat-row {
 
 /* 右侧日历 */
 .cal-main {
+  position: relative;
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -5201,10 +5202,6 @@ dl.stat-row {
 
 .cal-week:last-child {
   border-bottom: 0;
-}
-
-.cal-week.is-outside {
-  background: var(--surface-alt);
 }
 
 .cal-day-bg {
@@ -5805,7 +5802,13 @@ dl.stat-row {
 
 /* 拖动反馈区：两行日期，变化的端点加重 */
 .cal-drag-status {
-  margin: 0 2px 10px;
+  position: absolute;
+  top: 52px;
+  left: 12px;
+  width: min(380px, calc(100% - 24px));
+  z-index: 6;
+  pointer-events: none;
+  margin: 0;
   padding: 8px 10px;
   border: 1px solid var(--border-active);
   border-radius: var(--cal-radius);
@@ -5935,4 +5938,76 @@ dl.stat-row {
     min-width: 132px;
     font-size: 13px;
   }
+}
+
+/* CAL-UI-03：条内三段操作区的手柄提示（不改变条本身尺寸与定位） */
+.cal-chip {
+  cursor: grab;
+}
+
+.cal-chip:active {
+  cursor: grabbing;
+}
+
+.cal-chip-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  cursor: ew-resize;
+}
+
+.cal-chip-handle.is-start {
+  left: 0;
+  border-radius: 7px 0 0 7px;
+  background: linear-gradient(90deg, var(--accent-soft), transparent);
+}
+
+.cal-chip-handle.is-end {
+  right: 0;
+  border-radius: 0 7px 7px 0;
+  background: linear-gradient(270deg, var(--accent-soft), transparent);
+}
+
+.cal-chip-handle::after {
+  content: "";
+  width: 2px;
+  height: 9px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.cal-chip:hover .cal-chip-handle,
+.cal-chip:focus-visible .cal-chip-handle {
+  opacity: 1;
+}
+
+.cal-chip-grip {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 3px;
+  opacity: 0;
+  pointer-events: none;
+  background-image: radial-gradient(currentColor 1px, transparent 1.2px);
+  background-size: 4px 4px;
+  background-position: 1px 1px;
+}
+
+.cal-chip:hover .cal-chip-grip {
+  opacity: 0.55;
+}
+
+/* 单日与单端条：没有端点可分，保持可移动指针 */
+.cal-chip.is-single {
+  cursor: grab;
 }

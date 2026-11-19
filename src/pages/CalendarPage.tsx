@@ -25,6 +25,8 @@ import { formatDayKey, localDayIndex, parseDayKey, type DayIndex } from "../lib/
 type DragState = {
   order: OrderView;
   mode: DropMode;
+  /** 指针移动超过阈值后才算真正开始拖动，之前一律当普通点击。 */
+  armed: boolean;
   targetDay: DayIndex | null;
   plan: ReschedulePlan | null;
   blocked: string | null;
@@ -55,6 +57,11 @@ export default function CalendarPage() {
   const requested = useRef(0);
   const dragRef = useRef<DragState | null>(null);
   dragRef.current = drag;
+  /** 按下时的坐标，用于区分点击与拖动。 */
+  const pressRef = useRef<{ x: number; y: number } | null>(null);
+  /** 拖动结束后吞掉随之而来的那一次 click，避免误进详情。 */
+  const suppressClickRef = useRef(false);
+  const suppressTimerRef = useRef<number | null>(null);
 
   const timezoneRef = useRef<string | null>(null);
   timezoneRef.current = timezone;
@@ -109,6 +116,14 @@ export default function CalendarPage() {
     if (drag === null) return;
 
     const move = (event: PointerEvent) => {
+      if (!drag.armed) {
+        const press = pressRef.current;
+        if (press !== null) {
+          const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
+          if (moved < 6) return;
+        }
+        setDrag((prev) => (prev === null ? prev : { ...prev, armed: true }));
+      }
       // 指针可能压在订单条或浮层上，所以按层取第一个日期格，
       // 而不是只看最顶层元素的祖先（那样拖到订单条上就丢失目标日期）。
       const stack = document.elementsFromPoint(event.clientX, event.clientY);
@@ -137,7 +152,15 @@ export default function CalendarPage() {
 
     const finish = () => {
       const current = dragRef.current;
-      if (current !== null && current.plan !== null && current.targetDay !== null) {
+      if (current !== null && current.armed) {
+        // 只有真正拖动过才抑制点击；普通点击不进入这里。
+        suppressClickRef.current = true;
+        if (suppressTimerRef.current !== null) window.clearTimeout(suppressTimerRef.current);
+        suppressTimerRef.current = window.setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 400);
+      }
+      if (current !== null && current.armed && current.plan !== null && current.targetDay !== null) {
         const span = orderSpan(current.order);
         setDialog({
           order: current.order,
@@ -167,16 +190,30 @@ export default function CalendarPage() {
     };
   }, [drag]);
 
-  const startDrag = useCallback(({ order, mode }: ChipDragStart) => {
+  const startDrag = useCallback(({ order, mode, event }: ChipDragStart) => {
     const span = orderSpan(order);
+    pressRef.current = { x: event.clientX, y: event.clientY };
     setDrag({
       order,
       mode: span === null ? "unscheduled" : mode,
+      armed: false,
       targetDay: null,
       plan: null,
       blocked: null,
     });
   }, []);
+
+  /** 拖动刚结束时吞掉一次点击，其余情况照常进详情。 */
+  const openOrder = useCallback(
+    (id: string) => {
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false;
+        return;
+      }
+      navigate(`/orders?orderId=${id}`);
+    },
+    [navigate],
+  );
 
   function openKeyboardDialog(order: OrderView) {
     if (!canReschedule(order)) return;
@@ -242,7 +279,7 @@ export default function CalendarPage() {
     .sort(compareUnscheduled);
 
   const previewRange = (() => {
-    if (drag === null) return null;
+    if (drag === null || !drag.armed) return null;
     if (drag.plan !== null) {
       const start = drag.plan.start === null ? null : parseDayKey(drag.plan.start);
       const delivery = drag.plan.delivery === null ? null : parseDayKey(drag.plan.delivery);
@@ -449,7 +486,7 @@ export default function CalendarPage() {
             weeks={weeks}
             orders={visible}
             preview={previewRange}
-            onOpenOrder={(id) => navigate(`/orders?orderId=${id}`)}
+            onOpenOrder={openOrder}
             onReschedule={openKeyboardDialog}
             onChipPointerDown={startDrag}
           />
@@ -458,9 +495,7 @@ export default function CalendarPage() {
             <p className="cal-hint" role="status">
               拖动订单条可改期：拖两端改对应日期，拖条身整体平移。也可以聚焦订单后按 Enter 用「改期」。
             </p>
-          ) : (
-            <div className="cal-drag-status-spacer" aria-hidden="true" />
-          )}
+          ) : null}
         </section>
       </div>
 
