@@ -45,6 +45,7 @@ fn qa_and_production_directories_differ() {
     qa::ensure_isolated(&clean, Some(&production)).unwrap();
 }
 
+#[cfg(unix)]
 #[test]
 fn symlink_alias_cannot_bypass_the_isolation_check() {
     let outer = TempDir::new().unwrap();
