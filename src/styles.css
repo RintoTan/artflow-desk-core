@@ -7297,13 +7297,24 @@ dl.stat-row {
 .about-page {
   display: grid;
   gap: 14px;
+  /* flex 子项默认 min-width:auto，会被"最长的不可断词"（路径、代际 id）撑住，
+     窗口变窄时整块内容不收缩。这里显式允许收缩。 */
+  min-width: 0;
+}
+
+/* 每个面板同样要能收缩到容器宽度以内 */
+.about-page > .panel {
+  min-width: 0;
 }
 
 .about-intro {
   margin: 0 0 8px;
   font-size: 13.5px;
   line-height: 1.65;
-  max-width: 74ch;
+  /* 不再用 ch 上限固定行宽：说明文字跟随卡片可用宽度换行。
+     只保留 overflow-wrap，避免超长 token 把行撑出卡片。 */
+  max-width: none;
+  overflow-wrap: break-word;
 }
 
 .about-note {
