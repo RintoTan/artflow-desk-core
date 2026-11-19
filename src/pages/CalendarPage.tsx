@@ -16,7 +16,6 @@ import {
   rescheduleInput,
   shiftMonth,
   weekGridMetrics,
-  weeksInMonth,
   weekStartOf,
   weekTitle,
   type CalendarView,
@@ -158,14 +157,13 @@ export default function CalendarPage() {
     centerDay: DayIndex | null;
   } | null>(null);
   const viewportObserverRef = useRef<ResizeObserver | null>(null);
-  const prependRef = useRef(0);
-  /** 头部被裁掉的行数：渲染后要把 scrollTop 往回退，否则视口会跳。 */
-  const trimHeadRef = useRef(0);
+  /**
+   * 窗口滑动（prepend / trim）前记录的锚点：视口顶部那一行的起始日 + 行内像素偏移。
+   * 渲染后用"这个日期在新 range 里的行序号"重算 scrollTop —— 浏览器自己会调整
+   * 滚动位置（内容增删/scroll anchoring），再用固定像素加减会二次补偿，表现为跳 12 周。
+   */
+  const rangeShiftRef = useRef<{ day: DayIndex; offset: number } | null>(null);
   const scrollTargetRef = useRef<DayIndex | null>(null);
-  /** 刚做过"定位跳转"：下一帧不要按中心日补偿，否则会被拉回原处。 */
-  const jumpRef = useRef(false);
-  /** 跳转锚点：紧接着的行高变化要围绕它重新居中，而不是旧的视口中心日。 */
-  const jumpAnchorRef = useRef<{ day: DayIndex; at: number } | null>(null);
   /** 跳转对齐方式：week = 按整行（三行上中下），center = 像素居中。 */
   const alignRef = useRef<"week" | "center">("center");
   /** 聚焦计时器：定位完成后 3 秒自动解除，新的定位会先清掉旧的。 */
@@ -173,62 +171,82 @@ export default function CalendarPage() {
   const scrollEl = useRef<HTMLDivElement | null>(null);
   const initializedRef = useRef(false);
 
-  /** 记录真实行高，用于把 scrollTop 换算成周序号（每行等高）。 */
+  /**
+   * 真正的容器尺寸变化：把"视口中心那一天"钉回原位。
+   *
+   * 只跟 `viewportH` 走 —— 月份变化不会改行高（月视图固定 6 周预算），所以这里
+   * 不会被滚动/跨月误触发。声明顺序在本文件的主 effect 之前，读到的 lastFrameRef
+   * 还是 resize 之前那一帧的。
+   */
+  useLayoutEffect(() => {
+    const el = scrollEl.current;
+    if (el === null || viewportH === 0 || rangeStart === null) return;
+    const prev = lastFrameRef.current;
+    if (prev === null || prev.centerDay === null || prev.rowH <= 0) return;
+    if (scrollTargetRef.current !== null) return;
+    const row = el.querySelector<HTMLElement>(".cal-week");
+    const nextRowH = row ? row.getBoundingClientRect().height : 0;
+    if (nextRowH <= 0 || Math.abs(nextRowH - prev.rowH) < 0.5) return;
+    const weeks = (weekStartOf(prev.centerDay) - rangeStart) / 7;
+    el.scrollTop = Math.max(0, (weeks + 0.5) * nextRowH - el.clientHeight / 2);
+    rowHRef.current = nextRowH;
+    prevRowHRef.current = nextRowH;
+    lastFrameRef.current = {
+      rowH: nextRowH,
+      clientH: el.clientHeight,
+      scrollTop: el.scrollTop,
+      centerDay: prev.centerDay,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewportH]);
+
+  /**
+   * 记录真实行高 + 应用三种"位置写入"：
+   *   1) 窗口滑动补偿（prepend / trim，行数 × 行高，精确）
+   *   2) 显式跳转（今天 / 图钉 / 视图切换）
+   *   3) 记录本帧状态供下次 resize 使用
+   * 除这三种之外，本函数不碰 scrollTop —— 用户滚动拥有最高优先级。
+   */
   useLayoutEffect(() => {
     const el = scrollEl.current;
     const first = el?.querySelector<HTMLElement>(".cal-week");
     if (!el || !first) return;
     const measured = first.getBoundingClientRect().height || 0;
-    const prev = lastFrameRef.current;
-    if (measured > 0 && prev !== null && prev.rowH > 0 && prev.centerDay !== null && rangeStart !== null) {
-      const heightChanged = Math.abs(measured - prev.rowH) > 0.5;
-      const viewportChanged = Math.abs(el.clientHeight - prev.clientH) > 0.5;
-      // 有明确的滚动目标（今天/跳转）时，目标优先，别让"保持视口中心"抢先返回
-      // 刚定位完就赶上行高变化（月份周数 5/6 切换）：围绕跳转目标重新居中，
-      // 否则会用"旧的视口中心日"把视口拉回去，看起来像没定位成功。
-      const jumpAnchor = jumpAnchorRef.current;
-      if (
-        (heightChanged || viewportChanged) &&
-        scrollTargetRef.current === null &&
-        !jumpRef.current &&
-        jumpAnchor !== null &&
-        Date.now() - jumpAnchor.at < 1500
-      ) {
-        const weeks = (weekStartOf(jumpAnchor.day) - rangeStart) / 7;
-        rowHRef.current = measured;
-        prevRowHRef.current = measured;
-        el.scrollTop = Math.max(0, (weeks + 0.5) * measured - el.clientHeight / 2);
-        lastFrameRef.current = {
-          rowH: measured,
-          clientH: el.clientHeight,
-          scrollTop: el.scrollTop,
-          centerDay: jumpAnchor.day,
-        };
-        return;
-      }
-
-      if ((heightChanged || viewportChanged) && scrollTargetRef.current === null && !jumpRef.current) {
-        // 行高或视口高度变了：把"视口中心那一天"钉回原位。
-        // 用具体日期而不是行序号/像素比例 —— 月份周数变化会让行高反复变，
-        // 只有按天锚定才不会来回漂（实测按行序号连续缩放会漂到别的月份）。
-        const weeks = (weekStartOf(prev.centerDay) - rangeStart) / 7;
-        rowHRef.current = measured;
-        prevRowHRef.current = measured;
-        el.scrollTop = Math.max(0, (weeks + 0.5) * measured - el.clientHeight / 2);
-        lastFrameRef.current = {
-          rowH: measured,
-          clientH: el.clientHeight,
-          scrollTop: el.scrollTop,
-          centerDay: prev.centerDay,
-        };
-        return;
-      }
-      rowHRef.current = measured;
-      prevRowHRef.current = measured;
-    } else if (measured > 0) {
+    if (measured > 0) {
       rowHRef.current = measured;
       prevRowHRef.current = measured;
     }
+
+    if (rangeShiftRef.current !== null && rangeStart !== null) {
+      const { day, offset } = rangeShiftRef.current;
+      const rowH = rowHRef.current;
+      if (rowH > 0) {
+        const index = Math.round((weekStartOf(day) - rangeStart) / 7);
+        el.scrollTop = Math.max(0, index * rowH + offset);
+      }
+      rangeShiftRef.current = null;
+    }
+
+    const target =
+      scrollTargetRef.current ??
+      (initializedRef.current || today === null || viewportH === 0 ? null : today);
+    if (target !== null && rangeStart !== null) {
+      const targetWeek = weekStartOf(target);
+      // 目标还不在当前窗口里（刚触发扩范围、要下一帧才生效）：先别用旧 rangeStart 换算
+      if (targetWeek < rangeStart || targetWeek >= rangeStart + rangeWeeks * 7) return;
+      initializedRef.current = true;
+      const index = Math.round((targetWeek - rangeStart) / 7);
+      const rowH = rowHRef.current;
+      const centered =
+        alignRef.current === "week"
+          ? Math.max(0, (index - 1) * rowH)
+          : index * rowH - el.clientHeight / 2 + rowH / 2;
+      el.scrollTop = Math.max(0, centered);
+      scrollTargetRef.current = null;
+      setVisibleAnchor(target);
+    }
+
+    // 最后再记录本帧状态：补偿/跳转之后的值才是下一帧的"上一帧"
     lastFrameRef.current = {
       rowH: measured,
       clientH: el.clientHeight,
@@ -238,47 +256,6 @@ export default function CalendarPage() {
           ? rangeStart + Math.floor((el.scrollTop + el.clientHeight / 2) / measured) * 7 + 3
           : null,
     };
-    if (trimHeadRef.current > 0) {
-      el.scrollTop = Math.max(0, el.scrollTop - trimHeadRef.current * rowHRef.current);
-      trimHeadRef.current = 0;
-      lastFrameRef.current = null;
-    }
-    if (prependRef.current > 0) {
-      // 向上补日期时把新增高度补给 scrollTop，视口内容保持不动
-      el.scrollTop += prependRef.current * rowHRef.current;
-      prependRef.current = 0;
-    }
-    // 首次渲染后把视口对准今天；之后只在显式跳转时才动。
-    // 必须等可视高度量到（viewportH > 0）再定位：先用占位行高定位，
-    // 行高随后被改成真实值，scrollTop 的含义就全变了，会漂到别的月份。
-    const target =
-      scrollTargetRef.current ??
-      (initializedRef.current || today === null || viewportH === 0 ? null : today);
-    // 只在"本帧开头就带着 jump 标记"时跳过补偿；进入这里说明本帧没有新的跳转要处理
-    if (target === null) jumpRef.current = false;
-    if (target !== null && rangeStart !== null) {
-      const targetWeek = weekStartOf(target);
-      // 目标还不在当前窗口里（刚触发扩范围、要下一帧才生效）：先别用旧 rangeStart 换算，
-      // 否则会整整偏一段，跳到一个不相干的月份去。
-      if (targetWeek < rangeStart || targetWeek >= rangeStart + rangeWeeks * 7) return;
-      initializedRef.current = true;
-      const index = Math.round((targetWeek - rangeStart) / 7);
-      // 把目标周放到视口中部，这样 handleScroll 用"中心"推导月份时与目标一致
-      const centered = index * rowHRef.current - el.clientHeight / 2 + rowHRef.current / 2;
-      el.scrollTop = Math.max(0, centered);
-      scrollTargetRef.current = null;
-      // 跳转后立刻把"上一帧"重写成跳转后的状态：否则下一帧会拿旧的中心日做补偿，
-      // 把刚跳过去的位置又拉回原来的月份（远端定位失效的根因）。
-      jumpRef.current = true;
-      jumpAnchorRef.current = { day: target, at: Date.now() };
-      lastFrameRef.current = {
-        rowH: measured,
-        clientH: el.clientHeight,
-        scrollTop: el.scrollTop,
-        centerDay: target,
-      };
-      setVisibleAnchor(target);
-    }
   });
 
   /**
@@ -531,7 +508,8 @@ export default function CalendarPage() {
   const topMore = view === "month" && cellW >= 46;
   const metrics =
     view === "month"
-      ? monthGridMetrics(viewportH, weeksInMonth(monthAnchor ?? anchor), !topMore)
+      // 固定 6 周预算：行高只由视口高度决定，跨月不再改行高（回跳的根因）
+      ? monthGridMetrics(viewportH, 6, !topMore)
       : weekGridMetrics(viewportH, 3);
 
   /**
@@ -540,11 +518,23 @@ export default function CalendarPage() {
    */
   const MAX_WEEKS = 104;
 
+  /** 记录"视口顶部那一行是哪一天 + 行内偏移"，窗口滑动后按这个日期还原位置。 */
+  function captureRangeShift() {
+    const el = scrollEl.current;
+    const rowH = rowHRef.current;
+    if (el === null || rowH <= 0 || rangeStart === null) return;
+    const rowIndex = Math.floor(el.scrollTop / rowH);
+    rangeShiftRef.current = {
+      day: rangeStart + rowIndex * 7,
+      offset: el.scrollTop - rowIndex * rowH,
+    };
+  }
+
   function extendWeeks(direction: "up" | "down") {
     if (today === null || rangeStart === null) return;
     if (direction === "up") {
       const nextStart = rangeStart - 12 * 7;
-      prependRef.current = 12;
+      captureRangeShift();
       setRangeStart(nextStart);
       // 超出上限就少补几周（尾部的行被裁掉），视口位置由 prepend 补偿保住
       setRangeWeeks((n) => Math.min(MAX_WEEKS, n + 12));
@@ -556,8 +546,8 @@ export default function CalendarPage() {
         return;
       }
       // 已到窗口上限：把头部整段裁掉，总行数不变，滚动继续往未来走
+      captureRangeShift();
       setRangeStart(rangeStart + 12 * 7);
-      trimHeadRef.current = 12;
       setRangeWeeks(MAX_WEEKS);
     }
   }
@@ -578,13 +568,6 @@ export default function CalendarPage() {
     if (el === null) return;
     const rect = el.getBoundingClientRect();
     if (rect.height <= 0) return;
-
-    // 用户一旦自己滚动，就撤销"跳转锚点"：否则紧接着的行高变化会把视口拉回定位目标，
-    // 表现就是刚点完今天之后滚不动 / 弹回去。
-    const prevTop = lastFrameRef.current?.scrollTop;
-    if (prevTop !== undefined && Math.abs(el.scrollTop - prevTop) > 2) {
-      jumpAnchorRef.current = null;
-    }
 
     // 月份归属：按"至少露出一半"的周行投票，每行投给它自己 7 天里占多数的月份。
     // 不再用 scrollTop ÷ 行高反推算行号 —— 行高会随月份周数变化、窗口也会补/裁行，
@@ -637,10 +620,7 @@ export default function CalendarPage() {
     votes.forEach((entry) => {
       if (winner === null || entry.votes > winner.votes) winner = entry;
     });
-    // 刚做过定位跳转：短暂锁定目标月份，别让同一帧的滚动事件用多数票把标题盖回去
-    const jump = jumpAnchorRef.current;
-    const jumpFresh = jump !== null && Date.now() - jump.at < 1500;
-    if (winner !== null && !jumpFresh) {
+    if (winner !== null) {
       const current = visibleAnchor ?? anchor;
       if (current === null || monthKeyOf(current) !== monthKeyOf((winner as { day: DayIndex }).day)) {
         setVisibleAnchor((winner as { day: DayIndex }).day);

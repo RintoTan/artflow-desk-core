@@ -7125,3 +7125,8 @@ dl.stat-row {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* 窗口滑动时由代码按日期锚点还原位置；关掉浏览器自带滚动锚定，避免两边同时补偿 */
+.cal-scroll {
+  overflow-anchor: none;
+}
