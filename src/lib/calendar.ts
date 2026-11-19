@@ -60,14 +60,15 @@ const LANES_MAX_MONTH = 6;
 function metricsFromRow(rowH: number, laneCap: number, adaptLanes = true): GridMetrics {
   // 三段预算：日期行、折叠行先按比例分，剩下的全给轨道
   // 日期行与折叠行按比例分，但都有绝对上下限；大窗口下把省下来的高度全给订单轨道
-  let moreH = Math.max(11, Math.min(18, Math.round(rowH * 0.12)));
+  // 折叠行留够 14px：+N 太小就点不准了
+  let moreH = Math.max(14, Math.min(18, Math.round(rowH * 0.12)));
   let numH = Math.max(18, Math.min(28, Math.round(rowH * 0.18)));
 
   let available = rowH - numH - moreH;
   if (available < LANE_MIN_H + 2) {
     // 实在放不下：先把日期行与折叠行压到最小，保证至少一条轨道
     numH = 16;
-    moreH = 11;
+    moreH = 14;
     available = Math.max(LANE_MIN_H, rowH - numH - moreH);
   }
 

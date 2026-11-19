@@ -143,6 +143,8 @@ export default function CalendarPage() {
   } | null>(null);
   const viewportObserverRef = useRef<ResizeObserver | null>(null);
   const prependRef = useRef(0);
+  /** 头部被裁掉的行数：渲染后要把 scrollTop 往回退，否则视口会跳。 */
+  const trimHeadRef = useRef(0);
   const scrollTargetRef = useRef<DayIndex | null>(null);
   const scrollEl = useRef<HTMLDivElement | null>(null);
   const initializedRef = useRef(false);
@@ -157,7 +159,8 @@ export default function CalendarPage() {
     if (measured > 0 && prev !== null && prev.rowH > 0 && prev.centerDay !== null && rangeStart !== null) {
       const heightChanged = Math.abs(measured - prev.rowH) > 0.5;
       const viewportChanged = Math.abs(el.clientHeight - prev.clientH) > 0.5;
-      if (heightChanged || viewportChanged) {
+      // 有明确的滚动目标（今天/跳转）时，目标优先，别让"保持视口中心"抢先返回
+      if ((heightChanged || viewportChanged) && scrollTargetRef.current === null) {
         // 行高或视口高度变了：把"视口中心那一天"钉回原位。
         // 用具体日期而不是行序号/像素比例 —— 月份周数变化会让行高反复变，
         // 只有按天锚定才不会来回漂（实测按行序号连续缩放会漂到别的月份）。
@@ -188,6 +191,11 @@ export default function CalendarPage() {
           ? rangeStart + Math.floor((el.scrollTop + el.clientHeight / 2) / measured) * 7 + 3
           : null,
     };
+    if (trimHeadRef.current > 0) {
+      el.scrollTop = Math.max(0, el.scrollTop - trimHeadRef.current * rowHRef.current);
+      trimHeadRef.current = 0;
+      lastFrameRef.current = null;
+    }
     if (prependRef.current > 0) {
       // 向上补日期时把新增高度补给 scrollTop，视口内容保持不动
       el.scrollTop += prependRef.current * rowHRef.current;
@@ -200,8 +208,12 @@ export default function CalendarPage() {
       scrollTargetRef.current ??
       (initializedRef.current || today === null || viewportH === 0 ? null : today);
     if (target !== null && rangeStart !== null) {
+      const targetWeek = weekStartOf(target);
+      // 目标还不在当前窗口里（刚触发扩范围、要下一帧才生效）：先别用旧 rangeStart 换算，
+      // 否则会整整偏一段，跳到一个不相干的月份去。
+      if (targetWeek < rangeStart || targetWeek >= rangeStart + rangeWeeks * 7) return;
       initializedRef.current = true;
-      const index = Math.round((weekStartOf(target) - rangeStart) / 7);
+      const index = Math.round((targetWeek - rangeStart) / 7);
       // 把目标周放到视口中部，这样 handleScroll 用"中心"推导月份时与目标一致
       const centered = index * rowHRef.current - el.clientHeight / 2 + rowHRef.current / 2;
       el.scrollTop = Math.max(0, centered);
@@ -433,23 +445,31 @@ export default function CalendarPage() {
       ? monthGridMetrics(viewportH, weeksInMonth(monthAnchor ?? anchor))
       : weekGridMetrics();
 
-  /** 距离今天最多往回 / 往前各 60 周，超出就不再扩，避免 DOM 无限增长。 */
-  const MAX_BACK_WEEKS = 60;
-  const MAX_FWD_WEEKS = 60;
+  /**
+   * 滚动窗口上限（周）。窗口本身是有界的，但**不是**用户能感觉到的墙：
+   * 到上限时把另一端裁掉，而不是拒绝扩展 —— 之前"卡在 60 周"就是这么来的。
+   */
+  const MAX_WEEKS = 104;
 
   function extendWeeks(direction: "up" | "down") {
     if (today === null || rangeStart === null) return;
-    const todayWeek = weekStartOf(today);
     if (direction === "up") {
       const nextStart = rangeStart - 12 * 7;
-      if (todayWeek - nextStart > MAX_BACK_WEEKS * 7) return;
       prependRef.current = 12;
       setRangeStart(nextStart);
-      setRangeWeeks((n) => n + 12);
+      // 超出上限就少补几周（尾部的行被裁掉），视口位置由 prepend 补偿保住
+      setRangeWeeks((n) => Math.min(MAX_WEEKS, n + 12));
     } else {
       const nextEnd = rangeStart + (rangeWeeks + 12) * 7;
-      if (nextEnd - todayWeek > MAX_FWD_WEEKS * 7) return;
-      setRangeWeeks((n) => n + 12);
+      void nextEnd;
+      if (rangeWeeks + 12 <= MAX_WEEKS) {
+        setRangeWeeks((n) => n + 12);
+        return;
+      }
+      // 已到窗口上限：把头部整段裁掉，总行数不变，滚动继续往未来走
+      setRangeStart(rangeStart + 12 * 7);
+      trimHeadRef.current = 12;
+      setRangeWeeks(MAX_WEEKS);
     }
   }
 
