@@ -1,0 +1,136 @@
+# Windows x64 原生构建（DEV-09B）
+#
+# 只做构建与产物上传，不创建 Release、不发布下载链接。
+# 正式版与 QA 版分别构建，避免产物互相覆盖。
+name: windows-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_qa:
+        description: "同时构建 QA 版"
+        type: boolean
+        default: true
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  production:
+    name: Production (dev.artflow.minidesk)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: windows-production
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 前端生产构建
+        run: npm run build
+
+      - name: Rust 测试（迁移与领域逻辑）
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: 构建 Windows 安装包（NSIS）
+        run: npx tauri build --target x86_64-pc-windows-msvc --bundles nsis
+
+      - name: 校验产物
+        shell: pwsh
+        run: |
+          $root = "src-tauri/target/x86_64-pc-windows-msvc/release"
+          $exe  = Join-Path $root "artflow-minidesk.exe"
+          $setup = Get-ChildItem "$root/bundle/nsis/*.exe" | Select-Object -First 1
+          if (-not (Test-Path $exe)) { throw "缺少主程序 $exe" }
+          if (-not $setup) { throw "缺少 NSIS 安装包" }
+          $info = (Get-Item $exe).VersionInfo
+          Write-Host "EXE: $exe  $((Get-Item $exe).Length) bytes  FileVersion=$($info.FileVersion)  Product=$($info.ProductName)"
+          Write-Host "SETUP: $($setup.FullName)  $($setup.Length) bytes"
+          New-Item -ItemType Directory -Force -Path out/Production | Out-Null
+          Copy-Item $exe   out/Production/artflow-minidesk.exe
+          Copy-Item $setup out/Production/$($setup.Name)
+          Get-FileHash out/Production/* -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $($_.Path | Split-Path -Leaf)" } |
+            Set-Content out/Production/SHA256SUMS.txt
+          Get-Content out/Production/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ArtFlowDesk-Windows-Production
+          path: out/Production
+          if-no-files-found: error
+          retention-days: 30
+
+  qa:
+    name: QA (dev.artflow.minidesk.qa)
+    runs-on: windows-latest
+    if: ${{ inputs.build_qa }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: windows-qa
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 构建 QA 版安装包（NSIS，独立配置）
+        run: npx tauri build --config src-tauri/tauri.qa.conf.json --target x86_64-pc-windows-msvc --bundles nsis
+
+      - name: 校验产物
+        shell: pwsh
+        run: |
+          $root = "src-tauri/target/x86_64-pc-windows-msvc/release"
+          $exe  = Join-Path $root "artflow-minidesk.exe"
+          $setup = Get-ChildItem "$root/bundle/nsis/*.exe" | Select-Object -First 1
+          if (-not (Test-Path $exe)) { throw "缺少主程序 $exe" }
+          if (-not $setup) { throw "缺少 NSIS 安装包" }
+          if ($setup.Name -notmatch "QA") { throw "QA 安装包名不含 QA：$($setup.Name)（可能用了正式版配置）" }
+          $info = (Get-Item $exe).VersionInfo
+          Write-Host "QA EXE: $exe  $((Get-Item $exe).Length) bytes  Product=$($info.ProductName)"
+          Write-Host "QA SETUP: $($setup.FullName)  $($setup.Length) bytes"
+          New-Item -ItemType Directory -Force -Path out/QA | Out-Null
+          Copy-Item $exe   out/QA/artflow-minidesk.exe
+          Copy-Item $setup out/QA/$($setup.Name)
+          Copy-Item "build/windows/launchers/*" out/Launchers -Recurse -ErrorAction SilentlyContinue
+          Get-FileHash out/QA/* -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $($_.Path | Split-Path -Leaf)" } |
+            Set-Content out/QA/SHA256SUMS.txt
+          Get-Content out/QA/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ArtFlowDesk-Windows-QA
+          path: |
+            out/QA
+            out/Launchers
+          if-no-files-found: error
+          retention-days: 30
