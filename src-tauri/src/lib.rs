@@ -101,6 +101,21 @@ pub fn run() {
                 }
             }
 
+            // 只把「当前代际的附件目录」交给 asset 协议。
+            //
+            // 静态 glob 一旦写成 `generations/*/attachments/**`，就等于允许通过 asset URL
+            // 读任意代际的附件（历史上确实这样配过，运行时实测能读到别的代际的图）。
+            // 这里改成运行时按代际授权：scope 里没有跨代际通配，别的代际目录不在允许列表内。
+            {
+                let attachments = state
+                    .env
+                    .layout()
+                    .attachments_dir(state.env.active_generation());
+                app.asset_protocol_scope()
+                    .allow_directory(&attachments, true)
+                    .map_err(|e| format!("无法授权附件目录给 asset 协议：{e}"))?;
+            }
+
             app.manage(state);
             app.manage(infra::close::ExitGate::new());
 

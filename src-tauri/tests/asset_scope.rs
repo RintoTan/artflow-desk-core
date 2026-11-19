@@ -1,4 +1,8 @@
-//! asset 协议访问范围：只放行代际里的附件目录。
+//! asset 协议访问范围：只放行**当前代际**的附件目录。
+//!
+//! v2 变更：scope 不再有静态 glob，改为启动时按活动代际 `allow_directory`。
+//! 原因是静态写 `generations/*/attachments/**` 等于允许通过 asset URL 读任意代际的附件
+//! —— 真实 WKWebView 里实测确实能读到别的代际的图（见 03 报告 S3/S9）。
 //!
 //! 这是**配置层**的验证：用与 Tauri scope 相同的通配语义（glob）匹配真实绝对路径。
 //! 它不能替代对运行时拦截行为的验证（那需要真实 WebView 发请求），这一点在报告里写明。
@@ -8,22 +12,12 @@ use glob::Pattern;
 const APP_DATA: &str = "/Users/someone/Library/Application Support/dev.artflow.minidesk";
 const GEN: &str = "gen-e05d7ce65b8d40c0a0d23bedf18476ee";
 
+/// 运行时实际生效的允许范围：活动代际的 attachments 目录（递归）。
 fn scope_patterns() -> Vec<Pattern> {
-    let raw = include_str!("../tauri.conf.json");
-    let value: serde_json::Value = serde_json::from_str(raw).unwrap();
-    let entries = value["app"]["security"]["assetProtocol"]["scope"]
-        .as_array()
-        .expect("assetProtocol.scope 必须是数组");
-    entries
-        .iter()
-        .map(|entry| {
-            let text = entry
-                .as_str()
-                .unwrap()
-                .replace("$APPDATA", APP_DATA);
-            Pattern::new(&text).expect("scope 必须是合法 glob")
-        })
-        .collect()
+    let layout = minidesk::store::paths::Layout::new(std::path::Path::new(APP_DATA));
+    let dir = layout.attachments_dir(GEN);
+    let text = format!("{}/**", dir.to_string_lossy());
+    vec![Pattern::new(&text).expect("scope 必须是合法 glob")]
 }
 
 fn allowed(path: &str) -> bool {
@@ -31,16 +25,22 @@ fn allowed(path: &str) -> bool {
 }
 
 #[test]
-fn scope_is_not_the_whole_app_data_directory() {
-    let raw = include_str!("../tauri.conf.json");
-    let value: serde_json::Value = serde_json::from_str(raw).unwrap();
-    let entries = value["app"]["security"]["assetProtocol"]["scope"]
-        .as_array()
-        .unwrap();
-    for entry in entries {
-        let text = entry.as_str().unwrap();
-        assert_ne!(text, "$APPDATA/**", "不允许整个 AppData 都可读");
-        assert_ne!(text, "$APPDATA", "不允许整个 AppData 都可读");
+fn config_has_no_static_asset_scope() {
+    // 静态 glob 无法表达"活动代际"，一旦写 `generations/*/attachments/**` 就等于放开跨代际读取。
+    for file in ["../tauri.conf.json", "../tauri.qa.conf.json"] {
+        let raw = if file.ends_with("qa.conf.json") {
+            include_str!("../tauri.qa.conf.json")
+        } else {
+            include_str!("../tauri.conf.json")
+        };
+        let value: serde_json::Value = serde_json::from_str(raw).unwrap();
+        let entries = value["app"]["security"]["assetProtocol"]["scope"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{file} 必须有 scope 数组（可以为空）"));
+        assert!(
+            entries.is_empty(),
+            "{file} 不允许再有静态 asset scope：跨代际通配会被真实 WebView 利用"
+        );
     }
 }
 
@@ -104,12 +104,15 @@ fn paths_outside_app_data_are_rejected() {
 }
 
 #[test]
-fn other_generation_attachments_stay_inside_their_own_generation() {
-    // 另一个代际的附件同样在 scope 内（都是合法图片），但不包括它的数据库。
+fn other_generation_attachments_are_out_of_scope() {
+    // 本轮的收紧点：只有当前代际的附件在允许范围内。
     let other = "gen-f8930531c59f437795d99d28a7ae25c5";
-    assert!(allowed(&format!(
-        "{APP_DATA}/generations/{other}/attachments/originals/b.jpg"
-    )));
+    assert!(
+        !allowed(&format!(
+            "{APP_DATA}/generations/{other}/attachments/originals/b.jpg"
+        )),
+        "别的代际的附件不应可读"
+    );
     assert!(!allowed(&format!("{APP_DATA}/generations/{other}/database.sqlite")));
 }
 

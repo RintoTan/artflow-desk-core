@@ -394,6 +394,8 @@ fn qa_asset_scope_covers_scenario_attachment_paths() {
         .expect("QA 配置必须有 assetProtocol.scope");
     let patterns: Vec<&str> = scopes.iter().filter_map(|v| v.as_str()).collect();
 
+    // v2：scope 不再有静态 glob，改为启动时按活动代际 `allow_directory`。
+    // 因此这里校验的是「静态配置不得覆盖任何附件路径」，真正的放行由运行时按代际授权。
     let home = std::env::var("HOME").unwrap();
     let qa_appdata = format!("{home}/Library/Application Support/dev.artflow.minidesk.qa");
     let expand = |p: &str| p.replace("$APPDATA", &qa_appdata);
@@ -407,10 +409,13 @@ fn qa_asset_scope_covers_scenario_attachment_paths() {
                 .map(|pat| pat.matches(&sample))
                 .unwrap_or(false)
         });
-        assert!(covered, "{scenario} 场景的附件路径未被 asset scope 覆盖");
+        assert!(
+            !covered,
+            "{scenario} 场景的附件路径不应再由静态 scope 覆盖（跨代际通配会被真实 WebView 利用）"
+        );
     }
 
-    // 正式目录的附件路径不能被 QA 构建读到。
+    // 正式目录的附件路径同样不能被静态 scope 覆盖。
     let production_sample = format!(
         "{home}/Library/Application Support/dev.artflow.minidesk/generations/gen-abc/attachments/originals/x.png"
     );
