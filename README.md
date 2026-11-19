@@ -58,7 +58,7 @@ ArtFlow Desk Core 是一款为独立画师设计的桌面委托管理工具，�
 
 ## 下载 Demo
 
-见 [Releases](../../releases) 页。每次 Demo 都会附带 `SHA256SUMS.txt`。
+见 [Releases](../../releases) 页（仓库为 Private，需有权限的账号访问）。每次 Demo 附 `SHA256SUMS.txt`。
 
 - **正式版**（`ArtFlow Desk Core`）：用你自己的真实数据，标识 `dev.artflow.minidesk`。
 - **QA 版**（`ArtFlow Desk Core QA`）：演示与试玩用，标识 `dev.artflow.minidesk.qa`，数据与正式版完全隔离。
@@ -67,8 +67,8 @@ ArtFlow Desk Core 是一款为独立画师设计的桌面委托管理工具，�
 
 ## 安装与首次启动
 
-- macOS：[用户手册](docs/user-guide/macOS-USER-GUIDE.md)
-- Windows：[用户手册](docs/user-guide/Windows-USER-GUIDE.md)
+完整手册：[docs/user-guide/USER-MANUAL.md](docs/user-guide/USER-MANUAL.md)
+（分册：[macOS](docs/user-guide/USER-MANUAL-macOS.md) · [Windows](docs/user-guide/USER-MANUAL-Windows.md)）
 
 ## 数据与隐私
 
@@ -89,6 +89,11 @@ ArtFlow Desk Core 是一款为独立画师设计的桌面委托管理工具，�
 | [产品决策](docs/product/PRODUCT-DECISIONS.md) | 关键取舍与理由 |
 | [系统架构](docs/architecture/SYSTEM-OVERVIEW.md) | 技术栈与模块划分 |
 | [数据架构](docs/architecture/DATA-ARCHITECTURE.md) | 代际、迁移、备份格式 |
+| [需求清单](docs/product/PRODUCT-REQUIREMENTS.md) | 已实现 / 部分 / 未实现 |
+| [开发指南](docs/development/DEVELOPMENT-GUIDE.md) | 环境、启动、测试 |
+| [构建指南](docs/development/BUILD-GUIDE.md) | macOS 与 Windows 构建 |
+| [发布指南](docs/development/RELEASE-GUIDE.md) | 版本与 Release 流程 |
+| [v0.1.0 发布说明](docs/releases/v0.1.0.md) | 本版下载与验证状态 |
 | [已知限制](docs/releases/KNOWN-LIMITATIONS.md) | 当前版本的边界 |
 
 ## 开发

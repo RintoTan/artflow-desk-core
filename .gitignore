@@ -18,3 +18,11 @@ local-data/
 .env.*
 *.pem
 *.key
+
+# ---- 内部资料与本地工作区（不进入仓库）----
+交付给 ChatGPT 的文件/
+DEV-09-WINDOWS-HANDOFF/
+DEV-*-HANDOFF/
+*.dmg
+*.exe
+!build/windows/**/*.cmd

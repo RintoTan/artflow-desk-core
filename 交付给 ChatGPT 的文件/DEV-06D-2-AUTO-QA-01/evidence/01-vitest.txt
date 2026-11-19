@@ -1,7 +1,0 @@
-# U7-B..E 组件测试（2026-11-18 20:13）
-$ npx vitest run src/components/ProjectTimeline.refresh.test.tsx src/components/ProjectTimeline.test.tsx src/lib/timeline.test.ts
- ✓ src/lib/timeline.test.ts (26 tests) 23ms
- ✓ src/components/ProjectTimeline.refresh.test.tsx (11 tests) 377ms
- ✓ src/components/ProjectTimeline.test.tsx (22 tests) 510ms
- Test Files  3 passed (3)
-      Tests  59 passed (59)
