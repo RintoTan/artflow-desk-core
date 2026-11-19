@@ -373,6 +373,14 @@ async function main() {
       if (!chip || !bg) return { ok: false, reason: "找不到 chip 或目标格" };
       const scroller = document.querySelector(".cal-main");
       if (scroller) { scroller.scrollLeft = Math.max(0, bg.offsetLeft - 60); await new Promise((r) => setTimeout(r, 120)); }
+      const gridAtStart = (() => {
+        const g = document.querySelector(".cal-grid").getBoundingClientRect();
+        return {
+          top: Math.round(g.top), left: Math.round(g.left),
+          width: Math.round(g.width), height: Math.round(g.height),
+          scrollLeft: Math.round(scroller ? scroller.scrollLeft : 0),
+        };
+      })();
       const from = chip.getBoundingClientRect();
       const to = bg.getBoundingClientRect();
       chip.dispatchEvent(new PointerEvent("pointerdown", opts(from.left + from.width / 2, from.top + from.height / 2)));
@@ -380,6 +388,7 @@ async function main() {
       window.dispatchEvent(new PointerEvent("pointermove", opts(to.left + to.width / 2, to.top + to.height / 2)));
       await new Promise((r) => setTimeout(r, 160));
       const snap = snapshot();
+      snap.gridAtStart = gridAtStart;
       const week = document.querySelector(".cal-week");
       snap.weekWidth = week ? Math.round(week.getBoundingClientRect().width) : 0;
       window.__TARGET__ = { x: to.left + to.width / 2, y: to.top + to.height / 2 };
@@ -389,13 +398,15 @@ async function main() {
   const gridDuring = await evaluate(
     send,
     `(() => { const g = document.querySelector(".cal-grid").getBoundingClientRect();
-      return { top: Math.round(g.top), left: Math.round(g.left), width: Math.round(g.width), height: Math.round(g.height) }; })()`,
+      const sc = document.querySelector(".cal-main");
+      return { top: Math.round(g.top), left: Math.round(g.left), width: Math.round(g.width), height: Math.round(g.height), scrollLeft: Math.round(sc ? sc.scrollLeft : 0) }; })()`,
   );
   results.measurements.gridDuring = gridDuring;
+  const gridAtStart = dragging.gridAtStart ?? null;
   check(
-    "拖动期间日历网格不位移（top/left/width 完全一致）",
-    JSON.stringify(gridBefore) === JSON.stringify(gridDuring),
-    `${JSON.stringify(gridBefore)} → ${JSON.stringify(gridDuring)}`,
+    "拖动期间日历网格不位移（起点=拖动中，含滚动位置）",
+    gridAtStart !== null && JSON.stringify(gridAtStart) === JSON.stringify(gridDuring),
+    `${JSON.stringify(gridAtStart)} → ${JSON.stringify(gridDuring)}`,
   );
   const statusBox = await evaluate(
     send,

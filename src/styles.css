@@ -5578,15 +5578,15 @@ dl.stat-row {
 .cal-refresh,
 .cal-head .cal-toggle,
 .cal-viewport button {
-  height: var(--cal-ctl);
+  height: var(--control-h);
 }
 
 .cal-nav button,
 .cal-today,
 .cal-refresh {
-  min-width: var(--cal-ctl);
+  min-width: var(--control-h);
   padding: 0 10px;
-  border-radius: var(--cal-radius);
+  border-radius: var(--radius-sm);
   font-size: 12.5px;
   line-height: 1;
 }
@@ -5594,7 +5594,7 @@ dl.stat-row {
 .cal-nav button:first-child,
 .cal-nav button:nth-child(3) {
   padding: 0;
-  width: var(--cal-ctl);
+  width: var(--control-h);
   font-size: 15px;
   color: var(--text-muted);
 }
@@ -5625,7 +5625,7 @@ dl.stat-row {
   gap: 6px;
   padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: var(--cal-radius);
+  border-radius: var(--radius-sm);
   background: var(--surface);
   font-size: 12.5px;
   color: var(--text-muted);
@@ -5637,20 +5637,20 @@ dl.stat-row {
 
 /* 视图切换：与全站分段控件同高 */
 .segmented.cal-views button {
-  height: calc(var(--cal-ctl) - 6px);
+  height: calc(var(--control-h) - 6px);
   padding: 0 12px;
   font-size: 12.5px;
 }
 
 .segmented.cal-views {
   padding: 3px;
-  border-radius: var(--cal-radius);
+  border-radius: var(--radius-sm);
 }
 
 /* 左池：卡片信息层级 + 紧凑次要按钮 */
 .cal-pool-item {
   padding: 9px 10px;
-  border-radius: var(--cal-radius);
+  border-radius: var(--radius-sm);
   transition: border-color 120ms ease, background 120ms ease;
 }
 
@@ -5670,7 +5670,7 @@ dl.stat-row {
 }
 
 .cal-pool-reschedule {
-  height: var(--cal-ctl-sm);
+  height: var(--control-h-sm);
   padding: 0 10px;
   border-radius: 8px;
   font-size: 11.5px;
@@ -5811,7 +5811,7 @@ dl.stat-row {
   margin: 0;
   padding: 8px 10px;
   border: 1px solid var(--border-active);
-  border-radius: var(--cal-radius);
+  border-radius: var(--radius-sm);
   background: var(--accent-soft);
   display: flex;
   flex-direction: column;
@@ -5877,7 +5877,7 @@ dl.stat-row {
 
 /* 浮层与弹窗：与全站一致的输入高度 */
 .cal-popover-actions button {
-  height: var(--cal-ctl-sm);
+  height: var(--control-h-sm);
   padding: 0 10px;
   border-radius: 8px;
   font-size: 11.5px;
@@ -5891,9 +5891,9 @@ dl.stat-row {
 
 .cal-dialog-dates input,
 .cal-dialog-reason input {
-  height: var(--cal-ctl);
+  height: var(--control-h);
   padding: 0 9px;
-  border-radius: var(--cal-radius);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--surface);
   font-size: 12.5px;
@@ -6010,4 +6010,213 @@ dl.stat-row {
 /* 单日与单端条：没有端点可分，保持可移动指针 */
 .cal-chip.is-single {
   cursor: grab;
+}
+
+/* ---------------------------------------------------------------- DEV-06D-3-UI-03 控件精修 */
+/*
+ * 只处理：刷新按钮的原生外观、改期弹窗的日期/原因输入与间距。
+ * 不改任何业务逻辑，也不使用全局按钮选择器影响其它页面。
+ */
+
+/* 1) 日历内所有按钮先抹掉平台原生外观，再按全站规范重绘 */
+.cal-refresh,
+.cal-nav button,
+.cal-today,
+.cal-pool-reschedule,
+.cal-more,
+.cal-chip-action,
+.cal-popover-actions button,
+.cal-popover header button {
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: inherit;
+  box-shadow: none;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+/* 刷新按钮复用全站 .btn 的边框/背景/hover/focus/disabled，尺寸对齐工具栏 */
+.cal-refresh {
+  height: var(--control-h);
+  min-height: var(--control-h);
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  line-height: 1;
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+.cal-refresh:hover:not(:disabled) {
+  background: var(--surface-alt);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.cal-refresh:active:not(:disabled) {
+  background: var(--surface-alt);
+  transform: translateY(1px);
+}
+
+.cal-refresh:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* 其它工具栏按钮补上 active 反馈，保持同一套状态 */
+.cal-nav button:active,
+.cal-today:active,
+.cal-pool-reschedule:active,
+.cal-popover-actions button:active {
+  transform: translateY(1px);
+}
+
+/* 2) 改期弹窗：日期与原因输入统一 */
+.cal-dialog {
+  gap: 12px;
+  min-width: min(380px, 100%);
+}
+
+.cal-dialog-order {
+  gap: 6px 8px;
+  padding-bottom: 2px;
+}
+
+.cal-dialog-order .mono {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.cal-dialog-order strong {
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+
+.cal-dialog-dates {
+  gap: 12px;
+}
+
+.cal-dialog-dates label {
+  gap: 5px;
+  min-width: 0;
+}
+
+.cal-dialog-label,
+.cal-dialog-dates label > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.cal-opt {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 400;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text-faint);
+}
+
+.cal-dialog-dates input,
+.cal-dialog-reason input {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  height: var(--control-h);
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 日期控件内部文本垂直居中（WKWebView 与 Blink 一致） */
+.cal-dialog-dates input::-webkit-datetime-edit {
+  padding: 0;
+  line-height: 1.4;
+}
+
+.cal-dialog-dates input::-webkit-calendar-picker-indicator {
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.cal-dialog-dates input:hover:not(:disabled),
+.cal-dialog-reason input:hover:not(:disabled) {
+  border-color: var(--text-faint);
+}
+
+.cal-dialog-dates input:focus-visible,
+.cal-dialog-reason input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+/* 不可编辑的日期：留可读文字，用底色与虚线边框表达只读 */
+.cal-dialog-dates input:disabled {
+  background: var(--surface-alt);
+  border-style: dashed;
+  border-color: var(--border);
+  color: var(--text-muted);
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.cal-dialog-reason input::placeholder {
+  color: var(--text-faint);
+  opacity: 1;
+}
+
+.cal-dialog-dates em,
+.cal-dialog-reason em.cal-dialog-hint {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.cal-dialog-invalid {
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  font-size: 11.5px;
+}
+
+.cal-dialog-hint {
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: var(--warn-soft);
+  border: 1px solid var(--warn);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.cal-dialog-footnote {
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* 窄视口：日期两列改单列，弹窗不产生横向溢出 */
+@media (max-width: 560px) {
+  .cal-dialog-dates {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

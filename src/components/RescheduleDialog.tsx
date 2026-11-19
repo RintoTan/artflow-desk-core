@@ -140,13 +140,18 @@ export default function RescheduleDialog({
           )}
 
           {allowFieldChoice ? (
-            <label className="cal-dialog-dates is-single">
-              <span>排期日期</span>
-              <input type="date" value={target} onChange={(event) => setTarget(event.target.value)} />
-              <em>
-                写入{field === "start" ? "计划开始日期" : "计划交付日期"}；另一端保持为空
-              </em>
-            </label>
+            <div className="cal-dialog-dates">
+              <label>
+                <span>排期日期</span>
+                <input type="date" value={target} onChange={(event) => setTarget(event.target.value)} />
+                <em>写入{field === "start" ? "计划开始日期" : "计划交付日期"}</em>
+              </label>
+              <label>
+                <span>另一端点</span>
+                <input type="date" value="" disabled aria-label="另一端点（保持为空）" />
+                <em>保持为空，不自动补日期</em>
+              </label>
+            </div>
           ) : (
             <div className="cal-dialog-dates">
               <label>
@@ -187,7 +192,10 @@ export default function RescheduleDialog({
           )}
 
           <label className="cal-dialog-reason">
-            <span>改期原因（选填）</span>
+            <span className="cal-dialog-label">
+              改期原因
+              <em className="cal-opt">选填</em>
+            </span>
             <input
               type="text"
               value={reason}

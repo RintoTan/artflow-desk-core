@@ -323,7 +323,11 @@ export default function CalendarPage() {
           </p>
         </div>
         <div className="cal-head-actions">
-          <button type="button" className="cal-refresh" onClick={() => setGeneration((n) => n + 1)}>
+          <button
+            type="button"
+            className="btn cal-refresh"
+            onClick={() => setGeneration((n) => n + 1)}
+          >
             刷新
           </button>
           <label className="cal-toggle">
