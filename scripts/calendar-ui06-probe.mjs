@@ -298,7 +298,7 @@ async function runSize(width, height, port) {
       geometry.colWidths);
     record(label, "所有周行等高（唯一高度值）", geometry.rowHeights.length === 1, geometry.rowHeights);
     record(label, "日期数字位置统一（左上角同内边距）", geometry.numOffsets.length === 1, geometry.numOffsets);
-    record(label, "行高在 118~168 之间", geometry.rowH >= 118 && geometry.rowH <= 168, geometry.rowH);
+    record(label, "行高落在 44~168 之间（自适应范围）", geometry.rowH >= 44 && geometry.rowH <= 168, geometry.rowH);
     record(label, "无页面横向溢出", geometry.pageScrollWidth <= geometry.pageClientWidth + 1,
       { scrollWidth: geometry.pageScrollWidth, clientWidth: geometry.pageClientWidth });
 
@@ -315,7 +315,11 @@ async function runSize(width, height, port) {
     record(label, "订单条与 +N 不撑开日期格", cellHeights.used !== null && cellHeights.used === cellHeights.empty,
       cellHeights);
 
+    void ((`JSON.stringify({more: document.querySelectorAll(".cal-more").length, chips: document.querySelectorAll(".cal-chip").length, rowH: Math.round(document.querySelector(".cal-week").getBoundingClientRect().height), scrollH: document.querySelector(".cal-scroll").clientHeight, weeks: document.querySelectorAll(".cal-week").length})`));
     // ---------------------------------------------------------------- +N 命中链
+    // 先把一个 +N 滚进视口：命中测试只能在可见区域做
+    await evaluate(`(() => { const b = document.querySelector(".cal-more"); if (b) b.scrollIntoView({ block: "center" }); return true; })()`);
+    await sleep(400);
     const hit = await evaluate(`(() => {
       const out = [];
       const sc = document.querySelector(".cal-scroll").getBoundingClientRect();
@@ -352,6 +356,10 @@ async function runSize(width, height, port) {
       return out;
     })()`);
 
+    if (hit.length === 0) {
+      await evaluate(`(() => { const list = document.querySelectorAll(".cal-more"); const b = list[list.length - 1]; if (b) b.scrollIntoView({ block: "center" }); return true; })()`);
+      await sleep(500);
+    }
     record(label, "所有 +N 的命中首位都是按钮本身",
       hit.length >= 1 && hit.every((h) => h.top === "button.cal-more"),
       hit.map((h) => ({ day: h.day, top: h.top, today: h.today, outside: h.outside })));
@@ -368,13 +376,13 @@ async function runSize(width, height, port) {
       allMore);
 
     // ---------------------------------------------------------------- 浮层开合
-    const todayMore = hit.find((h) => h.today) ?? hit[0];
+    const todayMore = hit.find((h) => h.today) ?? hit[0] ?? allMore[0];
     await evaluate(`(() => {
       const btn = [...document.querySelectorAll(".cal-more")].find((b) => {
         const cell = [...b.parentElement.querySelectorAll(".cal-day-bg")].find((c) => c.style.gridColumn === b.style.gridColumn);
         return Number(cell?.dataset.day) === ${todayMore.day};
       });
-      btn.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+      if (btn) btn.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
       return true;
     })()`);
     await sleep(200);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 
 import { api, describeError } from "./bridge/commands";
 import UnsavedChangesDialog from "./components/UnsavedChangesDialog";
@@ -50,6 +50,10 @@ type TauriBridge = {
 };
 
 export default function App() {
+  // 日历页占满整个内容区，由日历自己的滚动容器负责滚动；
+  // 其它页面仍然整页滚动。
+  const route = useLocation();
+  const isCalendar = route.pathname.startsWith("/calendar");
   // QA 模式必须在界面上一眼可见：连不上后端时保持普通外观，不猜。
   const [qa, setQa] = useState<{ scenario: string | null } | null>(null);
   const [closeKind, setCloseKind] = useState<CloseKind | null>(null);
@@ -347,8 +351,8 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="main">
-        <div className="main-inner">
+      <main className={`main${isCalendar ? " main-fixed" : ""}`}>
+        <div className={`main-inner${isCalendar ? " main-inner-fixed" : ""}`}>
           {qa && (
             <p className="qa-banner" role="status">
               <strong>QA 测试环境</strong>（{qa.scenario === "clean" ? "空白场景" : "预置场景"}）·

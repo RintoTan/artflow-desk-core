@@ -3,12 +3,11 @@ import { describe, expect, it } from "vitest";
 import type { OrderView } from "../bridge/commands";
 import { civilFromDays, parseDayKey } from "./scheduleBar";
 import {
-  LANE_MIN_H,
-  MORE_ROW_H,
-  NUM_ROW_H,
+  ROW_MIN_H,
   dominantMonthDay,
   monthGridMetrics,
   weekGridMetrics,
+  weeksInMonth,
 } from "./calendar";
 import {
   LANES,
@@ -384,39 +383,67 @@ describe("未排期池排序", () => {
 });
 
 describe("月视图网格度量", () => {
-  it("行高随可视高度增加，但不超过上限", () => {
-    const small = monthGridMetrics(560);
-    const large = monthGridMetrics(1000);
-    const huge = monthGridMetrics(4000);
-    expect(small.rowH).toBeLessThanOrEqual(large.rowH);
-    expect(large.rowH).toBeGreaterThan(small.rowH);
-    expect(huge.rowH).toBeLessThanOrEqual(168);
+  it("窗口变高行高变大，窗口变矮行高变小（没有最小行高挡路）", () => {
+    const short = monthGridMetrics(300, 6);
+    const tall = monthGridMetrics(900, 6);
+    expect(short.rowH).toBeLessThan(tall.rowH);
+    expect(tall.rowH).toBeGreaterThan(120);
+    // 900 / 6 = 150 的预算，扣掉分隔线后应接近 149
+    expect(Math.abs(tall.rowH - 149)).toBeLessThanOrEqual(2);
   });
 
-  it("矮窗口回落到最小行高，不会把内容压扁", () => {
-    const tiny = monthGridMetrics(0);
-    expect(tiny.rowH).toBe(NUM_ROW_H + MORE_ROW_H + LANES.month * LANE_MIN_H);
-    expect(tiny.laneH).toBe(LANE_MIN_H);
+  it("按当月实际周数均分：4 周月比 6 周月行更高", () => {
+    const four = monthGridMetrics(720, 4);
+    const six = monthGridMetrics(720, 6);
+    expect(four.rowH).toBeGreaterThan(six.rowH);
   });
 
-  it("行高恰好等于三段之和，轨道永远不小于最小高度", () => {
-    for (const available of [0, 300, 560, 720, 900, 1100, 2000]) {
-      const m = monthGridMetrics(available);
-      expect(m.rowH).toBe(m.numH + m.laneH * LANES.month + m.moreH);
-      expect(m.laneH).toBeGreaterThanOrEqual(LANE_MIN_H);
+  it("整月高度不超过可视高度（不产生纵向滚动条）", () => {
+    for (const available of [280, 380, 520, 720, 1000]) {
+      for (const weeks of [4, 5, 6]) {
+        const m = monthGridMetrics(available, weeks);
+        // 每行还有 1px 分隔线
+        expect(m.rowH * weeks + weeks).toBeLessThanOrEqual(available + 1);
+      }
     }
   });
 
-  it("6 个整行能放进可视高度时，行高预算按 6 周算", () => {
-    const m = monthGridMetrics(6 * 118);
-    expect(m.rowH).toBeGreaterThanOrEqual(118);
-    expect(m.rowH * 6).toBeLessThanOrEqual(6 * 118 + 1);
+  it("行高等于三段之和，轨道数随行高降级", () => {
+    for (const available of [0, 260, 400, 620, 900, 1400]) {
+      const m = monthGridMetrics(available, 6);
+      expect(m.rowH).toBe(m.numH + m.laneH * m.lanes + m.moreH);
+      expect(m.lanes).toBeGreaterThanOrEqual(1);
+      expect(m.lanes).toBeLessThanOrEqual(3);
+      expect(m.chipH).toBeLessThanOrEqual(m.laneH);
+    }
+    expect(monthGridMetrics(1200, 4).lanes).toBe(3);
+    expect(monthGridMetrics(300, 6).lanes).toBe(1);
   });
 
-  it("周视图度量与月视图解耦（6 条轨道）", () => {
+  it("极端矮窗口也不会低于可读下限", () => {
+    const m = monthGridMetrics(120, 6);
+    expect(m.rowH).toBeGreaterThanOrEqual(ROW_MIN_H);
+  });
+
+  it("周视图度量与月视图解耦", () => {
     const week = weekGridMetrics();
-    expect(week.laneH).toBe(LANE_MIN_H);
-    expect(week.rowH).toBe(NUM_ROW_H + MORE_ROW_H + LANES.week * LANE_MIN_H);
+    expect(week.lanes).toBe(6);
+    expect(week.rowH).toBe(week.numH + week.laneH * 6 + week.moreH);
+  });
+});
+
+describe("当月周数", () => {
+  it("2026 年 11 月是 6 周（11-01 是周日，首周从 10-26 起算）", () => {
+    expect(weeksInMonth(day("2026-11-19"))).toBe(6);
+  });
+
+  it("2026 年 12 月与 2027 年 1 月都能算", () => {
+    expect(weeksInMonth(day("2026-12-01"))).toBeGreaterThanOrEqual(4);
+    expect(weeksInMonth(day("2027-01-15"))).toBeGreaterThanOrEqual(4);
+  });
+
+  it("2026 年 2 月是 5 周", () => {
+    expect(weeksInMonth(day("2026-02-10"))).toBe(5);
   });
 });
 

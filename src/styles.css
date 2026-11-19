@@ -6419,3 +6419,166 @@ dl.stat-row {
 .cal-chip {
   max-height: 19px;
 }
+
+/* ---------------------------------------------------------------- DEV-06D-3-UI-06 补充：月历真正自适应 */
+/*
+ * 目标：窗口多大，日历就多大；任何合理尺寸下当月都能整月放下，且不产生页面滚动条。
+ *
+ * 关键是把「高度」从页面滚动层一路传到日期网格：
+ *   .main-fixed（不滚） → .main-inner-fixed → .cal-page → .cal-body → .cal-main → .cal-scroll
+ * 每一层都要 min-height: 0，否则 flex 子项会被内容顶开（这正是之前出现整体滚动条的原因）。
+ */
+.main-fixed {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 16px;
+}
+
+.main-inner-fixed {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.main-fixed .cal-page {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.main-fixed .cal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.main-fixed .cal-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* 旧实现写死 calc(100dvh - 196px)：窗口一矮就跟真实可用空间对不上 */
+  max-height: none;
+}
+
+.main-fixed .cal-pool {
+  max-height: none;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* 日历网格不再有最小宽度：七列本来就用 minmax(0, 1fr)，撑宽只来自这条 min-width */
+.cal-grid {
+  min-width: 0;
+}
+
+.cal-weekdays span {
+  padding: 4px 6px;
+}
+
+/* 尺寸全部来自 CalendarGrid 算好的变量，窗口缩放时一起缩 */
+.cal-day-num {
+  padding: 2px 5px 1px;
+  font-size: min(11.5px, calc(var(--cal-num-h, 32px) * 0.42));
+  line-height: 1;
+}
+
+.cal-day-pill {
+  min-width: min(22px, calc(var(--cal-num-h, 32px) - 4px));
+  height: min(22px, calc(var(--cal-num-h, 32px) - 4px));
+  padding: 0 4px;
+}
+
+.cal-day-num.is-today .cal-day-pill {
+  min-width: min(27px, calc(var(--cal-num-h, 32px) - 2px));
+  height: min(27px, calc(var(--cal-num-h, 32px) - 2px));
+  padding: 0 4px;
+  box-shadow: none;
+}
+
+.cal-chip {
+  height: var(--cal-chip-h, 19px);
+  font-size: var(--cal-chip-font, 10.5px);
+  padding: 0 4px;
+  gap: 3px;
+}
+
+.cal-chip-mark {
+  width: min(6px, calc(var(--cal-chip-h, 19px) * 0.32));
+  height: min(6px, calc(var(--cal-chip-h, 19px) * 0.32));
+}
+
+.cal-seg {
+  margin: 0 1px;
+}
+
+.cal-chip-action {
+  height: min(16px, var(--cal-chip-h, 19px));
+  font-size: 9.5px;
+  padding: 0 3px;
+}
+
+.cal-more {
+  height: min(18px, calc(var(--cal-more-h, 20px) - 2px));
+  font-size: 10px;
+  padding: 0 5px;
+  margin: 0 2px 0;
+}
+
+/* 工具栏：不再折成两行；标题可以缩短，控件宽度不被挤压 */
+.main-fixed .cal-head > div:first-child {
+  min-width: 0;
+}
+
+.main-fixed .cal-head-actions {
+  flex: none;
+  flex-wrap: nowrap;
+}
+
+@media (max-width: 1100px) {
+  .main-fixed .cal-toolbar {
+    flex-wrap: nowrap;
+    row-gap: 0;
+  }
+
+  .main-fixed .cal-nav {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+
+  .main-fixed .cal-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .main-fixed .cal-views {
+    flex: none;
+  }
+
+  .main-fixed .cal-refresh,
+  .main-fixed .cal-head .cal-toggle {
+    flex: none;
+    white-space: nowrap;
+  }
+}
+
+/* 窄格里的「改期」小按钮不再占布局宽度：否则订单标题被挤成一个圆点。
+   鼠标悬停时它浮在条的右端，尺寸不变。 */
+.cal-seg {
+  position: relative;
+}
+
+.cal-chip-action {
+  position: absolute;
+  right: 1px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+}
+
+/* 这些尺寸由 CalendarGrid 按可用空间内联覆盖；这里给出默认值，保证单独引用也能解析 */
+.cal-grid {
+  --cal-num-h: 32px;
+  --cal-more-h: 20px;
+  --cal-chip-h: 19px;
+  --cal-chip-font: 10.5px;
+}

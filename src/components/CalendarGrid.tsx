@@ -5,7 +5,6 @@ import type { OrderView } from "../bridge/commands";
 import { civilFromDays, formatDayKey, type DayIndex } from "../lib/scheduleBar";
 import {
   isSameMonth,
-  LANES,
   layoutWeek,
   type CalendarView,
   type DropMode,
@@ -159,7 +158,7 @@ export default function CalendarGrid({
   onChipPointerDown,
   onPickDay,
 }: Props) {
-  const laneCount = LANES[view];
+  const laneCount = metrics.lanes;
   const layouts = useMemo(
     () => weeks.map((week) => layoutWeek(orders, week[0] ?? 0, laneCount)),
     [weeks, orders, laneCount],
@@ -201,9 +200,22 @@ export default function CalendarGrid({
   }, [more, closeMore]);
 
   const templateRows = `${metrics.numH}px repeat(${laneCount}, ${metrics.laneH}px) ${metrics.moreH}px`;
+  // 行高、条高、字号由页面按可用空间算好后统一挂成变量：同一个尺寸只管一处
+  const vars = {
+    "--cal-num-h": `${metrics.numH}px`,
+    "--cal-more-h": `${metrics.moreH}px`,
+    "--cal-chip-h": `${metrics.chipH}px`,
+    "--cal-chip-font": `${metrics.fontPx}px`,
+  } as React.CSSProperties;
 
   return (
-    <div className={`cal-grid cal-view-${view}`} data-weeks={weeks.length} data-view={view}>
+    <div
+      className={`cal-grid cal-view-${view}`}
+      data-weeks={weeks.length}
+      data-view={view}
+      data-row-h={metrics.rowH}
+      style={vars}
+    >
       <div className="cal-weekdays" aria-hidden="true">
         {WEEKDAYS.map((label) => (
           <span key={label}>{label}</span>

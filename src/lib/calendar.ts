@@ -25,10 +25,13 @@ export const LANES: Record<CalendarView, number> = { month: 3, week: 6 };
 /**
  * 网格行度量（单位 px）。
  *
- * 每个月行都由三段固定组成：日期数字行 + N 条订单轨道 + 折叠行。
+ * 每个月行由三段组成：日期数字行 + N 条订单轨道 + 折叠行。
+ * 三段都由"这一行有多高"反推，没有任何固定下限阻止缩放；
  * 订单条与 +N 只在自己的轨道里排布，永远不会改变格子的高度。
  */
 export type GridMetrics = {
+  /** 该视图每周展示几条订单轨道（窗口很矮时自动减到 2 / 1）。 */
+  lanes: number;
   /** 日期数字行高。 */
   numH: number;
   /** 单条订单轨道高。 */
@@ -37,38 +40,63 @@ export type GridMetrics = {
   moreH: number;
   /** 整行高度 = numH + laneH × 轨道数 + moreH。 */
   rowH: number;
+  /** 订单条高度。 */
+  chipH: number;
+  /** 订单条字号。 */
+  fontPx: number;
 };
 
-/** 日期数字行：27px 的今天圆环 + 上下留白。 */
-export const NUM_ROW_H = 32;
-/** 折叠行：容得下 18px 的 +N 胶囊。 */
-export const MORE_ROW_H = 20;
-/** 单条订单轨道的最小高度（19px 的订单条 + 呼吸）。 */
-export const LANE_MIN_H = 22;
-/** 行高上限：再高只会拉长空白，不会让内容更好读。 */
-export const ROW_MAX_H = 168;
+/** 行高的极端下限：再小就看不清日期了。真正决定高度的是可用空间。 */
+export const ROW_MIN_H = 44;
+/** 周视图不参与自适应，保持独立密度。 */
+export const WEEK_LANES = 6;
 
-function metricsFor(lanes: number, numH: number, moreH: number, rowH: number): GridMetrics {
-  const laneH = Math.max(LANE_MIN_H, Math.floor((rowH - numH - moreH) / lanes));
-  return { numH, laneH, moreH, rowH: numH + laneH * lanes + moreH };
+function metricsFromRow(rowH: number, preferredLanes: number, adaptLanes = true): GridMetrics {
+  // 矮行先砍轨道数，而不是把每格压成一条缝：3 → 2 → 1（周视图不参与这个降级）
+  const cap = !adaptLanes ? preferredLanes : rowH >= 96 ? 3 : rowH >= 66 ? 2 : 1;
+  const lanes = Math.max(1, Math.min(preferredLanes, cap));
+  let moreH = Math.max(12, Math.min(20, Math.round(rowH * 0.16)));
+  let numH = Math.max(20, Math.min(32, Math.round(rowH * 0.24)));
+  let laneH = Math.floor((rowH - numH - moreH) / lanes);
+  while (numH + lanes * laneH + moreH > rowH) {
+    if (numH > 16) numH -= 1;
+    else if (moreH > 10) moreH -= 1;
+    else if (laneH > 10) laneH -= 1;
+    else break;
+  }
+  laneH = Math.max(10, laneH);
+  const chipH = Math.max(10, Math.min(19, laneH - Math.max(3, Math.round(laneH * 0.14))));
+  const fontPx = Math.max(8.5, Math.min(10.5, Math.round((chipH - 4) * 0.66 * 10) / 10));
+  return { lanes, numH, laneH, moreH, rowH: numH + lanes * laneH + moreH, chipH, fontPx };
 }
 
 /**
- * 月视图行高：按日历可视高度分配，预算按 6 周计 ——
- * 任何一个月（4 / 5 / 6 周）都能在同一个行高下完整放下，
- * 所以连续滚动跨月时行高恒定，视口不会跳动。
+ * 月视图行高：把日历可视高度按**当前月份实际需要的周数**（4 / 5 / 6）均分。
+ *
+ * 窗口变大 → 行高变大；窗口变小 → 行高变小；任何尺寸下当前月份都能整月放下，
+ * 不产生纵向滚动条。连续滚动仍然保留：网格总高度永远大于视口。
  */
-export function monthGridMetrics(available: number): GridMetrics {
-  const lanes = LANES.month;
-  const base = NUM_ROW_H + MORE_ROW_H + lanes * LANE_MIN_H;
-  const target = available > 0 ? Math.floor(available / MONTH_ROWS) : base;
-  return metricsFor(lanes, NUM_ROW_H, MORE_ROW_H, Math.max(base, Math.min(ROW_MAX_H, target)));
+export function monthGridMetrics(availableHeight: number, weeks: number): GridMetrics {
+  const span = Math.max(1, Math.min(6, Math.round(weeks) || 6));
+  const perRow = availableHeight > 0 ? Math.floor(availableHeight / span) : 118;
+  // 周行之间各有 1px 分隔线，得先从每行预算里扣掉
+  const rowH = Math.max(ROW_MIN_H, perRow - 1);
+  return metricsFromRow(rowH, 3);
 }
 
-/** 周视图保持自己的独立密度：6 条轨道、不加高。 */
+/** 周视图保持自己的独立密度：6 条轨道、固定 118 行高，不随窗口缩放。 */
 export function weekGridMetrics(): GridMetrics {
-  const lanes = LANES.week;
-  return metricsFor(lanes, NUM_ROW_H, MORE_ROW_H, NUM_ROW_H + MORE_ROW_H + lanes * LANE_MIN_H);
+  return metricsFromRow(117, WEEK_LANES, false);
+}
+
+/** 当前月份在月视图里占几周（4 / 5 / 6）。 */
+export function weeksInMonth(anchor: DayIndex): number {
+  const { year, month } = civilFromDays(anchor);
+  const first = daysFromCivil(year, month, 1);
+  const nextYear = month === 12 ? year + 1 : year;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const last = daysFromCivil(nextYear, nextMonth, 1) - 1;
+  return Math.round((weekStartOf(last) - weekStartOf(first)) / 7) + 1;
 }
 
 /** 该天所属月份的序号（年 × 12 + 月），用于月份归属比较。 */

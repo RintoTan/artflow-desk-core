@@ -19,6 +19,7 @@ import {
   shiftWeek,
   weekDays,
   weekGridMetrics,
+  weeksInMonth,
   weekStartOf,
   weekTitle,
   type CalendarView,
@@ -133,6 +134,8 @@ export default function CalendarPage() {
   const rowHRef = useRef(0);
   const prevRowHRef = useRef(0);
   const observedScrollRef = useRef<HTMLDivElement | null>(null);
+  /** 上一帧的行高/视口/滚动位置：缩放时用它把视口中心钉在同一行。 */
+  const lastFrameRef = useRef<{ rowH: number; clientH: number; scrollTop: number } | null>(null);
   const viewportObserverRef = useRef<ResizeObserver | null>(null);
   const prependRef = useRef(0);
   const scrollTargetRef = useRef<DayIndex | null>(null);
@@ -145,25 +148,38 @@ export default function CalendarPage() {
     const first = el?.querySelector<HTMLElement>(".cal-week");
     if (!el || !first) return;
     const measured = first.getBoundingClientRect().height || 0;
-    if (measured > 0 && prevRowHRef.current > 0 && Math.abs(measured - prevRowHRef.current) > 0.5) {
-      // 窗口尺寸变化让行高变了：按"视口中心的那一行"折算 scrollTop，
-      // 否则行高一变，视口内容就会整体平移。
-      const centerRow = (el.scrollTop + el.clientHeight / 2) / prevRowHRef.current;
+    const prev = lastFrameRef.current;
+    if (measured > 0 && prev !== null && prev.rowH > 0) {
+      const heightChanged = Math.abs(measured - prev.rowH) > 0.5;
+      const viewportChanged = Math.abs(el.clientHeight - prev.clientH) > 0.5;
+      if (heightChanged || viewportChanged) {
+        // 行高或视口高度变了：用"视口中心落在第几行"重算 scrollTop。
+        // 用行序号而不是像素比例，连续缩放多少次都不会累积漂移。
+        const rowIndex = (prev.scrollTop + prev.clientH / 2) / prev.rowH;
+        rowHRef.current = measured;
+        prevRowHRef.current = measured;
+        el.scrollTop = Math.max(0, rowIndex * measured - el.clientHeight / 2);
+        lastFrameRef.current = { rowH: measured, clientH: el.clientHeight, scrollTop: el.scrollTop };
+        return;
+      }
       rowHRef.current = measured;
       prevRowHRef.current = measured;
-      el.scrollTop = Math.max(0, centerRow * measured - el.clientHeight / 2);
     } else if (measured > 0) {
       rowHRef.current = measured;
       prevRowHRef.current = measured;
     }
+    lastFrameRef.current = { rowH: measured, clientH: el.clientHeight, scrollTop: el.scrollTop };
     if (prependRef.current > 0) {
       // 向上补日期时把新增高度补给 scrollTop，视口内容保持不动
       el.scrollTop += prependRef.current * rowHRef.current;
       prependRef.current = 0;
     }
-    // 首次渲染后把视口对准今天；之后只在显式跳转时才动
+    // 首次渲染后把视口对准今天；之后只在显式跳转时才动。
+    // 必须等可视高度量到（viewportH > 0）再定位：先用占位行高定位，
+    // 行高随后被改成真实值，scrollTop 的含义就全变了，会漂到别的月份。
     const target =
-      scrollTargetRef.current ?? (initializedRef.current || today === null ? null : today);
+      scrollTargetRef.current ??
+      (initializedRef.current || today === null || viewportH === 0 ? null : today);
     if (target !== null && rangeStart !== null) {
       initializedRef.current = true;
       const index = Math.round((weekStartOf(target) - rangeStart) / 7);
@@ -393,7 +409,10 @@ export default function CalendarPage() {
 
   const monthAnchor = view === "month" ? (visibleAnchor ?? anchor) : anchor;
   const title = view === "month" ? monthTitle(monthAnchor) : weekTitle(anchor);
-  const metrics = view === "month" ? monthGridMetrics(viewportH) : weekGridMetrics();
+  const metrics =
+    view === "month"
+      ? monthGridMetrics(viewportH, weeksInMonth(monthAnchor ?? anchor))
+      : weekGridMetrics();
 
   /** 距离今天最多往回 / 往前各 60 周，超出就不再扩，避免 DOM 无限增长。 */
   const MAX_BACK_WEEKS = 60;
