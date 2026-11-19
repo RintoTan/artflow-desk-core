@@ -7087,7 +7087,7 @@ dl.stat-row {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 周视图：给订单轨道更多纵向空间（至少 3 条可见） */
+/* 周视图三行的行高完全由 weekGridMetrics 按可用高度算，这里不再写死 min-height */
 .cal-view-week .cal-week {
-  min-height: 122px;
+  min-height: 0;
 }

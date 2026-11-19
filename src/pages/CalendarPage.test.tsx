@@ -167,8 +167,9 @@ describe("日历页面骨架", () => {
     expect(title).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "周" }));
-    expect(document.querySelectorAll(".cal-week")).toHaveLength(1);
-    expect(document.querySelectorAll(".cal-day-bg")).toHaveLength(7);
+    // 连续三周：3 行 × 7 列 = 21 格
+    expect(document.querySelectorAll(".cal-week")).toHaveLength(3);
+    expect(document.querySelectorAll(".cal-day-bg")).toHaveLength(21);
     // 仍然是 12 月，没有跳回今天所在的 11 月
     expect(screen.getByText(/2026-12-14 ~ 2026-12-20/)).toBeInTheDocument();
   });

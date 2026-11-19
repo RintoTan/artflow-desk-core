@@ -16,7 +16,6 @@ import {
   rescheduleInput,
   shiftMonth,
   shiftWeek,
-  weekDays,
   weekGridMetrics,
   weeksInMonth,
   weekStartOf,
@@ -282,6 +281,32 @@ export default function CalendarPage() {
   });
 
   /**
+   * 首次进入必须把视口对准今天。
+   *
+   * 单独成一条 effect：之前的初始化挂在"每帧都跑"的大 effect 里，条件是
+   * `initializedRef || today === null || viewportH === 0`，只要那一帧的可视高度
+   * 还没量到就整段跳过，而之后又因为 `initializedRef` 没被置位、依赖变化不明显，
+   * 结果日历停在 29 周窗口的最顶部（8 月），看起来就是"订单不显示"。
+   */
+  useLayoutEffect(() => {
+    if (initializedRef.current) return;
+    if (today === null || rangeStart === null || viewportH === 0) return;
+    const el = scrollEl.current;
+    const rowH = rowHRef.current;
+    if (el === null || rowH <= 0) return;
+    const index = Math.round((weekStartOf(today) - rangeStart) / 7);
+    el.scrollTop = Math.max(0, index * rowH - el.clientHeight / 2 + rowH / 2);
+    initializedRef.current = true;
+    lastFrameRef.current = {
+      rowH,
+      clientH: el.clientHeight,
+      scrollTop: el.scrollTop,
+      centerDay: today,
+    };
+    setVisibleAnchor(today);
+  }, [today, rangeStart, viewportH]);
+
+  /**
    * 跟踪日历可视高度：月视图行高按它分配，订单数量不参与。
    *
    * 首次渲染时还在"正在读取订单"的分支里，`.cal-scroll` 尚未挂载，
@@ -486,7 +511,13 @@ export default function CalendarPage() {
 
   // 注意：这里必须用普通计算，不能用 useMemo —— 它位于条件 return 之后。
   const weeks = (() => {
-    if (view === "week") return [weekDays(anchor)];
+    if (view === "week") {
+      // 连续三周：上一周 / 焦点周 / 下一周，21 天一次看全
+      const start = weekStartOf(anchor);
+      return [-1, 0, 1].map((offset) =>
+        Array.from({ length: 7 }, (_, col) => start + offset * 7 + col),
+      );
+    }
     const start = rangeStart ?? weekStartOf(anchor);
     return Array.from({ length: rangeWeeks }, (_, i) =>
       Array.from({ length: 7 }, (_, col) => start + i * 7 + col),
@@ -503,7 +534,7 @@ export default function CalendarPage() {
   const metrics =
     view === "month"
       ? monthGridMetrics(viewportH, weeksInMonth(monthAnchor ?? anchor), !topMore)
-      : weekGridMetrics(viewportH);
+      : weekGridMetrics(viewportH, 3);
 
   /**
    * 滚动窗口上限（周）。窗口本身是有界的，但**不是**用户能感觉到的墙：
@@ -512,6 +543,7 @@ export default function CalendarPage() {
   const MAX_WEEKS = 104;
 
   function extendWeeks(direction: "up" | "down") {
+    if (view !== "month") return;  // 周视图固定 3 行，不参与窗口扩展
     if (today === null || rangeStart === null) return;
     if (direction === "up") {
       const nextStart = rangeStart - 12 * 7;

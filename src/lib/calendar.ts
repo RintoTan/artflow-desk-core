@@ -123,15 +123,18 @@ export function monthGridMetrics(
  * 之前是 6 条轨道塞进 117px，每条只有 12px，订单条几乎认不出来。
  * 现在固定 3 条打底（不够就加），把高度优先给轨道和条高。
  */
-export function weekGridMetrics(availableHeight = 0): GridMetrics {
-  const numH = 26;
-  const moreH = 20;
-  const minLanes = 3;
-  const target = availableHeight > 0 ? Math.max(122, Math.min(280, availableHeight - 1)) : 122;
-  const maxLanes = Math.max(minLanes, Math.floor((target - numH - moreH) / (CHIP_MIN_H + 7)));
-  const lanes = Math.min(WEEK_LANES, maxLanes);
-  const laneH = Math.max(CHIP_MIN_H + 4, Math.floor((target - numH - moreH) / lanes));
-  const chipH = Math.max(CHIP_MIN_H, Math.min(19, laneH - 5));
+export function weekGridMetrics(availableHeight = 0, rows = 1): GridMetrics {
+  // 三周视图要在可视高度里**同时**放下 3 行，所以先按行数均分再决定轨道数
+  const perRow =
+    availableHeight > 0 ? Math.floor(availableHeight / Math.max(1, rows)) - 1 : 150;
+  const numH = perRow >= 140 ? 26 : 22;
+  const moreH = perRow >= 140 ? 20 : 16;
+  const room = perRow - numH - moreH;
+  // 优先"少而厚"的轨道；空间紧张时也至少保留 3 条（宁可压薄，不减少轨道）
+  const preferred = Math.floor(room / 22);
+  const lanes = Math.max(1, Math.min(WEEK_LANES, room >= 45 ? Math.max(3, preferred) : preferred || 1));
+  const laneH = Math.max(16, Math.floor(room / Math.max(1, lanes)));
+  const chipH = Math.max(12, Math.min(19, laneH - 3));
   return {
     lanes,
     numH,
