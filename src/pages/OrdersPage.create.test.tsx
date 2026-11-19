@@ -65,6 +65,7 @@ const CREATED_ORDER: OrderView = {
     undoBlockedReason: null,
     canAdvance: false,
     canRework: false,
+    canSkip: false,
     canComplete: false,
     canCancel: true,
     canReopen: false,

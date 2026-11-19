@@ -48,6 +48,7 @@ const ORDER: OrderView = {
     undoBlockedReason: null,
     canAdvance: true,
     canRework: true,
+    canSkip: false,
     canComplete: false,
     canCancel: true,
     canReopen: false,

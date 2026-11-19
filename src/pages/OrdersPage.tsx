@@ -4,7 +4,12 @@ import { save } from "@tauri-apps/plugin-dialog";
 
 import AttachmentPanel from "../components/AttachmentPanel";
 import OrderBoard from "../components/OrderBoard";
-import { planStageMove, type StageMovePlan } from "../lib/board";
+import {
+  parseSkippedStages,
+  planStageMove,
+  skippedStageIds,
+  type StageMovePlan,
+} from "../lib/board";
 import FilterMenu from "../components/FilterMenu";
 import OrderTable from "../components/OrderTable";
 import ActionMenu from "../components/ActionMenu";
@@ -64,6 +69,7 @@ const EVENT_LABEL: Record<string, string> = {
   work_start_undone: "撤销开工",
   stage_advanced: "推进阶段",
   stage_reworked: "返工",
+  stage_skipped: "跳级",
   workflow_changed: "修改流程",
   completed: "完成",
   cancelled: "取消",
@@ -214,7 +220,10 @@ export default function OrdersPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   /** 详情里唯一的制作进度入口：打开后一次选择 + 一次确认，不再叠第二层对话框。 */
-  const [stagePanel, setStagePanel] = useState<{ target: string | null } | null>(null);
+  const [stagePanel, setStagePanel] = useState<{
+    target: string | null;
+    reason: string;
+  } | null>(null);
   /** 取消订单用独立确认框：后果比普通阶段操作重，不和内联确认条混用。 */
   const [cancelOpen, setCancelOpen] = useState(false);
   const filterBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -499,6 +508,53 @@ export default function OrdersPage() {
           await loadList();
           await selectOrder(order.id).catch(() => {});
           setError("订单已被修改，看板已刷新；请确认最新阶段后重新拖动。");
+        } else {
+          setError(describeError(e));
+        }
+      } finally {
+        setBoardCommit(null);
+        setBusy(false);
+      }
+    },
+    [loadList, selectOrder, selectedId],
+  );
+
+  /**
+   * 跳级的落地：一次合法领域动作 + 一次 revision 递增。
+   * 与看板拖拽共用刷新/冲突提示，但不复用 `applyStageMove`（那条路径只接受一步推进或返工）。
+   */
+  const applyStageSkip = useCallback(
+    async (
+      order: OrderView,
+      plan: Extract<StageMovePlan, { kind: "skip" }>,
+      reason: string,
+    ) => {
+      setBusy(true);
+      setError(null);
+      setBoardCommit(`${order.code} · ${order.currentStageTitle} → ${plan.targetStageTitle}`);
+      try {
+        const latest = await api.getOrder(order.id);
+        const updated = await api.skipStage({
+          orderId: latest.id,
+          expectedRevision: latest.revision,
+          targetStageId: plan.targetStageId,
+          reason: reason.trim() === "" ? null : reason.trim(),
+          requestId: newRequestId("skip"),
+        });
+        await loadList();
+        if (selectedId === order.id) {
+          await selectOrder(order.id);
+        }
+        setNotice(
+          `${updated.code} 已跳级到「${plan.targetStageTitle}」，跳过 ${plan.skipped
+            .map((stage) => stage.title)
+            .join("、")}`,
+        );
+      } catch (e) {
+        if (isConflict(e)) {
+          await loadList();
+          await selectOrder(order.id).catch(() => {});
+          setError("订单已被修改，已刷新到最新状态；请确认阶段后重试跳级。");
         } else {
           setError(describeError(e));
         }
@@ -1224,7 +1280,7 @@ export default function OrdersPage() {
                 onRequest={setPendingAction}
                 onRun={runLifecycle}
                 onDirtyGuard={() => dirty}
-                onOpenStage={() => setStagePanel({ target: nextStageTitle(detail) })}
+                onOpenStage={() => setStagePanel({ target: nextStageTitle(detail), reason: "" })}
                 onCancelOrder={() => setCancelOpen(true)}
               />
 
@@ -1314,6 +1370,7 @@ export default function OrdersPage() {
             <StagePanel
               order={detail}
               busy={busy}
+              skippedIds={skippedStageIds(detail, events)}
               onRun={runLifecycle}
               onError={setError}
             />
@@ -1511,24 +1568,23 @@ export default function OrdersPage() {
 
       <ConfirmDialog
         open={stagePanel !== null}
-        title="推进阶段"
-        confirmLabel={
-          stagePanel?.target && detail && stagePanel.target === nextStageTitle(detail)
-            ? "确认推进"
-            : "确认返工"
-        }
+        title={stageDialogTitle(detail, stagePanel)}
+        confirmLabel={stageConfirmLabel(detail, stagePanel)}
         confirmDisabled={!stagePanel?.target}
         onCancel={() => setStagePanel(null)}
         onConfirm={() => {
           const target = stagePanel?.target;
           if (!target || !detail) return;
-          const plan = planStageMove(detail, target);
+          const plan = planStageMove(detail, target, { allowSkip: true });
+          const reason = stagePanel.reason;
           setStagePanel(null);
           if (plan.kind === "advance" || plan.kind === "rework") {
             void applyStageMove(
               detail,
               plan as Extract<StageMovePlan, { kind: "advance" | "rework" }>,
             );
+          } else if (plan.kind === "skip") {
+            void applyStageSkip(detail, plan, reason);
           } else if (plan.kind === "blocked") {
             setError(plan.reason);
           }
@@ -1538,7 +1594,9 @@ export default function OrdersPage() {
           <StagePanelBody
             order={detail}
             target={stagePanel.target}
-            onSelect={(target) => setStagePanel({ target })}
+            reason={stagePanel.reason}
+            onSelect={(target) => setStagePanel({ target, reason: stagePanel.reason })}
+            onReasonChange={(reason) => setStagePanel({ ...stagePanel, reason })}
           />
         )}
       </ConfirmDialog>
@@ -1608,6 +1666,35 @@ function planBlockedReason(plan: StageMovePlan): string | null {
   return plan.kind === "blocked" || plan.kind === "noop" ? plan.reason : null;
 }
 
+type StagePanelState = { target: string | null; reason: string } | null;
+
+function stagePlanFor(order: OrderView | null, panel: StagePanelState): StageMovePlan | null {
+  if (!order || !panel?.target) return null;
+  return planStageMove(order, panel.target, { allowSkip: true });
+}
+
+function stageDialogTitle(order: OrderView | null, panel: StagePanelState): string {
+  switch (stagePlanFor(order, panel)?.kind) {
+    case "skip":
+      return "跳级阶段";
+    case "rework":
+      return "返工阶段";
+    default:
+      return "推进阶段";
+  }
+}
+
+function stageConfirmLabel(order: OrderView | null, panel: StagePanelState): string {
+  switch (stagePlanFor(order, panel)?.kind) {
+    case "skip":
+      return "确认跳级";
+    case "rework":
+      return "确认返工";
+    default:
+      return "确认推进";
+  }
+}
+
 function stageEntryBlockedReason(order: OrderView): string | null {
   if (order.status !== "active") return "已完成或已取消的订单不能推进或返工";
   if (!order.startedAt) return "订单尚未开工，不能推进或返工";
@@ -1616,23 +1703,38 @@ function stageEntryBlockedReason(order: OrderView): string | null {
 }
 
 /**
- * 阶段操作面板：一个主入口（推进）加一个次级区（返工）。
- * 受控越级尚未开放，所以更远的阶段不列出来，避免摆一个永远点不动的入口。
+ * 阶段操作面板：一个主入口（推进），加两个次级区（跳级、返工）。
+ * 三种操作共用同一份「目标 → 领域动作」判定，避免各写一套前置条件。
  */
 function StagePanelBody({
   order,
   target,
+  reason,
   onSelect,
+  onReasonChange,
 }: {
   order: OrderView;
   target: string | null;
+  reason: string;
   onSelect: (target: string) => void;
+  onReasonChange: (reason: string) => void;
 }) {
   const index = order.currentStageIndex;
   const next = index === null ? null : (order.stages[index + 1] ?? null);
   const earlier = index === null ? [] : order.stages.slice(0, index);
   const advancePlan = next ? planStageMove(order, next.title) : null;
   const advanceReason = advancePlan ? planBlockedReason(advancePlan) : null;
+
+  // 跳级目标：至少跨过一个中间阶段的前向阶段（含最后一个阶段）。
+  const skipCandidates =
+    index === null
+      ? []
+      : order.stages
+          .slice(index + 2)
+          .map((stage) => ({ stage, plan: planStageMove(order, stage.title, { allowSkip: true }) }));
+
+  const selectedPlan = target ? planStageMove(order, target, { allowSkip: true }) : null;
+  const selectedSkip = selectedPlan?.kind === "skip" ? selectedPlan : null;
 
   return (
     <div className="stage-adjust">
@@ -1661,24 +1763,52 @@ function StagePanelBody({
         <p className="muted">已在最后一个阶段，没有可推进的下一阶段；请用「完成」结束订单。</p>
       )}
 
+      <p className="stage-group-title">跳级</p>
+      {skipCandidates.length > 0 ? (
+        <div className="stage-adjust-list" role="radiogroup" aria-label="跳级目标">
+          {skipCandidates.map(({ stage, plan }) => {
+            const blocked = plan.kind === "blocked" ? plan.reason : null;
+            const skipped = plan.kind === "skip" ? plan.skipped : [];
+            const skippedLabel =
+              skipped.length > 0 ? `将跳过：${skipped.map((s) => s.title).join("、")}` : "";
+            return (
+              <label key={stage.id} className={`stage-adjust-row${blocked ? " is-off" : ""}`}>
+                <input
+                  type="radio"
+                  name="stage-target"
+                  value={stage.title}
+                  disabled={blocked !== null}
+                  checked={target === stage.title}
+                  onChange={() => onSelect(stage.title)}
+                />
+                <span className="stage-adjust-name">跳到「{stage.title}」</span>
+                <span className="stage-adjust-note">{blocked ?? skippedLabel}</span>
+              </label>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="muted">当前阶段之后没有可跳级的目标。</p>
+      )}
+
       <p className="stage-group-title">返工</p>
       {earlier.length > 0 ? (
         <div className="stage-adjust-list" role="radiogroup" aria-label="返工目标">
           {earlier.map((stage) => {
             const plan = planStageMove(order, stage.title);
-            const reason = plan.kind === "rework" ? null : planBlockedReason(plan);
+            const blocked = plan.kind === "rework" ? null : planBlockedReason(plan);
             return (
-              <label key={stage.id} className={`stage-adjust-row${reason ? " is-off" : ""}`}>
+              <label key={stage.id} className={`stage-adjust-row${blocked ? " is-off" : ""}`}>
                 <input
                   type="radio"
                   name="stage-target"
                   value={stage.title}
-                  disabled={reason !== null}
+                  disabled={blocked !== null}
                   checked={target === stage.title}
                   onChange={() => onSelect(stage.title)}
                 />
                 <span className="stage-adjust-name">退回「{stage.title}」</span>
-                <span className="stage-adjust-note">{reason ?? "返工"}</span>
+                <span className="stage-adjust-note">{blocked ?? "返工"}</span>
               </label>
             );
           })}
@@ -1687,8 +1817,36 @@ function StagePanelBody({
         <p className="muted">已在第一阶段，没有可返工的目标。</p>
       )}
 
+      {selectedSkip && (
+        <div className="stage-skip-summary">
+          <p>
+            <strong>{order.code}</strong>「{order.title}」
+          </p>
+          <p>
+            当前阶段 <strong>{order.currentStageTitle ?? "—"}</strong> → 目标阶段{" "}
+            <strong>{selectedSkip.targetStageTitle}</strong>
+          </p>
+          <p>
+            将被跳过：
+            <strong>{selectedSkip.skipped.map((stage) => stage.title).join("、")}</strong>
+          </p>
+          <label className="field field-wide">
+            <span>跳级原因（选填）</span>
+            <input
+              value={reason}
+              maxLength={200}
+              placeholder="例如：客户只要成图，中间稿不需要"
+              onChange={(e) => onReasonChange(e.target.value)}
+            />
+          </label>
+          <p className="muted">
+            被跳过的阶段不会记为「已完成」，订单也不会因此完成；确认只写入一条跳级记录。
+          </p>
+        </div>
+      )}
+
       <p className="muted">
-        一次只推进一个阶段；确认后只写入一次合法领域动作，取消不改动任何数据。
+        一次只推进一个阶段；跳级至少要跨过一个中间阶段；取消不改动任何数据。
       </p>
     </div>
   );
@@ -1991,11 +2149,14 @@ function DetailsForm({
 function StagePanel({
   order,
   busy,
+  skippedIds,
   onRun,
   onError,
 }: {
   order: OrderView;
   busy: boolean;
+  /** 当前应显示「已跳过」的阶段 id（由事件历史派生）。 */
+  skippedIds: string[];
   onRun: (label: string, call: (order: OrderView) => Promise<OrderView>) => Promise<void>;
   onError: (message: string) => void;
 }) {
@@ -2031,7 +2192,16 @@ function StagePanel({
 
       <ol className="stage-list">
         {order.stages.map((stage, index) => (
-          <li key={stage.id} className={stage.isCurrent ? "stage stage-current" : "stage"}>
+          <li
+            key={stage.id}
+            className={[
+              "stage",
+              stage.isCurrent ? "stage-current" : "",
+              !stage.isCurrent && skippedIds.includes(stage.id) ? "stage-skipped" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
             <span className="stage-index">{index + 1}</span>
             {renaming === stage.id ? (
               <span className="stage-edit">
@@ -2067,6 +2237,9 @@ function StagePanel({
               <>
                 <span className="stage-title">{stage.title}</span>
                 {stage.isCurrent && <span className="chip chip-current">当前</span>}
+                {!stage.isCurrent && skippedIds.includes(stage.id) && (
+                  <span className="chip chip-skipped">已跳过</span>
+                )}
                 {!locked && (
                   <span className="stage-tools">
                     <button
@@ -2256,6 +2429,13 @@ function ScheduleHistory({
   );
 }
 
+/** 跳级事件里被跳过阶段的名称串；坏数据返回空串而不是让历史面板崩掉。 */
+function skippedLabel(event: OrderEvent): string {
+  return parseSkippedStages(event.skippedStages)
+    .map((stage) => stage.title)
+    .join("、");
+}
+
 function EventTimeline({
   events,
   formatTime,
@@ -2282,6 +2462,10 @@ function EventTimeline({
                 {event.fromStageTitle && event.toStageTitle
                   ? `${event.fromStageTitle} → ${event.toStageTitle}`
                   : event.toStageTitle ?? ""}
+                {event.kind === "stage_skipped" && skippedLabel(event) !== ""
+                  ? ` · 跳过 ${skippedLabel(event)}`
+                  : ""}
+                {event.skipReason ? ` · ${event.skipReason}` : ""}
                 {event.note ? ` · ${event.note}` : ""}
               </span>
               <time className="timeline-time">{formatTime(event.occurredAt)}</time>

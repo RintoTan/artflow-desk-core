@@ -15,6 +15,7 @@ const APPROVED: &[&str] = &[
     "undo_start_work",
     "advance_stage",
     "rework_stage",
+    "skip_stage",
     "complete_order",
     "cancel_order",
     "reopen_order",

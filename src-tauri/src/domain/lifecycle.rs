@@ -35,6 +35,8 @@ pub struct Capabilities {
     pub undo_blocked_reason: Option<String>,
     pub can_advance: bool,
     pub can_rework: bool,
+    /// 是否存在"至少跨过一个中间阶段"的前向目标。
+    pub can_skip: bool,
     pub can_complete: bool,
     pub can_cancel: bool,
     pub can_reopen: bool,
@@ -135,6 +137,11 @@ pub fn capabilities(facts: &Facts) -> Capabilities {
         undo_blocked_reason,
         can_advance: active && started && index.map(|i| i < last_index.unwrap_or(0)).unwrap_or(false),
         can_rework: active && started && index.map(|i| i > 0).unwrap_or(false),
+        can_skip: active
+            && started
+            && index
+                .map(|i| last_index.map(|last| i + 1 < last).unwrap_or(false))
+                .unwrap_or(false),
         can_complete: active && started && at_last,
         can_cancel: active,
         can_reopen: !active,
@@ -150,6 +157,18 @@ pub struct LifecycleInput {
     pub order_id: String,
     pub expected_revision: i64,
     /// 幂等键：同一个 request_id 重复提交不会重复写入事件。
+    pub request_id: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkipInput {
+    pub order_id: String,
+    pub expected_revision: i64,
+    /// 目标阶段必须属于该订单自己的 `order_stages`。
+    pub target_stage_id: String,
+    /// 选填跳级原因；与改期原因分开存。
+    pub reason: Option<String>,
     pub request_id: Option<String>,
 }
 
@@ -448,6 +467,131 @@ pub fn rework_stage(conn: &mut Connection, input: ReworkInput) -> AppResult<Orde
         note,
         request_id.as_deref(),
         &now,
+    )?;
+
+    let view = orders::load(&tx, &input.order_id)?;
+    tx.commit()?;
+    Ok(view)
+}
+
+// ---------------------------------------------------------------- 跳级
+
+/// 被跳过阶段在事件里的快照。名称按跳级当时的 `order_stages` 取值，
+/// 之后改模板或改阶段名都不会影响这条历史。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct SkippedStage {
+    stage_id: String,
+    title: String,
+    position: i64,
+}
+
+fn clean_skip_reason(raw: &Option<String>) -> AppResult<Option<String>> {
+    match raw {
+        None => Ok(None),
+        Some(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            if trimmed.chars().count() > 200 {
+                return Err(AppError::invalid("跳级原因不能超过 200 字"));
+            }
+            Ok(Some(trimmed.to_string()))
+        }
+    }
+}
+
+/// 受控跳级：一次越过一个或多个中间阶段，只改当前阶段。
+///
+/// 与 `advance_stage` 的区别是语义，不是实现细节：推进永远只走一步，
+/// 跳级必须至少跨过一个中间阶段，并把被跳过的阶段快照写进事件。
+pub fn skip_stage(conn: &mut Connection, input: SkipInput) -> AppResult<OrderView> {
+    let request_id = clean_request_id(&input.request_id)?;
+    let reason = clean_skip_reason(&input.reason)?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    if already_applied(&tx, &input.order_id, &request_id)? {
+        let view = orders::load(&tx, &input.order_id)?;
+        tx.commit()?;
+        return Ok(view);
+    }
+
+    let facts = load_facts(&tx, &input.order_id)?;
+    assert_revision(&facts, input.expected_revision)?;
+    if facts.status != STATUS_ACTIVE {
+        return Err(AppError::invalid(
+            "订单已完成或已取消，不能跳级".to_string(),
+        ));
+    }
+    if facts.started_at.is_none() {
+        return Err(AppError::invalid(
+            "订单尚未开始制作，不能跳级阶段".to_string(),
+        ));
+    }
+    let index = facts
+        .current_index
+        .ok_or_else(|| AppError::invalid("订单当前没有阶段，请先在资料里检查流程"))?;
+
+    let target_index = facts
+        .stages
+        .iter()
+        .position(|(sid, _)| sid == &input.target_stage_id)
+        .ok_or_else(|| AppError::invalid("目标阶段不属于该订单的流程"))?;
+
+    if target_index == index {
+        return Err(AppError::invalid("目标阶段就是当前阶段，无需跳级"));
+    }
+    if target_index < index {
+        return Err(AppError::invalid(
+            "跳级只能往更后的阶段走；回到更早阶段请使用返工",
+        ));
+    }
+    if target_index == index + 1 {
+        return Err(AppError::invalid(
+            "只跨越一个阶段请使用「推进」；跳级至少要跨过一个中间阶段",
+        ));
+    }
+
+    let skipped: Vec<SkippedStage> = facts.stages[index + 1..target_index]
+        .iter()
+        .enumerate()
+        .map(|(offset, (sid, title))| SkippedStage {
+            stage_id: sid.clone(),
+            title: title.clone(),
+            position: (index + 1 + offset) as i64,
+        })
+        .collect();
+    let skipped_json = serde_json::to_string(&skipped)
+        .map_err(|e| AppError::invalid(format!("跳级快照序列化失败：{e}")))?;
+
+    let from = facts.stages[index].clone();
+    let to = facts.stages[target_index].clone();
+    let now = timezone::now_timestamp();
+
+    let changed = tx.execute(
+        "UPDATE orders SET current_stage_id = ?1, revision = revision + 1, updated_at = ?2
+         WHERE id = ?3 AND revision = ?4",
+        params![to.0, now, input.order_id, input.expected_revision],
+    )?;
+    if changed != 1 {
+        return Err(AppError::conflict("阶段跳级被并发修改阻断，请刷新后重试"));
+    }
+
+    events::append(
+        &tx,
+        &input.order_id,
+        &NewEvent {
+            kind: events::STAGE_SKIPPED,
+            from_stage_id: Some(&from.0),
+            from_stage_title: Some(&from.1),
+            to_stage_id: Some(&to.0),
+            to_stage_title: Some(&to.1),
+            movement: Some("forward"),
+            request_id: request_id.as_deref(),
+            skipped_stages: Some(&skipped_json),
+            skip_reason: reason.as_deref(),
+            occurred_at: &now,
+            ..Default::default()
+        },
     )?;
 
     let view = orders::load(&tx, &input.order_id)?;

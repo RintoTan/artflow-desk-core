@@ -1458,6 +1458,38 @@ code.mono {
   font-weight: 560;
 }
 
+/* 跳过用"虚线 + 弱化"表示绕开，不能读成已完成。 */
+.stage-skipped {
+  border-style: dashed;
+  color: var(--text-muted);
+}
+
+.stage-skipped .stage-title {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--border-active);
+}
+
+.chip-skipped {
+  background: transparent;
+  border: 1px dashed var(--border-active);
+  color: var(--text-muted);
+}
+
+.stage-skip-summary {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-alt);
+  display: grid;
+  gap: 6px;
+}
+
+.stage-skip-summary p {
+  margin: 0;
+}
+
 .stage-index {
   width: 18px;
   flex: 0 0 auto;

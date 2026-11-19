@@ -43,6 +43,7 @@ function makeOrder(over: Partial<OrderView>): OrderView {
       undoBlockedReason: null,
       canAdvance: true,
       canRework: true,
+      canSkip: false,
       canComplete: false,
       canCancel: true,
       canReopen: false,

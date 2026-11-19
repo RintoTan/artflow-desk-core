@@ -124,6 +124,7 @@ pub fn run() {
             commands::orders::undo_start_work,
             commands::orders::advance_stage,
             commands::orders::rework_stage,
+            commands::orders::skip_stage,
             commands::orders::complete_order,
             commands::orders::cancel_order,
             commands::orders::reopen_order,

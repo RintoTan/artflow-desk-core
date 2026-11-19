@@ -19,6 +19,8 @@ pub const CANCELLED: &str = "cancelled";
 pub const REOPENED: &str = "reopened";
 /// 计划日期改动。与生命周期无关，单独一类，绝不能被当作完成/取消。
 pub const RESCHEDULED: &str = "rescheduled";
+/// 受控跳级：越过一个或多个中间阶段，只改变当前阶段。
+pub const STAGE_SKIPPED: &str = "stage_skipped";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,6 +44,10 @@ pub struct Event {
     pub reason: Option<String>,
     /// `calendar` | `order_details`，其它事件为 None。
     pub change_source: Option<String>,
+    /// 跳级专用：被跳过阶段的快照 JSON（原始文本，前端负责解析）。
+    pub skipped_stages: Option<String>,
+    /// 跳级专用原因；与改期 `reason`、事件 `note` 分开存。
+    pub skip_reason: Option<String>,
     pub occurred_at: String,
 }
 
@@ -57,6 +63,8 @@ pub struct NewEvent<'a> {
     pub movement: Option<&'a str>,
     pub note: Option<&'a str>,
     pub request_id: Option<&'a str>,
+    pub skipped_stages: Option<&'a str>,
+    pub skip_reason: Option<&'a str>,
     pub occurred_at: &'a str,
 }
 
@@ -64,8 +72,9 @@ pub fn append(tx: &Connection, order_id: &str, event: &NewEvent<'_>) -> AppResul
     tx.execute(
         "INSERT INTO order_events (
             order_id, kind, from_stage_id, from_stage_title, to_stage_id, to_stage_title,
-            from_status, to_status, movement, note, request_id, occurred_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            from_status, to_status, movement, note, request_id,
+            skipped_stages, skip_reason, occurred_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             order_id,
             event.kind,
@@ -78,6 +87,8 @@ pub fn append(tx: &Connection, order_id: &str, event: &NewEvent<'_>) -> AppResul
             event.movement,
             event.note,
             event.request_id,
+            event.skipped_stages,
+            event.skip_reason,
             event.occurred_at
         ],
     )?;
@@ -143,7 +154,7 @@ pub fn list(conn: &Connection, order_id: &str) -> AppResult<Vec<Event>> {
                 to_stage_id, to_stage_title, from_status, to_status,
                 movement, note, occurred_at,
                 old_start_date, old_delivery_date, new_start_date, new_delivery_date,
-                reason, change_source
+                reason, change_source, skipped_stages, skip_reason
          FROM order_events WHERE order_id = ?1 ORDER BY id",
     )?;
     let rows = stmt
@@ -167,6 +178,8 @@ pub fn list(conn: &Connection, order_id: &str) -> AppResult<Vec<Event>> {
                 new_delivery_date: r.get(15)?,
                 reason: r.get(16)?,
                 change_source: r.get(17)?,
+                skipped_stages: r.get(18)?,
+                skip_reason: r.get(19)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -185,12 +198,12 @@ pub fn last_work_started_id(conn: &Connection, order_id: &str) -> AppResult<Opti
         .flatten())
 }
 
-/// 指定事件之后是否发生过阶段推进或返工。
+/// 指定事件之后是否发生过阶段推进、返工或跳级。
 pub fn stage_moved_after(conn: &Connection, order_id: &str, event_id: i64) -> AppResult<bool> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM order_events
-         WHERE order_id = ?1 AND id > ?2 AND kind IN (?3, ?4)",
-        params![order_id, event_id, STAGE_ADVANCED, STAGE_REWORKED],
+         WHERE order_id = ?1 AND id > ?2 AND kind IN (?3, ?4, ?5)",
+        params![order_id, event_id, STAGE_ADVANCED, STAGE_REWORKED, STAGE_SKIPPED],
         |r| r.get(0),
     )?;
     Ok(count > 0)
@@ -208,6 +221,7 @@ pub fn require_known_kind(kind: &str) -> AppResult<()> {
         CANCELLED,
         REOPENED,
         RESCHEDULED,
+        STAGE_SKIPPED,
     ];
     if ALL.contains(&kind) {
         Ok(())

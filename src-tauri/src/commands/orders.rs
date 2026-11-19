@@ -3,7 +3,7 @@
 use tauri::State;
 
 use crate::domain::events::Event;
-use crate::domain::lifecycle::{self, LifecycleInput, ReworkInput};
+use crate::domain::lifecycle::{self, LifecycleInput, ReworkInput, SkipInput};
 use crate::domain::clients::ClientView;
 use crate::domain::orders::{self, CreateOrderInput, OrderView, UpdateDetailsInput};
 use crate::domain::workflow::{
@@ -80,6 +80,12 @@ pub fn advance_stage(state: State<'_, AppState>, input: LifecycleInput) -> AppRe
 pub fn rework_stage(state: State<'_, AppState>, input: ReworkInput) -> AppResult<OrderView> {
     let mut conn = state.env.open_db()?;
     lifecycle::rework_stage(&mut conn, input)
+}
+
+#[tauri::command]
+pub fn skip_stage(state: State<'_, AppState>, input: SkipInput) -> AppResult<OrderView> {
+    let mut conn = state.env.open_db()?;
+    lifecycle::skip_stage(&mut conn, input)
 }
 
 #[tauri::command]

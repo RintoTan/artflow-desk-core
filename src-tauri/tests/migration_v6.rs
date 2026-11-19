@@ -25,36 +25,32 @@ fn v6_preserves_existing_events_and_accepts_rescheduled() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("data");
 
-    // 1) 在 v5 上造一张订单 + 生命周期事件
+    // 1) 在 v5 上造一张订单 + 生命周期事件。
+    //    这里刻意用原始 SQL 而不用领域层：领域层写的是 v7 的列，不能拿来造 v5 的历史数据。
     let order_id = {
         let env = open_v5(&root);
         assert_eq!(user_version(&env), 5);
         let mut conn = env.open_db().unwrap();
-        let view = minidesk::domain::orders::create_order(
-            &mut conn,
-            &common::highwater(&env),
-            common::tz(),
-            minidesk::domain::orders::CreateOrderInput {
-                title: "v6 迁移演练".into(),
-                planned_start_date: Some("2026-12-01".into()),
-                planned_delivery_date: Some("2026-12-10".into()),
-                ..Default::default()
-            },
+        let id = common::insert_order(&mut conn, "AF-2026-9001", "v6 迁移演练");
+        conn.execute(
+            "INSERT INTO order_events (order_id, kind, to_stage_id, to_stage_title, occurred_at)
+             VALUES (?1, 'created', 'draft', '草稿', '2026-11-01T10:00:00+08:00')",
+            [&id],
         )
         .unwrap();
-        let started = minidesk::domain::lifecycle::start_work(
-            &mut conn,
-            common::lifecycle_input(&view),
+        conn.execute(
+            "INSERT INTO order_events (order_id, kind, to_stage_id, to_stage_title, occurred_at)
+             VALUES (?1, 'work_started', 'draft', '草稿', '2026-11-01T10:05:00+08:00')",
+            [&id],
         )
         .unwrap();
-        assert_eq!(started.work_state, minidesk::domain::lifecycle::WorkState::InProgress);
-        view.id
+        id
     };
 
     // 2) 打开同一目录 → 触发 v5 → v6
     let env = common::open(&root);
-    assert_eq!(user_version(&env), 6);
-    assert_eq!(migrations::APP_SCHEMA_VERSION, 6);
+    assert_eq!(user_version(&env), migrations::APP_SCHEMA_VERSION);
+    assert!(migrations::APP_SCHEMA_VERSION >= 6);
 
     let conn = env.open_db().unwrap();
     let kinds: Vec<String> = {
@@ -114,7 +110,7 @@ fn v6_preserves_existing_events_and_accepts_rescheduled() {
     drop(conn);
     drop(env);
     let env2 = common::open(&root);
-    assert_eq!(user_version(&env2), 6);
+    assert_eq!(user_version(&env2), migrations::APP_SCHEMA_VERSION);
 }
 
 #[test]

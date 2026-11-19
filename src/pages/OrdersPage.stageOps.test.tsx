@@ -51,6 +51,7 @@ function orderAt(index: number, patch: Partial<OrderView> = {}): OrderView {
       undoBlockedReason: null,
       canAdvance: index < titles.length - 1,
       canRework: index > 0,
+      canSkip: index + 1 < titles.length - 1,
       canComplete: false,
       canCancel: true,
       canReopen: false,
@@ -60,7 +61,28 @@ function orderAt(index: number, patch: Partial<OrderView> = {}): OrderView {
   };
 }
 
+/** 五阶段、已开工的订单：跳级目标有多个可选。 */
+function fiveStageOrder(index: number, patch: Partial<OrderView> = {}): OrderView {
+  const titles = ["草稿", "线稿", "固有色", "细化", "最终调整"];
+  const base = orderAt(0, patch);
+  return {
+    ...base,
+    currentStageId: `s-${titles[index]}`,
+    currentStageTitle: titles[index] ?? null,
+    currentStageIndex: index,
+    stageCount: titles.length,
+    stages: stages(titles, index),
+    capabilities: {
+      ...base.capabilities,
+      canAdvance: index < titles.length - 1,
+      canRework: index > 0,
+      canSkip: index + 1 < titles.length - 1,
+    },
+  };
+}
+
 let current: OrderView;
+let currentEvents: unknown[] = [];
 const calls: Array<{ kind: string; input: unknown }> = [];
 
 vi.mock("../bridge/commands", async () => {
@@ -77,7 +99,7 @@ vi.mock("../bridge/commands", async () => {
       ...actual.api,
       listOrders: async () => [current],
       listClients: async () => [],
-      listOrderEvents: async () => [],
+      listOrderEvents: async () => currentEvents,
       getOrder: async () => current,
       advanceStage: async (input: unknown) => {
         calls.push({ kind: "advance", input });
@@ -85,6 +107,10 @@ vi.mock("../bridge/commands", async () => {
       },
       reworkStage: async (input: unknown) => {
         calls.push({ kind: "rework", input });
+        return current;
+      },
+      skipStage: async (input: unknown) => {
+        calls.push({ kind: "skip", input });
         return current;
       },
       cancelOrder: async (input: unknown) => {
@@ -129,6 +155,7 @@ async function openStagePanel(user: ReturnType<typeof userEvent.setup>) {
 
 beforeEach(() => {
   calls.length = 0;
+  currentEvents = [];
   current = orderAt(1);
 });
 
@@ -214,6 +241,7 @@ describe("订单详情的阶段操作入口", () => {
         ...orderAt(2).capabilities,
         canAdvance: false,
         canRework: false,
+        canSkip: false,
         canCancel: false,
         canReopen: true,
       },
@@ -288,5 +316,143 @@ describe("订单详情的阶段操作入口", () => {
     expect(side?.textContent).toContain("制作流程");
     // 两列是兄弟节点，窄了由容器查询改成上下排列，模块本身不卸载。
     expect(main?.parentElement).toBe(side?.parentElement);
+  });
+});
+
+describe("受控跳级", () => {
+  it("跳级区只列出至少跨过一个中间阶段的目标", async () => {
+    current = fiveStageOrder(0); // 草稿
+    const user = userEvent.setup();
+    renderPage();
+    const dialog = await openStagePanel(user);
+
+    expect(within(dialog).getByText("跳级")).toBeTruthy();
+    // 下一阶段「线稿」属于推进，不在跳级选项里。
+    expect(within(dialog).queryByRole("radio", { name: /跳到「线稿」/ })).toBeNull();
+    expect(within(dialog).getByRole("radio", { name: /跳到「固有色」/ })).toBeTruthy();
+    expect(within(dialog).getByRole("radio", { name: /跳到「最终调整」/ })).toBeTruthy();
+    expect(within(dialog).getByText("将跳过：线稿")).toBeTruthy();
+    expect(within(dialog).getByText("将跳过：线稿、固有色")).toBeTruthy();
+    expect(within(dialog).getByText("将跳过：线稿、固有色、细化")).toBeTruthy();
+  });
+
+  it("选中跳级目标后确认框改成跳级语义，并把原因一起提交", async () => {
+    current = fiveStageOrder(0);
+    const user = userEvent.setup();
+    renderPage();
+    const dialog = await openStagePanel(user);
+
+    await user.click(within(dialog).getByRole("radio", { name: /跳到「细化」/ }));
+    // 选中后按钮文案立即切换，不会误点成「确认推进」。
+    const confirm = within(dialog).getByRole("button", { name: "确认跳级" });
+    expect(within(dialog).getByText(/被跳过的阶段不会记为「已完成」/)).toBeTruthy();
+
+    const reason = within(dialog).getByLabelText("跳级原因（选填）");
+    await user.type(reason, "客户只要成图");
+    await user.click(confirm);
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]?.kind).toBe("skip");
+    expect(calls[0]?.input).toMatchObject({
+      orderId: "o1",
+      targetStageId: "s-细化",
+      reason: "客户只要成图",
+    });
+  });
+
+  it("跳级原因留空时提交 null，不写空字符串", async () => {
+    current = fiveStageOrder(0);
+    const user = userEvent.setup();
+    renderPage();
+    const dialog = await openStagePanel(user);
+    await user.click(within(dialog).getByRole("radio", { name: /跳到「固有色」/ }));
+    await user.click(within(dialog).getByRole("button", { name: "确认跳级" }));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]?.input).toMatchObject({ reason: null });
+  });
+
+  it("取消跳级确认不产生写入", async () => {
+    current = fiveStageOrder(0);
+    const user = userEvent.setup();
+    renderPage();
+    const dialog = await openStagePanel(user);
+    await user.click(within(dialog).getByRole("radio", { name: /跳到「最终调整」/ }));
+    await user.click(within(dialog).getByRole("button", { name: "取消" }));
+
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(calls).toHaveLength(0);
+  });
+
+  it("只剩一步可走时不显示跳级目标", async () => {
+    current = fiveStageOrder(3); // 细化 → 只剩最终调整
+    const user = userEvent.setup();
+    renderPage();
+    const dialog = await openStagePanel(user);
+
+    expect(within(dialog).getByText("当前阶段之后没有可跳级的目标。")).toBeTruthy();
+    expect(within(dialog).queryByRole("radio", { name: /^跳到/ })).toBeNull();
+  });
+});
+
+describe("跳级历史与阶段标记", () => {
+  function skipEvent() {
+    return {
+      id: 9,
+      orderId: "o1",
+      kind: "stage_skipped",
+      fromStageId: "s-草稿",
+      fromStageTitle: "草稿",
+      toStageId: "s-细化",
+      toStageTitle: "细化",
+      fromStatus: null,
+      toStatus: null,
+      movement: "forward",
+      note: null,
+      oldStartDate: null,
+      oldDeliveryDate: null,
+      newStartDate: null,
+      newDeliveryDate: null,
+      reason: null,
+      changeSource: null,
+      skippedStages: JSON.stringify([
+        { stage_id: "s-线稿", title: "线稿", position: 1 },
+        { stage_id: "s-固有色", title: "固有色", position: 2 },
+      ]),
+      skipReason: "客户只要成图",
+      occurredAt: "2026-11-20T10:00:00+08:00",
+    };
+  }
+
+  it("制作历史展示跳级事件：阶段、被跳过阶段与原因", async () => {
+    current = fiveStageOrder(3); // 细化
+    currentEvents = [skipEvent()];
+    renderPage();
+
+    await waitFor(() => expect(screen.getAllByText("双人插画").length).toBeGreaterThan(0));
+    const history = await waitFor(() => {
+      const node = screen.getByText("制作历史").closest("section");
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    expect(within(history).getByText("跳级")).toBeTruthy();
+    expect(within(history).getByText(/草稿 → 细化/)).toBeTruthy();
+    expect(within(history).getByText(/跳过 线稿、固有色/)).toBeTruthy();
+    expect(within(history).getByText(/客户只要成图/)).toBeTruthy();
+  });
+
+  it("被跳过的阶段显示「已跳过」，当前阶段仍显示「当前」", async () => {
+    current = fiveStageOrder(3);
+    currentEvents = [skipEvent()];
+    renderPage();
+
+    await waitFor(() => expect(screen.getAllByText("双人插画").length).toBeGreaterThan(0));
+    const chips = await waitFor(() => {
+      const found = screen.getAllByText("已跳过");
+      expect(found.length).toBe(2);
+      return found;
+    });
+    expect(chips).toHaveLength(2);
+    expect(screen.getAllByText("当前").length).toBeGreaterThan(0);
   });
 });

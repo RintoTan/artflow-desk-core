@@ -44,6 +44,7 @@ function order(partial: Partial<OrderView> & { id: string }): OrderView {
       undoBlockedReason: null,
       canAdvance: false,
       canRework: false,
+      canSkip: false,
       canComplete: false,
       canCancel: true,
       canRevert: false,

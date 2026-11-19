@@ -56,6 +56,7 @@ function order(overrides: Partial<OrderView> = {}): OrderView {
       undoBlockedReason: null,
       canAdvance: false,
       canRework: false,
+      canSkip: false,
       canComplete: false,
       canCancel: true,
       canReopen: false,

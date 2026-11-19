@@ -45,6 +45,8 @@ export type Capabilities = {
   undoBlockedReason: string | null;
   canAdvance: boolean;
   canRework: boolean;
+  /** 是否存在"至少跨过一个中间阶段"的前向目标。 */
+  canSkip: boolean;
   canComplete: boolean;
   canCancel: boolean;
   canReopen: boolean;
@@ -112,6 +114,10 @@ export type OrderEvent = {
   newDeliveryDate: string | null;
   reason: string | null;
   changeSource: string | null;
+  /** 跳级专用：被跳过阶段的快照 JSON 文本；其它事件为 null。 */
+  skippedStages: string | null;
+  /** 跳级专用原因；与改期 reason、事件 note 分开。 */
+  skipReason: string | null;
   occurredAt: string;
 };
 
@@ -157,6 +163,11 @@ export type LifecycleInput = {
 };
 
 export type ReworkInput = LifecycleInput & { targetStageId: string | null };
+
+export type SkipInput = LifecycleInput & {
+  targetStageId: string;
+  reason?: string | null;
+};
 
 /** 把后端结构化错误转成可读中文，不做字符串猜测。 */
 export function describeError(error: unknown): string {
@@ -206,6 +217,7 @@ export const api = {
   undoStartWork: (input: LifecycleInput) => invoke<OrderView>("undo_start_work", { input }),
   advanceStage: (input: LifecycleInput) => invoke<OrderView>("advance_stage", { input }),
   reworkStage: (input: ReworkInput) => invoke<OrderView>("rework_stage", { input }),
+  skipStage: (input: SkipInput) => invoke<OrderView>("skip_stage", { input }),
   completeOrder: (input: LifecycleInput) => invoke<OrderView>("complete_order", { input }),
   cancelOrder: (input: LifecycleInput) => invoke<OrderView>("cancel_order", { input }),
   reopenOrder: (input: LifecycleInput) => invoke<OrderView>("reopen_order", { input }),

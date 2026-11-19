@@ -45,6 +45,7 @@ function order(id: string, code: string, title: string, queuePosition: number): 
       undoBlockedReason: "订单尚未开工",
       canAdvance: false,
       canRework: false,
+      canSkip: false,
       canComplete: false,
       canCancel: true,
       canReopen: false,
