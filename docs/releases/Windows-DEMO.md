@@ -44,4 +44,4 @@ ArtFlowDesk-Windows-QA/
 
 WebView2 运行时、`http://asset.localhost` 的 scope 行为、`%APPDATA%` 落盘路径、中文与空格路径、125%/150% DPI、Ctrl 快捷键、资源管理器拖拽导入、NSIS 安装/卸载/重装后的数据保留、与 macOS 的备份互恢复。
 
-验收清单见仓库根的 `docs/DEV-09-WINDOWS-MANUAL-TEST.md`（T01–T59）。
+验收清单见[docs/development/WINDOWS-MANUAL-TEST.md](../development/WINDOWS-MANUAL-TEST.md)（T01–T59）。
