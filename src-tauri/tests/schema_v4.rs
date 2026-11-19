@@ -284,6 +284,8 @@ fn source_round_trips_through_create_and_update() {
             planned_start_date: None,
             planned_delivery_date: None,
             note: None,
+            change_source: None,
+            reason: None,
         },
     )
     .unwrap();

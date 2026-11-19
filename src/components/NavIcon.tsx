@@ -19,7 +19,8 @@ export type NavIconName =
   | "templates"
   | "stats"
   | "settings"
-  | "status";
+  | "status"
+  | "calendar";
 
 type IconShape =
   /** 圆角矩形：x y w h r */
@@ -94,6 +95,13 @@ export const NAV_ICON_SHAPES: Record<NavIconName, IconShape[]> = {
     path("M4 7V17.4"),
     path("M20 7V17.4"),
     path("M4 12.2c0 1.88 3.58 3.4 8 3.4s8-1.52 8-3.4"),
+  ],
+  // 日历：外框 + 顶部装订线 + 中间横线，四个角留空避免与网格混在一起。
+  calendar: [
+    rect(4, 5.6, 16, 14.4, 2.4),
+    path("M4 10.2H20"),
+    path("M8.6 3.6V7.2"),
+    path("M15.4 3.6V7.2"),
   ],
 };
 

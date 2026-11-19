@@ -15,9 +15,10 @@ pub mod v2;
 pub mod v3;
 pub mod v4;
 pub mod v5;
+pub mod v6;
 
 /// 当前程序支持的最高 schema 版本。
-pub const APP_SCHEMA_VERSION: i64 = 5;
+pub const APP_SCHEMA_VERSION: i64 = 6;
 
 pub struct Migration {
     pub version: i64,
@@ -52,6 +53,11 @@ pub fn production() -> Vec<Migration> {
             version: 5,
             name: "v5_gallery_visibility_trigger",
             apply: v5::apply,
+        },
+        Migration {
+            version: 6,
+            name: "v6_reschedule_events",
+            apply: v6::apply,
         },
     ]
 }

@@ -32,6 +32,7 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { to: "/", label: "工作台", icon: "dashboard", end: true },
+  { to: "/calendar", label: "日历", icon: "calendar" },
   { to: "/orders", label: "订单", icon: "orders" },
   { to: "/clients", label: "客户", icon: "clients" },
   { to: "/templates", label: "流程模板", icon: "templates" },

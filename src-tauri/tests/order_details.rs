@@ -17,6 +17,8 @@ fn input(order_id: &str, revision: i64, title: &str) -> UpdateDetailsInput {
         planned_start_date: None,
         planned_delivery_date: None,
         note: None,
+        change_source: None,
+        reason: None,
     }
 }
 
@@ -41,6 +43,8 @@ fn d02_03_details_are_saved_as_one_whole() {
             planned_start_date: Some("2026-12-01".into()),
             planned_delivery_date: Some("2026-12-20".into()),
             note: Some("包含两张草图".into()),
+            change_source: None,
+            reason: None,
         },
     )
     .unwrap();
@@ -52,7 +56,12 @@ fn d02_03_details_are_saved_as_one_whole() {
     assert_eq!(updated.planned_delivery_date.as_deref(), Some("2026-12-20"));
     assert_eq!(updated.note.as_deref(), Some("包含两张草图"));
     assert_eq!(updated.revision, 1, "一次整体保存只 bump 一次");
-    assert_eq!(ctx.kinds(&id), vec!["created"], "资料编辑不写制作历史");
+    // 该用例同时改了计划日期，因此会多一条 rescheduled；其它资料字段不写制作历史。
+    assert_eq!(
+        ctx.kinds(&id),
+        vec!["created", "rescheduled"],
+        "改期写 rescheduled，制作历史不被污染"
+    );
 }
 
 #[test]
@@ -210,6 +219,8 @@ fn clearing_a_client_relation_is_allowed() {
             planned_start_date: None,
             planned_delivery_date: None,
             note: None,
+            change_source: None,
+            reason: None,
         },
     )
     .unwrap();

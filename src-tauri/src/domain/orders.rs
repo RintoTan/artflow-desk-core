@@ -531,9 +531,17 @@ pub struct UpdateDetailsInput {
     pub planned_start_date: Option<String>,
     pub planned_delivery_date: Option<String>,
     pub note: Option<String>,
+    /// `calendar` | `order_details`；缺省视为订单详情。
+    #[serde(default)]
+    pub change_source: Option<String>,
+    /// 改期原因，选填。
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 /// 一次整体保存"资料"字段。不写制作历史；不改阶段、不改开工记录。
+///
+/// 例外：计划日期发生实际改动时，会在同一个事务里追加一条 `rescheduled` 事件。
 pub fn update_details(conn: &mut Connection, input: UpdateDetailsInput) -> AppResult<OrderView> {
     let title = clean_title(&input.title)?;
     let commission_type = clean_optional(&input.commission_type, 80, "委托类型")?;
@@ -543,6 +551,14 @@ pub fn update_details(conn: &mut Connection, input: UpdateDetailsInput) -> AppRe
     let start_date = clean_date(&input.planned_start_date, "计划开始日期")?;
     let delivery_date = clean_date(&input.planned_delivery_date, "预计交付日期")?;
     validate_date_order(&start_date, &delivery_date)?;
+    let change_source = input
+        .change_source
+        .as_deref()
+        .unwrap_or("order_details")
+        .trim()
+        .to_string();
+    events::require_change_source(&change_source)?;
+    let reason = clean_optional(&input.reason, 200, "改期原因")?;
     let client_id = match &input.client_id {
         None => None,
         Some(id) if id.trim().is_empty() => None,
@@ -554,7 +570,7 @@ pub fn update_details(conn: &mut Connection, input: UpdateDetailsInput) -> AppRe
     let current = tx
         .query_row(
             "SELECT title, client_id, commission_type, amount_cents, note,
-                    planned_start_date, planned_delivery_date, revision, source
+                    planned_start_date, planned_delivery_date, revision, source, status
              FROM orders WHERE id = ?1",
             [&input.order_id],
             |r| {
@@ -568,6 +584,7 @@ pub fn update_details(conn: &mut Connection, input: UpdateDetailsInput) -> AppRe
                     r.get::<_, Option<String>>(6)?,
                     r.get::<_, i64>(7)?,
                     r.get::<_, Option<String>>(8)?,
+                    r.get::<_, String>(9)?,
                 ))
             },
         )
@@ -600,6 +617,13 @@ pub fn update_details(conn: &mut Connection, input: UpdateDetailsInput) -> AppRe
         return Ok(view);
     }
 
+    let dates_changed = current.5 != start_date || current.6 != delivery_date;
+    if dates_changed && current.9 != "active" {
+        return Err(AppError::invalid(
+            "已结束的订单不能改期：请先在订单详情重新打开并进入返工",
+        ));
+    }
+
     if current.7 != input.expected_revision {
         return Err(AppError::conflict(format!(
             "订单已被修改（当前版本 {}，你基于 {}）。请刷新后重试。",
@@ -630,6 +654,21 @@ pub fn update_details(conn: &mut Connection, input: UpdateDetailsInput) -> AppRe
     )?;
     if changed != 1 {
         return Err(AppError::conflict("保存被并发修改阻断，请刷新后重试"));
+    }
+
+    // 日期确有改动才写历史；与订单更新同事务，失败一起回滚。
+    if dates_changed {
+        events::append_reschedule(
+            &tx,
+            &input.order_id,
+            current.5.as_deref(),
+            current.6.as_deref(),
+            start_date.as_deref(),
+            delivery_date.as_deref(),
+            reason.as_deref(),
+            &change_source,
+            &now,
+        )?;
     }
 
     let view = load(&tx, &input.order_id)?;

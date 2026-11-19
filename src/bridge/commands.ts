@@ -106,6 +106,12 @@ export type OrderEvent = {
   toStatus: string | null;
   movement: string | null;
   note: string | null;
+  oldStartDate: string | null;
+  oldDeliveryDate: string | null;
+  newStartDate: string | null;
+  newDeliveryDate: string | null;
+  reason: string | null;
+  changeSource: string | null;
   occurredAt: string;
 };
 
@@ -138,6 +144,10 @@ export type UpdateDetailsInput = {
   plannedStartDate: string | null;
   plannedDeliveryDate: string | null;
   note: string | null;
+  /** 改期来源：日历或订单详情。缺省由后端视为 order_details。 */
+  changeSource?: "calendar" | "order_details";
+  /** 改期原因，选填。 */
+  reason?: string | null;
 };
 
 export type LifecycleInput = {

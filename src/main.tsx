@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { createHashRouter, RouterProvider } from "react-router-dom";
 
 import App from "./App";
+import CalendarPage from "./pages/CalendarPage";
 import ClientsPage from "./pages/ClientsPage";
 import DashboardPage from "./pages/DashboardPage";
 import OrdersPage from "./pages/OrdersPage";
@@ -20,6 +21,7 @@ const router = createHashRouter([
       { path: "status", element: <StatusPage /> },
       { path: "stats", element: <StatsPage /> },
       { path: "orders", element: <OrdersPage /> },
+      { path: "calendar", element: <CalendarPage /> },
       { path: "clients", element: <ClientsPage /> },
       { path: "templates", element: <TemplatesPage /> },
       { path: "settings", element: <SettingsPage /> },

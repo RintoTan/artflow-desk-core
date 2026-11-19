@@ -68,6 +68,7 @@ const EVENT_LABEL: Record<string, string> = {
   completed: "完成",
   cancelled: "取消",
   reopened: "重新打开",
+  rescheduled: "改期",
 };
 
 function formatMoney(cents: number | null): string {
@@ -198,6 +199,8 @@ export default function OrdersPage() {
   const [detail, setDetail] = useState<OrderView | null>(null);
   const [events, setEvents] = useState<OrderEvent[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
+  /** 改期原因：只在日期真的变了时随保存提交。 */
+  const [dateReason, setDateReason] = useState("");
   const [timezone, setTimezone] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -357,6 +360,8 @@ export default function OrdersPage() {
         setDetail(order);
         setEvents(history);
         setDraft(draftFrom(order));
+      setDateReason("");
+        setDateReason("");
         setCreating(false);
       } catch (e) {
         setError(describeError(e));
@@ -376,6 +381,7 @@ export default function OrdersPage() {
       setEvents(history);
       setOrders(list);
       setDraft(draftFrom(order));
+      setDateReason("");
       return order;
     },
     [],
@@ -641,9 +647,12 @@ export default function OrdersPage() {
         plannedStartDate: draft.startDate === "" ? null : draft.startDate,
         plannedDeliveryDate: draft.deliveryDate === "" ? null : draft.deliveryDate,
         note: draft.note.trim() === "" ? null : draft.note,
+        changeSource: "order_details",
+        reason: dateReason.trim() === "" ? null : dateReason,
       };
       const updated = await api.updateOrderDetails(input);
       await refresh(updated.id);
+      setDateReason("");
       setNotice("资料已保存");
       return null;
     } catch (e) {
@@ -1268,6 +1277,8 @@ export default function OrdersPage() {
                   setDraftError(null);
                 }}
                 disabled={busy}
+                dateReason={dateReason}
+                onDateReasonChange={setDateReason}
               />
               {draftError && <p className="notice notice-error">{draftError}</p>}
               <div className="actions">
@@ -1308,6 +1319,7 @@ export default function OrdersPage() {
             />
 
             <EventTimeline events={events} formatTime={formatTime} />
+            <ScheduleHistory events={events} formatTime={formatTime} />
             </div>
             </div>
           </>
@@ -1856,11 +1868,15 @@ function DetailsForm({
   clients,
   onChange,
   disabled,
+  dateReason,
+  onDateReasonChange,
 }: {
   draft: Draft | null;
   clients: ClientView[];
   onChange: (next: Draft) => void;
   disabled: boolean;
+  dateReason: string;
+  onDateReasonChange: (value: string) => void;
 }) {
   if (!draft) return null;
   const patch = (part: Partial<Draft>) => onChange({ ...draft, ...part });
@@ -1943,6 +1959,17 @@ function DetailsForm({
           type="date"
           value={draft.deliveryDate}
           onChange={(e) => patch({ deliveryDate: e.target.value })}
+          disabled={disabled}
+        />
+      </label>
+
+      <label className="field field-wide">
+        <span>改期原因（选填，仅日期变化时记录）</span>
+        <input
+          value={dateReason}
+          maxLength={200}
+          placeholder="例如：客户调整交稿时间"
+          onChange={(e) => onDateReasonChange(e.target.value)}
           disabled={disabled}
         />
       </label>
@@ -2190,6 +2217,45 @@ function StagePanel({
   );
 }
 
+function ScheduleHistory({
+  events,
+  formatTime,
+}: {
+  events: OrderEvent[];
+  formatTime: (iso: string | null) => string;
+}) {
+  const reschedules = events.filter((event) => event.kind === "rescheduled").reverse();
+  const source = (value: string | null): string =>
+    value === "calendar" ? "日历" : value === "order_details" ? "订单详情" : "未知来源";
+  const day = (value: string | null): string => value ?? "未设置";
+
+  return (
+    <section className="panel">
+      <header className="panel-head compact">
+        <h2>排期历史</h2>
+        <span className="muted">{reschedules.length} 次改期</span>
+      </header>
+      {reschedules.length === 0 ? (
+        <p className="muted">还没有改期记录。</p>
+      ) : (
+        <ul className="timeline">
+          {reschedules.map((event) => (
+            <li key={event.id}>
+              <span className="timeline-kind">改期 · {source(event.changeSource)}</span>
+              <span className="timeline-detail">
+                {day(event.oldStartDate)} → {day(event.oldDeliveryDate)}　⇒　
+                {day(event.newStartDate)} → {day(event.newDeliveryDate)}
+                {event.reason ? ` · ${event.reason}` : ""}
+              </span>
+              <time className="timeline-time">{formatTime(event.occurredAt)}</time>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function EventTimeline({
   events,
   formatTime,
@@ -2197,17 +2263,19 @@ function EventTimeline({
   events: OrderEvent[];
   formatTime: (iso: string | null) => string;
 }) {
+  // 改期不属于制作历史，单独在「排期历史」里展示。
+  const lifecycleEvents = events.filter((event) => event.kind !== "rescheduled");
   return (
     <section className="panel">
       <header className="panel-head compact">
         <h2>制作历史</h2>
-        <span className="muted">{events.length} 条事件</span>
+        <span className="muted">{lifecycleEvents.length} 条事件</span>
       </header>
-      {events.length === 0 ? (
+      {lifecycleEvents.length === 0 ? (
         <p className="muted">还没有历史事件。</p>
       ) : (
         <ul className="timeline">
-          {[...events].reverse().map((event) => (
+          {[...lifecycleEvents].reverse().map((event) => (
             <li key={event.id}>
               <span className="timeline-kind">{EVENT_LABEL[event.kind] ?? event.kind}</span>
               <span className="timeline-detail">

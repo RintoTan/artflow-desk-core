@@ -17,6 +17,8 @@ pub const WORKFLOW_CHANGED: &str = "workflow_changed";
 pub const COMPLETED: &str = "completed";
 pub const CANCELLED: &str = "cancelled";
 pub const REOPENED: &str = "reopened";
+/// 计划日期改动。与生命周期无关，单独一类，绝不能被当作完成/取消。
+pub const RESCHEDULED: &str = "rescheduled";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,6 +34,14 @@ pub struct Event {
     pub to_status: Option<String>,
     pub movement: Option<String>,
     pub note: Option<String>,
+    /// 改期专用：改动前后的计划日期快照。
+    pub old_start_date: Option<String>,
+    pub old_delivery_date: Option<String>,
+    pub new_start_date: Option<String>,
+    pub new_delivery_date: Option<String>,
+    pub reason: Option<String>,
+    /// `calendar` | `order_details`，其它事件为 None。
+    pub change_source: Option<String>,
     pub occurred_at: String,
 }
 
@@ -74,6 +84,47 @@ pub fn append(tx: &Connection, order_id: &str, event: &NewEvent<'_>) -> AppResul
     Ok(())
 }
 
+/// 写一条改期事件。必须与订单日期更新处于同一个事务。
+pub fn append_reschedule(
+    tx: &Connection,
+    order_id: &str,
+    old_start: Option<&str>,
+    old_delivery: Option<&str>,
+    new_start: Option<&str>,
+    new_delivery: Option<&str>,
+    reason: Option<&str>,
+    change_source: &str,
+    occurred_at: &str,
+) -> AppResult<()> {
+    tx.execute(
+        "INSERT INTO order_events (
+            order_id, kind, old_start_date, old_delivery_date,
+            new_start_date, new_delivery_date, reason, change_source, occurred_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            order_id,
+            RESCHEDULED,
+            old_start,
+            old_delivery,
+            new_start,
+            new_delivery,
+            reason,
+            change_source,
+            occurred_at
+        ],
+    )?;
+    Ok(())
+}
+
+/// 改期来源白名单。前端只能给这两个值。
+pub fn require_change_source(value: &str) -> AppResult<()> {
+    if value == "calendar" || value == "order_details" {
+        Ok(())
+    } else {
+        Err(AppError::invalid(format!("未知的改期来源：{value}")))
+    }
+}
+
 /// 该请求是否已经成功执行过（用于"保存成功但响应丢失"后的重试）。
 pub fn request_already_applied(tx: &Connection, order_id: &str, request_id: &str) -> AppResult<bool> {
     let found: Option<i64> = tx
@@ -90,7 +141,9 @@ pub fn list(conn: &Connection, order_id: &str) -> AppResult<Vec<Event>> {
     let mut stmt = conn.prepare(
         "SELECT id, order_id, kind, from_stage_id, from_stage_title,
                 to_stage_id, to_stage_title, from_status, to_status,
-                movement, note, occurred_at
+                movement, note, occurred_at,
+                old_start_date, old_delivery_date, new_start_date, new_delivery_date,
+                reason, change_source
          FROM order_events WHERE order_id = ?1 ORDER BY id",
     )?;
     let rows = stmt
@@ -108,6 +161,12 @@ pub fn list(conn: &Connection, order_id: &str) -> AppResult<Vec<Event>> {
                 movement: r.get(9)?,
                 note: r.get(10)?,
                 occurred_at: r.get(11)?,
+                old_start_date: r.get(12)?,
+                old_delivery_date: r.get(13)?,
+                new_start_date: r.get(14)?,
+                new_delivery_date: r.get(15)?,
+                reason: r.get(16)?,
+                change_source: r.get(17)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -148,6 +207,7 @@ pub fn require_known_kind(kind: &str) -> AppResult<()> {
         COMPLETED,
         CANCELLED,
         REOPENED,
+        RESCHEDULED,
     ];
     if ALL.contains(&kind) {
         Ok(())
