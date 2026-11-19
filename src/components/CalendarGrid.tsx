@@ -26,8 +26,8 @@ type Props = {
   today: DayIndex;
   weeks: DayIndex[][];
   orders: OrderView[];
-  /** 预览：某订单将被放到哪一天（只影响样式，不写库）。 */
-  preview: { orderId: string; day: DayIndex } | null;
+  /** 选中的订单：原位置保留为参考（虚线幽灵），目标位置画预览条。 */
+  preview: { orderId: string; from: DayIndex; to: DayIndex; valid: boolean } | null;
   onOpenOrder: (id: string) => void;
   onReschedule: (order: OrderView) => void;
   onChipPointerDown: (payload: ChipDragStart) => void;
@@ -67,7 +67,7 @@ function Chip({
       className={`cal-chip tone-${tone(order)}${single ? " is-single" : ""}${
         terminal ? " is-terminal" : ""
       }${clippedLeft ? " is-clipped-left" : ""}${clippedRight ? " is-clipped-right" : ""}${
-        previewed ? " is-preview" : ""
+        previewed ? " is-ghost" : ""
       }`}
       data-order-id={order.id}
       data-kind={kind}
@@ -89,7 +89,18 @@ function Chip({
         if (terminal) return;
         if (event.button !== 0) return;
         event.preventDefault();
-        onChipPointerDown({ order, mode, event });
+        // 三个操作区：左端改开始、右端改交付、条身整体平移。
+        // 单日订单没有端点可分，统一整体移动。
+        const rect = event.currentTarget.getBoundingClientRect();
+        const ratio = rect.width === 0 ? 0.5 : (event.clientX - rect.left) / rect.width;
+        const edge = Math.min(0.25, 12 / Math.max(rect.width, 1));
+        let zone: DropMode = mode;
+        if (!single) {
+          if (ratio <= edge && !clippedLeft) zone = "start";
+          else if (ratio >= 1 - edge && !clippedRight) zone = "delivery";
+          else zone = "move";
+        }
+        onChipPointerDown({ order, mode: zone, event });
       }}
     >
       <span className="cal-chip-mark" aria-hidden="true" />
@@ -161,6 +172,13 @@ export default function CalendarGrid({
                 data-day={day}
                 data-today={day === today ? "1" : undefined}
                 data-outside={isSameMonth(day, anchor) ? undefined : "1"}
+                data-preview={
+                  preview !== null && day >= preview.from && day <= preview.to
+                    ? preview.valid
+                      ? "1"
+                      : "invalid"
+                    : undefined
+                }
                 style={{ gridColumn: col + 1 }}
               />
             ))}
@@ -174,7 +192,8 @@ export default function CalendarGrid({
                   style={{ gridColumn: col + 1 }}
                   data-outside={isSameMonth(day, anchor) ? undefined : "1"}
                 >
-                  {d.day === 1 ? `${d.month} 月 ${d.day}` : d.day}
+                  {d.day === 1 && <span className="cal-day-month">{d.month} 月</span>}
+                  <span className="cal-day-pill">{d.day}</span>
                 </div>
               );
             })}
@@ -189,6 +208,25 @@ export default function CalendarGrid({
                 onChipPointerDown={onChipPointerDown}
               />
             ))}
+
+            {preview !== null &&
+              preview.to >= week[0]! &&
+              preview.from <= (week[6] ?? week[0]!) &&
+              (() => {
+                const colStart = Math.max(0, preview.from - week[0]!);
+                const colEnd = Math.min(6, preview.to - week[0]!);
+                return (
+                  <div
+                    className={`cal-preview${preview.valid ? "" : " is-invalid"}`}
+                    style={{
+                      left: `${(colStart / 7) * 100}%`,
+                      width: `${((colEnd - colStart + 1) / 7) * 100}%`,
+                    }}
+                    data-valid={preview.valid ? "1" : "0"}
+                    aria-hidden="true"
+                  />
+                );
+              })()}
 
             {week.map((day, col) => {
               const hidden = layout.hidden.get(day);

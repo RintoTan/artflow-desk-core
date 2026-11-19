@@ -329,58 +329,166 @@ async function main() {
   check("周视图保留当前浏览日期", typeof week.title === "string" && week.title.includes("~"), week.title ?? "");
   const shotWeek = await shot(send, "02-周视图.png");
 
-  // 回到月视图，模拟拖放：把 a1 拖到 11-20 那一格
+  // 回到月视图，模拟拖放：把 a1 的条身拖到 11-20 那一格
   await evaluate(send, `[...document.querySelectorAll(".cal-views button")].find((b) => b.textContent.trim() === "月").click()`);
   await sleep(300);
-  const drag = await evaluate(
+
+  const HELPERS = `
+      const chip = document.querySelector('.cal-chip[data-order-id="a1"]');
+      const cellByText = (text) =>
+        [...document.querySelectorAll(".cal-day-num")].find((el) => el.textContent.trim() === text);
+      const bgOf = (numEl) => {
+        const col = Number(getComputedStyle(numEl).gridColumnStart);
+        return numEl.parentElement ? [...numEl.parentElement.querySelectorAll(".cal-day-bg")][col - 1] : null;
+      };
+      const opts = (x, y) => ({ bubbles: true, clientX: x, clientY: y, button: 0, pointerId: 1, pointerType: "mouse", isPrimary: true });
+      const snapshot = () => ({
+        hint: document.querySelector(".cal-drag-status")?.textContent ?? "",
+        invalid: Boolean(document.querySelector(".cal-drag-status.is-invalid")),
+        ghost: Boolean(chip && chip.className.includes("is-ghost")),
+        previews: [...document.querySelectorAll(".cal-preview")].map((el) => ({
+          width: Math.round(el.getBoundingClientRect().width),
+          valid: el.getAttribute("data-valid"),
+          invalidStyle: el.className.includes("is-invalid"),
+        })),
+        writes: window.__CALLS__.filter((c) => c.cmd === "update_order_details").length,
+      });
+  `;
+
+  // 1) 合法拖动：条身 → 11-20，先停在拖动中截屏
+  const dragging = await evaluate(
     send,
     `(async () => {
-      const chip = document.querySelector('.cal-chip[data-order-id="a1"]');
-      const target = [...document.querySelectorAll(".cal-day-bg")].find((el) => {
-        const t = document.querySelector(".cal-title")?.textContent ?? "";
-        return el.getAttribute("data-day") && el.dataset.inside === undefined;
-      });
-      // 用几何命中：把 11-20 那一格找出来（用 cal-day-num 文本 20 所在列）
-      const nums = [...document.querySelectorAll(".cal-day-num")];
-      const cell20 = nums.find((el) => el.textContent.trim() === "20");
-      const col = cell20 ? Number(getComputedStyle(cell20).gridColumnStart) : 0;
-      const weekRow = cell20 ? cell20.parentElement : null;
-      const bg = weekRow ? weekRow.querySelector('.cal-day-bg[data-day]') && [...weekRow.querySelectorAll(".cal-day-bg")][col - 1] : null;
+      ${HELPERS}
+      const cell = cellByText("20");
+      const bg = cell ? bgOf(cell) : null;
       if (!chip || !bg) return { ok: false, reason: "找不到 chip 或目标格" };
-      // 窄窗下日历内部要横向滚动，先把目标格滚进可视区再做几何命中
       const scroller = document.querySelector(".cal-main");
-      if (scroller) {
-        scroller.scrollLeft = Math.max(0, bg.offsetLeft - 60);
-        await new Promise((r) => setTimeout(r, 120));
-      }
+      if (scroller) { scroller.scrollLeft = Math.max(0, bg.offsetLeft - 60); await new Promise((r) => setTimeout(r, 120)); }
       const from = chip.getBoundingClientRect();
       const to = bg.getBoundingClientRect();
-      const opts = (x, y) => ({ bubbles: true, clientX: x, clientY: y, button: 0, pointerId: 1, pointerType: "mouse", isPrimary: true });
-      chip.dispatchEvent(new PointerEvent("pointerdown", opts(from.left + 6, from.top + from.height / 2)));
+      chip.dispatchEvent(new PointerEvent("pointerdown", opts(from.left + from.width / 2, from.top + from.height / 2)));
       await new Promise((r) => setTimeout(r, 60));
       window.dispatchEvent(new PointerEvent("pointermove", opts(to.left + to.width / 2, to.top + to.height / 2)));
-      await new Promise((r) => setTimeout(r, 120));
-      const hint = document.querySelector(".cal-hint")?.textContent ?? "";
-      window.dispatchEvent(new PointerEvent("pointerup", opts(to.left + to.width / 2, to.top + to.height / 2)));
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 160));
+      const snap = snapshot();
+      const week = document.querySelector(".cal-week");
+      snap.weekWidth = week ? Math.round(week.getBoundingClientRect().width) : 0;
+      window.__TARGET__ = { x: to.left + to.width / 2, y: to.top + to.height / 2 };
+      return { ok: true, ...snap };
+    })()`,
+  );
+  results.measurements.dragging = dragging;
+  check("拖动时原位置保留幽灵", dragging.ghost === true, `ghost=${dragging.ghost}`);
+  check(
+    "拖动时目标位置有蓝色预览条",
+    dragging.previews.length > 0 && dragging.previews.every((p) => p.valid === "1" && p.invalidStyle === false),
+    JSON.stringify(dragging.previews),
+  );
+  check(
+    "预览条总长度 = 改后区间天数 / 7 × 周宽（跨两周时分段）",
+    dragging.previews.length > 0 &&
+      Math.abs(
+        dragging.previews.reduce((sum, p) => sum + p.width, 0) - dragging.weekWidth,
+      ) <= 8,
+    `分段 ${JSON.stringify(dragging.previews.map((p) => p.width))} 合计 / 周宽 ${dragging.weekWidth}（7 天 = 一周）`,
+  );
+  check(
+    "拖动时显示开始/交付的 before→after",
+    /开始日期/.test(dragging.hint) && /交付日期/.test(dragging.hint) && /→/.test(dragging.hint),
+    dragging.hint.slice(0, 100),
+  );
+  const shotDragging = await shot(send, "03-拖动预览.png", false);
+
+  // 松开 → 确认框
+  const released = await evaluate(
+    send,
+    `(async () => {
+      const t = window.__TARGET__;
+      const opts = (x, y) => ({ bubbles: true, clientX: x, clientY: y, button: 0, pointerId: 1, pointerType: "mouse", isPrimary: true });
+      window.dispatchEvent(new PointerEvent("pointerup", opts(t.x, t.y)));
+      await new Promise((r) => setTimeout(r, 220));
       const dialog = document.querySelector('[role="alertdialog"]');
       return {
         ok: Boolean(dialog),
-        hint,
-        dialogText: dialog ? dialog.textContent.slice(0, 200) : null,
+        text: dialog ? dialog.textContent.slice(0, 160) : null,
         writes: window.__CALLS__.filter((c) => c.cmd === "update_order_details").length,
       };
     })()`,
   );
-  results.measurements.drag = drag;
-  check("拖放后弹出确认框", drag.ok === true, drag.dialogText ?? drag.reason ?? "无对话框");
-  check("拖放阶段没有写库", drag.writes === 0, `update_order_details=${drag.writes}`);
-  const shotDialog = await shot(send, "03-拖放确认框.png", false);
+  results.measurements.release = released;
+  check("松开后进入确认框", released.ok === true, released.text ?? "无对话框");
+  check("拖动全过程零写入", released.writes === 0, `update_order_details=${released.writes}`);
+  const shotDialog = await shot(send, "04-拖放确认框.png", false);
 
-  // 取消 → 零写入
+  // 2) 非法拖动：把 a1 的「开始端」拖到 11-24（晚于交付 11-16）
+  const invalidDrag = await evaluate(
+    send,
+    `(async () => {
+      const dialog = document.querySelector('[role="alertdialog"]');
+      if (dialog) {
+        const cancel = [...dialog.querySelectorAll("button")].find((b) => b.textContent.trim() === "取消");
+        if (cancel) cancel.click();
+      }
+      await new Promise((r) => setTimeout(r, 200));
+      ${HELPERS}
+      const cell = cellByText("24");
+      const bg = cell ? bgOf(cell) : null;
+      if (!chip || !bg) return { ok: false, reason: "找不到 chip 或目标格" };
+      const scroller = document.querySelector(".cal-main");
+      if (scroller) { scroller.scrollLeft = Math.max(0, bg.offsetLeft - 60); await new Promise((r) => setTimeout(r, 120)); }
+      const from = chip.getBoundingClientRect();
+      const to = bg.getBoundingClientRect();
+      // 左端 → 改开始日期
+      chip.dispatchEvent(new PointerEvent("pointerdown", opts(from.left + 3, from.top + from.height / 2)));
+      await new Promise((r) => setTimeout(r, 60));
+      window.dispatchEvent(new PointerEvent("pointermove", opts(to.left + to.width / 2, to.top + to.height / 2)));
+      await new Promise((r) => setTimeout(r, 160));
+      return { ok: true, ...snapshot(), target: { x: to.left + to.width / 2, y: to.top + to.height / 2 } };
+    })()`,
+  );
+  results.measurements.invalidDrag = invalidDrag;
+  check("非法拖动显示红色预览", invalidDrag.previews.length > 0 && invalidDrag.previews.every((p) => p.valid === "0" && p.invalidStyle), JSON.stringify(invalidDrag.previews));
+  check("非法拖动给出原因", invalidDrag.invalid === true && /不能早于/.test(invalidDrag.hint), invalidDrag.hint.slice(0, 90));
+  const shotInvalid = await shot(send, "05-非法拖动.png", false);
+
+  // pointercancel 恢复：不进入确认框、零写入
+  const cancelledByPointer = await evaluate(
+    send,
+    `(async () => {
+      const t = ${JSON.stringify(invalidDrag.target ?? { x: 0, y: 0 })};
+      window.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, clientX: t.x, clientY: t.y, pointerId: 1, pointerType: "mouse", isPrimary: true }));
+      await new Promise((r) => setTimeout(r, 220));
+      return {
+        dialog: Boolean(document.querySelector('[role="alertdialog"]')),
+        preview: Boolean(document.querySelector(".cal-preview")),
+        ghost: Boolean(document.querySelector(".cal-chip.is-ghost")),
+        writes: window.__CALLS__.filter((c) => c.cmd === "update_order_details").length,
+      };
+    })()`,
+  );
+  results.measurements.pointerCancel = cancelledByPointer;
+  check("pointercancel 后预览与幽灵都消失", cancelledByPointer.preview === false && cancelledByPointer.ghost === false, JSON.stringify(cancelledByPointer));
+  check("pointercancel 不进入确认框、零写入", cancelledByPointer.dialog === false && cancelledByPointer.writes === 0, JSON.stringify(cancelledByPointer));
+
+  // 3) 取消确认 → 零写入
   const cancelled = await evaluate(
     send,
     `(async () => {
+      const chip = document.querySelector('.cal-chip[data-order-id="a1"]');
+      const cell = [...document.querySelectorAll(".cal-day-num")].find((el) => el.textContent.trim() === "22");
+      const col = cell ? Number(getComputedStyle(cell).gridColumnStart) : 0;
+      const bg = cell ? [...cell.parentElement.querySelectorAll(".cal-day-bg")][col - 1] : null;
+      if (!chip || !bg) return { closed: false, writes: -1 };
+      const from = chip.getBoundingClientRect();
+      const to = bg.getBoundingClientRect();
+      const opts = (x, y) => ({ bubbles: true, clientX: x, clientY: y, button: 0, pointerId: 1, pointerType: "mouse", isPrimary: true });
+      chip.dispatchEvent(new PointerEvent("pointerdown", opts(from.left + from.width / 2, from.top + from.height / 2)));
+      await new Promise((r) => setTimeout(r, 50));
+      window.dispatchEvent(new PointerEvent("pointermove", opts(to.left + to.width / 2, to.top + to.height / 2)));
+      await new Promise((r) => setTimeout(r, 120));
+      window.dispatchEvent(new PointerEvent("pointerup", opts(to.left + to.width / 2, to.top + to.height / 2)));
+      await new Promise((r) => setTimeout(r, 220));
       const dialog = document.querySelector('[role="alertdialog"]');
       const cancel = dialog ? [...dialog.querySelectorAll("button")].find((b) => b.textContent.trim() === "取消") : null;
       if (cancel) cancel.click();
@@ -392,7 +500,7 @@ async function main() {
     })()`,
   );
   results.measurements.cancel = cancelled;
-  check("取消后对话框关闭", cancelled.closed === true, "");
+  check("取消后对话框关闭", cancelled.closed === true, JSON.stringify(cancelled));
   check("取消确认零写入", cancelled.writes === 0, `update_order_details=${cancelled.writes}`);
 
   // 未排期池的改期入口
@@ -411,7 +519,7 @@ async function main() {
   check("未排期池可打开改期并选择写入哪一端", poolDialog.ok === true && /写入计划/.test(poolDialog.text ?? ""), (poolDialog.text ?? "").slice(0, 80));
   const shotPool = await shot(send, "04-未排期改期.png", false);
 
-  results.screenshots = { month: shotMonth, week: shotWeek, dialog: shotDialog, pool: shotPool };
+  results.screenshots = { month: shotMonth, week: shotWeek, dragging: shotDragging, dialog: shotDialog, invalid: shotInvalid, pool: shotPool };
   const failed = results.checks.filter((c) => !c.pass);
   results.summary = { total: results.checks.length, passed: results.checks.length - failed.length, failed: failed.length };
   console.log(JSON.stringify(results, null, 2));

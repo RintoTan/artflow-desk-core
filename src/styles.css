@@ -5363,6 +5363,10 @@ dl.stat-row {
   cursor: pointer;
 }
 
+.cal-drag-status-spacer {
+  display: none;
+}
+
 .cal-hint {
   margin: 10px 2px 0;
   font-size: 11.5px;
@@ -5554,5 +5558,381 @@ dl.stat-row {
 @media (max-width: 1000px) {
   .cal-body {
     grid-template-columns: 190px minmax(0, 1fr);
+  }
+}
+
+/* ---------------------------------------------------------------- DEV-06D-3-UI-01 精修 */
+/*
+ * 只改视觉与交互反馈：
+ *   - 控件尺寸对齐全站令牌（--control-h 34 / --control-h-sm 28）
+ *   - 今天圆环
+ *   - 拖放：原位置幽灵 + 目标预览条 + 实时日期反馈
+ * 不改任何日期算法、轨道分配或写入路径。
+ */
+.cal-page {
+  --cal-ctl: var(--control-h);
+  --cal-ctl-sm: var(--control-h-sm);
+  --cal-radius: 9px;
+}
+
+/* 工具栏：同类控件同高，主次靠字重与底色区分，而不是靠高度 */
+.cal-nav button,
+.cal-today,
+.cal-refresh,
+.cal-head .cal-toggle,
+.cal-viewport button {
+  height: var(--cal-ctl);
+}
+
+.cal-nav button,
+.cal-today,
+.cal-refresh {
+  min-width: var(--cal-ctl);
+  padding: 0 10px;
+  border-radius: var(--cal-radius);
+  font-size: 12.5px;
+  line-height: 1;
+}
+
+.cal-nav button:first-child,
+.cal-nav button:nth-child(3) {
+  padding: 0;
+  width: var(--cal-ctl);
+  font-size: 15px;
+  color: var(--text-muted);
+}
+
+.cal-nav button:hover,
+.cal-today:hover,
+.cal-refresh:hover,
+.cal-viewport button:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.cal-nav button:focus-visible,
+.cal-today:focus-visible,
+.cal-refresh:focus-visible,
+.cal-viewport button:focus-visible,
+.cal-pool-reschedule:focus-visible,
+.cal-more:focus-visible,
+.cal-chip:focus-visible,
+.cal-popover button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cal-head .cal-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--cal-radius);
+  background: var(--surface);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.cal-head .cal-toggle input {
+  margin: 0;
+}
+
+/* 视图切换：与全站分段控件同高 */
+.segmented.cal-views button {
+  height: calc(var(--cal-ctl) - 6px);
+  padding: 0 12px;
+  font-size: 12.5px;
+}
+
+.segmented.cal-views {
+  padding: 3px;
+  border-radius: var(--cal-radius);
+}
+
+/* 左池：卡片信息层级 + 紧凑次要按钮 */
+.cal-pool-item {
+  padding: 9px 10px;
+  border-radius: var(--cal-radius);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.cal-pool-item:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+
+.cal-pool-item .mono {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.cal-pool-item strong {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.cal-pool-reschedule {
+  height: var(--cal-ctl-sm);
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.cal-pool-reschedule:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* 网格：周末与邻月弱化，边界更轻 */
+.cal-weekdays span {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 7px 8px;
+}
+
+.cal-weekdays span:nth-child(6),
+.cal-weekdays span:nth-child(7) {
+  color: var(--text-faint);
+}
+
+.cal-day-num {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 6px 2px;
+  font-size: 11.5px;
+  line-height: 1;
+}
+
+.cal-day-month {
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+
+/* 今天：正圆描边包裹数字，不改变格子尺寸与命中区域 */
+.cal-day-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 999px;
+  border: 1.5px solid transparent;
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-day-num.is-today {
+  color: var(--text);
+}
+
+.cal-day-num.is-today .cal-day-pill {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+  /* 28px 直径：22 + 1.5×2 边框 + 视觉留白，保持正圆 */
+  min-width: 27px;
+  height: 27px;
+  padding: 0 6px;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.cal-day-bg[data-today="1"] {
+  background: var(--accent-soft);
+  opacity: 0.45;
+}
+
+.cal-day-bg[data-outside="1"] {
+  background: var(--surface-alt);
+  opacity: 0.55;
+}
+
+.cal-chip {
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 7px;
+  font-size: 10.5px;
+  transition: filter 120ms ease, box-shadow 120ms ease;
+}
+
+.cal-chip:hover {
+  filter: saturate(1.15) brightness(0.98);
+  box-shadow: 0 1px 3px rgb(15 35 60 / 12%);
+}
+
+/* 拖动中的原位置：保留形状，变淡并虚线化，作为参照 */
+.cal-chip.is-ghost {
+  opacity: 0.32;
+  border-style: dashed;
+  filter: grayscale(0.15);
+}
+
+/* 目标预览条：长度严格等于修改后的真实区间，落在该周底部预览层 */
+.cal-week {
+  position: relative;
+}
+
+.cal-day-bg[data-preview="1"] {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-soft);
+}
+
+.cal-day-bg[data-preview="invalid"] {
+  background: var(--danger-soft);
+  box-shadow: inset 0 0 0 1px var(--danger-soft);
+}
+
+.cal-preview {
+  position: absolute;
+  bottom: 3px;
+  height: 18px;
+  border-radius: 7px;
+  border: 1.5px solid var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--accent-soft), inset 0 0 0 1px rgb(255 255 255 / 55%);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.cal-preview.is-invalid {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  box-shadow: 0 0 0 3px var(--danger-soft), inset 0 0 0 1px rgb(255 255 255 / 55%);
+}
+
+/* 拖动反馈区：两行日期，变化的端点加重 */
+.cal-drag-status {
+  margin: 0 2px 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-active);
+  border-radius: var(--cal-radius);
+  background: var(--accent-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 16px;
+}
+
+.cal-drag-status strong {
+  font-size: 11.5px;
+  color: var(--accent);
+}
+
+.cal-drag-status dl {
+  margin: 0;
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.cal-drag-status dl > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-drag-status dt {
+  color: var(--text-faint);
+}
+
+.cal-drag-status dd {
+  margin: 0;
+  display: flex;
+  gap: 5px;
+}
+
+.cal-drag-status dl > div.is-changed dd {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.cal-drag-status small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.cal-drag-status.is-invalid {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+
+.cal-drag-status.is-invalid strong,
+.cal-drag-status.is-invalid em {
+  color: var(--danger);
+}
+
+.cal-drag-status em {
+  font-style: normal;
+  font-size: 11.5px;
+}
+
+/* 浮层与弹窗：与全站一致的输入高度 */
+.cal-popover-actions button {
+  height: var(--cal-ctl-sm);
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 11.5px;
+}
+
+.cal-popover header button {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+
+.cal-dialog-dates input,
+.cal-dialog-reason input {
+  height: var(--cal-ctl);
+  padding: 0 9px;
+  border-radius: var(--cal-radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.cal-dialog-dates input:focus-visible,
+.cal-dialog-reason input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.cal-dialog-dates label > span,
+.cal-dialog-reason > span {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.cal-dialog {
+  min-width: 380px;
+}
+
+.cal-more {
+  height: 18px;
+  padding: 0 7px;
+  font-size: 10.5px;
+}
+
+.cal-more:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* 窄窗：工具栏不折行成两条，允许按钮换行但保持间距 */
+@media (max-width: 1100px) {
+  .cal-toolbar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .cal-title {
+    min-width: 132px;
+    font-size: 13px;
   }
 }

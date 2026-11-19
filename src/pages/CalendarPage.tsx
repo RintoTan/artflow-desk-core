@@ -20,7 +20,7 @@ import {
   type CalendarView,
   type DropMode,
 } from "../lib/calendar";
-import { formatDayKey, localDayIndex, type DayIndex } from "../lib/scheduleBar";
+import { formatDayKey, localDayIndex, parseDayKey, type DayIndex } from "../lib/scheduleBar";
 
 type DragState = {
   order: OrderView;
@@ -241,6 +241,22 @@ export default function CalendarPage() {
     .filter((order) => isTerminal(order) && orderSpan(order) === null)
     .sort(compareUnscheduled);
 
+  const previewRange = (() => {
+    if (drag === null) return null;
+    if (drag.plan !== null) {
+      const start = drag.plan.start === null ? null : parseDayKey(drag.plan.start);
+      const delivery = drag.plan.delivery === null ? null : parseDayKey(drag.plan.delivery);
+      const from = start ?? delivery;
+      const to = delivery ?? start;
+      if (from === null || to === null) return null;
+      return { orderId: drag.order.id, from: Math.min(from, to), to: Math.max(from, to), valid: true };
+    }
+    if (drag.targetDay !== null) {
+      return { orderId: drag.order.id, from: drag.targetDay, to: drag.targetDay, valid: false };
+    }
+    return null;
+  })();
+
   const weeks =
     view === "month"
       ? Array.from({ length: 6 }, (_, row) => monthMatrix(anchor).slice(row * 7, row * 7 + 7))
@@ -397,27 +413,54 @@ export default function CalendarPage() {
             </div>
           </div>
 
+          {drag !== null && (
+            <div className={`cal-drag-status${drag.blocked !== null ? " is-invalid" : ""}`} role="status">
+              <strong>{drag.blocked !== null ? "无法放置到这里" : "正在调整排期"}</strong>
+              {drag.plan !== null && (
+                <dl>
+                  <div className={drag.plan.start !== drag.order.plannedStartDate ? "is-changed" : undefined}>
+                    <dt>开始日期</dt>
+                    <dd>
+                      <span>{drag.order.plannedStartDate ?? "未设置"}</span>
+                      <span aria-hidden="true">→</span>
+                      <span>{drag.plan.start ?? "未设置"}</span>
+                    </dd>
+                  </div>
+                  <div
+                    className={drag.plan.delivery !== drag.order.plannedDeliveryDate ? "is-changed" : undefined}
+                  >
+                    <dt>交付日期</dt>
+                    <dd>
+                      <span>{drag.order.plannedDeliveryDate ?? "未设置"}</span>
+                      <span aria-hidden="true">→</span>
+                      <span>{drag.plan.delivery ?? "未设置"}</span>
+                    </dd>
+                  </div>
+                </dl>
+              )}
+              {drag.blocked !== null ? <em>{drag.blocked}</em> : <small>松开后进入确认框，确认之前不会写入。</small>}
+            </div>
+          )}
+
           <CalendarGrid
             view={view}
             anchor={anchor}
             today={today}
             weeks={weeks}
             orders={visible}
-            preview={drag?.targetDay != null ? { orderId: drag.order.id, day: drag.targetDay } : null}
+            preview={previewRange}
             onOpenOrder={(id) => navigate(`/orders?orderId=${id}`)}
             onReschedule={openKeyboardDialog}
             onChipPointerDown={startDrag}
           />
 
-          <p className="cal-hint" role="status">
-            {drag === null
-              ? "拖动订单条可改期：拖两端改对应日期，拖条身整体平移。也可以聚焦订单后按 Enter 用「改期」。"
-              : drag.blocked !== null
-                ? drag.blocked
-                : drag.plan !== null
-                  ? `将改为 ${drag.plan.start ?? "未设置"} → ${drag.plan.delivery ?? "未设置"}，松开后确认`
-                  : "拖到日期格上以选择新的排期"}
-          </p>
+          {drag === null ? (
+            <p className="cal-hint" role="status">
+              拖动订单条可改期：拖两端改对应日期，拖条身整体平移。也可以聚焦订单后按 Enter 用「改期」。
+            </p>
+          ) : (
+            <div className="cal-drag-status-spacer" aria-hidden="true" />
+          )}
         </section>
       </div>
 
