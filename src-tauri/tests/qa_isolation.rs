@@ -4,6 +4,7 @@
 //! 这里检查的是**结构性质**（两个根互不可达）与**真实数据状态**，不是比较配置字符串。
 
 use std::fs;
+use std::path::PathBuf;
 
 use tempfile::TempDir;
 
@@ -397,8 +398,17 @@ fn qa_asset_scope_covers_scenario_attachment_paths() {
 
     // v2：scope 不再有静态 glob，改为启动时按活动代际 `allow_directory`。
     // 因此这里校验的是「静态配置不得覆盖任何附件路径」，真正的放行由运行时按代际授权。
-    let home = std::env::var("HOME").unwrap();
-    let qa_appdata = format!("{home}/Library/Application Support/dev.artflow.minidesk.qa");
+    // 平台无关的 AppData 基础目录：macOS 用 HOME，Windows 用 APPDATA，其他用 HOME。
+    // 这个用例只关心「静态 scope 是否覆盖附件路径」，不依赖具体平台。
+    let base = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("APPDATA"))
+        .map(|v| PathBuf::from(v))
+        .expect("HOME / APPDATA 都不存在");
+    let qa_appdata = base
+        .join("dev.artflow.minidesk.qa")
+        .to_string_lossy()
+        .to_string();
+    let home = base.to_string_lossy().to_string();
     let expand = |p: &str| p.replace("$APPDATA", &qa_appdata);
 
     for scenario in ["seeded", "clean"] {
