@@ -15,7 +15,6 @@ import {
   orderSpan,
   rescheduleInput,
   shiftMonth,
-  shiftWeek,
   weekGridMetrics,
   weeksInMonth,
   weekStartOf,
@@ -510,14 +509,10 @@ export default function CalendarPage() {
   })();
 
   // 注意：这里必须用普通计算，不能用 useMemo —— 它位于条件 return 之后。
+  // 月视图与周视图共用同一份连续周列表：
+  // 周视图的区别只是"一屏露 3 行"，数据仍然是同一个可扩展窗口，
+  // 所以它同样能一直往上/往下滚，而不是被固定成 3 行。
   const weeks = (() => {
-    if (view === "week") {
-      // 连续三周：上一周 / 焦点周 / 下一周，21 天一次看全
-      const start = weekStartOf(anchor);
-      return [-1, 0, 1].map((offset) =>
-        Array.from({ length: 7 }, (_, col) => start + offset * 7 + col),
-      );
-    }
     const start = rangeStart ?? weekStartOf(anchor);
     return Array.from({ length: rangeWeeks }, (_, i) =>
       Array.from({ length: 7 }, (_, col) => start + i * 7 + col),
@@ -525,7 +520,8 @@ export default function CalendarPage() {
   })();
 
   const monthAnchor = view === "month" ? (visibleAnchor ?? anchor) : anchor;
-  const title = view === "month" ? monthTitle(monthAnchor) : weekTitle(anchor);
+  const weekAnchor = view === "week" ? (visibleAnchor ?? anchor) : anchor;
+  const title = view === "month" ? monthTitle(monthAnchor) : weekTitle(weekAnchor);
   // 每个日期格的真实宽度（七列等分，扣掉网格左右各 1px 边框）。
   // 够放"两位数字 + 胶囊"就放右上角，否则退回底部独立行。
   const cellW = viewportW > 0 ? Math.floor((viewportW - 2) / 7) : 0;
@@ -543,7 +539,6 @@ export default function CalendarPage() {
   const MAX_WEEKS = 104;
 
   function extendWeeks(direction: "up" | "down") {
-    if (view !== "month") return;  // 周视图固定 3 行，不参与窗口扩展
     if (today === null || rangeStart === null) return;
     if (direction === "up") {
       const nextStart = rangeStart - 12 * 7;
@@ -568,10 +563,12 @@ export default function CalendarPage() {
   /** 滚动处理：每帧最多算一次，且完全按 DOM 里真实的可见行统计月份。 */
   function handleScroll() {
     if (scrollFrameRef.current !== null) return;
-    scrollFrameRef.current = window.requestAnimationFrame(() => {
+    // 用 setTimeout 而不是 rAF 合并：WKWebView 在窗口被遮挡时会节流 rAF，
+    // 回调不来就会让标志位永远卡住，后续滚动全部被丢弃（表现为"滚不动"）。
+    scrollFrameRef.current = window.setTimeout(() => {
       scrollFrameRef.current = null;
       applyScrollState();
-    });
+    }, 16);
   }
 
   function applyScrollState() {
@@ -610,6 +607,24 @@ export default function CalendarPage() {
     });
 
     let winner: { votes: number; day: DayIndex } | null = null;
+    // 周视图没有"月份多数"的概念，直接取视口正中那一行所在的周
+    if (view === "week") {
+      const mid = rect.top + rect.height / 2;
+      let centerDay: DayIndex | null = null;
+      rows.forEach((row) => {
+        const box = row.getBoundingClientRect();
+        if (box.top <= mid && box.bottom > mid) {
+          const start = Number(row.dataset.start);
+          if (Number.isFinite(start) && start > 0) centerDay = start;
+        }
+      });
+      if (centerDay !== null) {
+        const current = visibleAnchor ?? anchor;
+        if (current === null || weekStartOf(current) !== (centerDay as DayIndex)) {
+          setVisibleAnchor(centerDay as DayIndex);
+        }
+      }
+    }
     votes.forEach((entry) => {
       if (winner === null || entry.votes > winner.votes) winner = entry;
     });
@@ -623,11 +638,10 @@ export default function CalendarPage() {
       }
     }
 
-    const rowH = rowHRef.current;
-    if (rowH > 0) {
-      if (el.scrollTop < rowH * 4) extendWeeks("up");
-      else if (el.scrollTop + el.clientHeight > el.scrollHeight - rowH * 4) extendWeeks("down");
-    }
+    // 用真实滚动位置判断边界，不再依赖 rowH（rowH 在某些帧还是 0）
+    const guard = Math.max(200, rowHRef.current * 3);
+    if (el.scrollTop <= guard) extendWeeks("up");
+    else if (el.scrollTop + el.clientHeight >= el.scrollHeight - guard) extendWeeks("down");
   }
 
   /** 点击日期格：记录焦点；跨月时把当前可视月份切到那一天。 */
@@ -678,8 +692,8 @@ export default function CalendarPage() {
     if (isTerminal(order) && !showTerminal) setShowTerminal(true);
     const target = span.from;
     setFocusedDay(target);
-    if (view === "month") scrollToDay(target);
-    else setAnchor(target);
+    setAnchor(target);
+    scrollToDay(target);
     startFocus(order.id);
   }
 
@@ -701,7 +715,12 @@ export default function CalendarPage() {
 
   function shift(direction: -1 | 1) {
     if (view === "week") {
-      setAnchor((prev) => (prev === null ? prev : shiftWeek(prev, direction)));
+      // 周视图：焦点周与滚动位置一起移动一周，三行整体平移
+      const base = visibleAnchor ?? anchor;
+      if (base === null) return;
+      const target = weekStartOf(base) + direction * 7;
+      setAnchor(target);
+      scrollToDay(target);
       return;
     }
     const base = visibleAnchor ?? anchor;

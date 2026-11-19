@@ -7091,3 +7091,16 @@ dl.stat-row {
 .cal-view-week .cal-week {
   min-height: 0;
 }
+
+/* ---------------------------------------------------------------- DEV-06D-3-UI-08D 搜索框清除按钮 */
+/*
+ * input[type="search"] 在 WKWebView / Blink 里都自带一个原生清除按钮，
+ * 我们另有自定义的 .cal-rail-clear → 视觉上就是两个 X。这里只关掉**原生**那个，
+ * 保留自定义按钮（有 aria-label、有主题样式、点击行为一致）。
+ */
+.cal-rail-search input[type="search"]::-webkit-search-cancel-button,
+.cal-rail-search input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
