@@ -166,6 +166,8 @@ export default function CalendarPage() {
   const jumpRef = useRef(false);
   /** 跳转锚点：紧接着的行高变化要围绕它重新居中，而不是旧的视口中心日。 */
   const jumpAnchorRef = useRef<{ day: DayIndex; at: number } | null>(null);
+  /** 跳转对齐方式：week = 按整行（三行上中下），center = 像素居中。 */
+  const alignRef = useRef<"week" | "center">("center");
   /** 聚焦计时器：定位完成后 3 秒自动解除，新的定位会先清掉旧的。 */
   const focusTimerRef = useRef<number | null>(null);
   const scrollEl = useRef<HTMLDivElement | null>(null);
@@ -577,6 +579,13 @@ export default function CalendarPage() {
     const rect = el.getBoundingClientRect();
     if (rect.height <= 0) return;
 
+    // 用户一旦自己滚动，就撤销"跳转锚点"：否则紧接着的行高变化会把视口拉回定位目标，
+    // 表现就是刚点完今天之后滚不动 / 弹回去。
+    const prevTop = lastFrameRef.current?.scrollTop;
+    if (prevTop !== undefined && Math.abs(el.scrollTop - prevTop) > 2) {
+      jumpAnchorRef.current = null;
+    }
+
     // 月份归属：按"至少露出一半"的周行投票，每行投给它自己 7 天里占多数的月份。
     // 不再用 scrollTop ÷ 行高反推算行号 —— 行高会随月份周数变化、窗口也会补/裁行，
     // 那个换算一旦用了旧的 rangeStart 就会整个偏掉（之前“标题停在 8 月”的根因）。
@@ -697,7 +706,8 @@ export default function CalendarPage() {
     startFocus(order.id);
   }
 
-  function scrollToDay(day: DayIndex) {
+  function scrollToDay(day: DayIndex, align: "week" | "center" = "center") {
+    alignRef.current = align;
     if (rangeStart === null) return;
     const needStart = weekStartOf(day) - 2 * 7;
     const needEnd = weekStartOf(day) + 3 * 7;
@@ -728,19 +738,37 @@ export default function CalendarPage() {
     scrollToDay(shiftMonth(base, direction));
   }
 
+  /** 视口正中那一行所在的日期（用于视图切换保持位置）。 */
+  function dayAtViewportCenter(): DayIndex | null {
+    const el = scrollEl.current;
+    if (el === null) return null;
+    const rect = el.getBoundingClientRect();
+    const mid = rect.top + rect.height / 2;
+    let found: DayIndex | null = null;
+    el.querySelectorAll<HTMLElement>(".cal-week").forEach((row) => {
+      const box = row.getBoundingClientRect();
+      if (box.top <= mid && box.bottom > mid) {
+        const start = Number(row.dataset.start);
+        if (Number.isFinite(start) && start > 0) found = start + 3;
+      }
+    });
+    return found;
+  }
+
+  /**
+   * 切视图只换"布局算法"，不换"我在看哪一天"：
+   * 先记住视口中心的日期，切完按新行高把同一天放回视口中心。
+   * 之前是沿用旧 scrollTop（行高 119 → 222 直接错位）或干脆 scrollToDay(anchor)。
+   */
   function switchView(next: CalendarView) {
-    // 切换视图时清掉聚焦，避免把上一个视图的目标带到新视图
     clearFocus();
-    if (next === "week") {
-      // 月 → 周：停在当前可视日期所在的周
-      if (visibleAnchor !== null) setAnchor(visibleAnchor);
-      setView("week");
-      return;
+    if (next === view) return;
+    const center = dayAtViewportCenter();
+    setView(next);
+    if (center !== null) {
+      setAnchor(center);
+      scrollToDay(center, next === "week" ? "week" : "center");
     }
-    // 周 → 月：把该周滚到视口中央附近
-    const day = anchor;
-    setView("month");
-    if (day !== null) scrollToDay(day);
   }
 
   return (
