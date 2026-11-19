@@ -86,7 +86,8 @@ const MODULES: Module[] = [
   },
 ];
 
-type Guide = { title: string; body: string[] };
+type ShortcutRow = { keys: string; action: string; scope: string };
+type Guide = { title: string; table?: ShortcutRow[]; body: string[] };
 
 const GUIDES: Guide[] = [
   {
@@ -97,6 +98,25 @@ const GUIDES: Guide[] = [
       "到「订单」新建委托，填标题、客户与计划交付日期。",
       "打开订单详情，点「开始制作」，之后每次完成一个阶段就点「推进阶段…」。",
       "日常用「工作台」看今天要做什么，用「日历」看未来几周的排期。",
+    ],
+  },
+  {
+    title: "快捷键与键盘操作",
+    table: [
+      { keys: "⌘ N", action: "新建", scope: "订单、客户、流程模板" },
+      { keys: "⌘ S", action: "保存当前修改", scope: "订单详情、客户、流程模板、设置" },
+      { keys: "⌘ F", action: "聚焦搜索框", scope: "订单列表" },
+      { keys: "↑ / ↓", action: "移动键盘光标", scope: "订单列表" },
+      { keys: "Enter", action: "打开光标所在订单", scope: "订单列表" },
+      { keys: "Esc", action: "关闭最上层弹窗", scope: "全局（含看板/表格详情）" },
+    ],
+    body: [
+      "↑ / ↓ 只移动键盘光标，不会改变订单在队列里的顺序。",
+      "按 Enter 才会打开当前光标所在的订单。",
+      "⌘ S 只在存在未保存修改时执行保存；没有改动时不会写入任何内容。",
+      "Esc 按弹窗层级处理，只关最上面那一层；看板与表格视图下会关闭右侧详情，若详情里还有未保存的修改，会提示先保存或撤销。",
+      "光标在输入框、文本域或下拉框里时，方向键与 Enter 只作用于输入内容，不会触发订单列表的光标移动。",
+      "当前展示的是 macOS 键位；其他平台的差异尚未验证。",
     ],
   },
   {
@@ -151,7 +171,7 @@ const GUIDES: Guide[] = [
   {
     title: "数据环境",
     body: [
-      "正式环境保存真实业务数据；QA 测试环境是独立的沙箱，与正式数据完全隔离。",
+      "正式环境保存真实业务数据；测试环境（QA）用于在发布前验证改动，数据与正式环境完全隔离，两边不会互相影响。",
       "「数据代际」标识当前实际使用的那份数据；升级或恢复会生成新的代际，旧代际保留。",
       "「数据库结构版本」表示数据的组织方式，升级由程序自动完成，不需要手工干预。",
       "工作时区决定日期与时间如何解释，换机器后建议先确认一次。",
@@ -257,7 +277,7 @@ export default function AboutPage() {
           <Fact label="维护者" value="RINTO" />
           <Fact label="所属产品体系" value="ArtFlow Desk" />
           <Fact label="版权归属" value="RINTO" />
-          <Fact label="许可证" value={TBD} />
+          <Fact label="许可证" value="未设置公开许可证" />
           <Fact label="官方网站 / 联系方式" value={TBD} />
         </div>
         <p className="muted about-note">
@@ -295,6 +315,26 @@ export default function AboutPage() {
           {GUIDES.map((guide, index) => (
             <details className="about-guide" key={guide.title} open={index === 0}>
               <summary>{guide.title}</summary>
+              {guide.table && (
+                <table className="table about-shortcuts">
+                  <thead>
+                    <tr>
+                      <th>快捷键</th>
+                      <th>功能</th>
+                      <th>适用范围</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {guide.table.map((row) => (
+                      <tr key={row.keys}>
+                        <td className="mono">{row.keys}</td>
+                        <td>{row.action}</td>
+                        <td className="muted">{row.scope}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
               <ul>
                 {guide.body.map((line) => (
                   <li key={line}>{line}</li>

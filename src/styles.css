@@ -7429,3 +7429,12 @@ dl.stat-row {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+
+.about-shortcuts {
+  margin: 2px 0 8px;
+  font-size: 12px;
+}
+
+.about-shortcuts th {
+  font-weight: 560;
+}

@@ -78,7 +78,8 @@ describe("关于软件页面", () => {
     expect(within(owners).getAllByText("RINTO").length).toBe(3); // 开发者 / 维护者 / 版权
     expect(within(owners).getByText("ArtFlow Desk")).toBeTruthy();
     expect(within(owners).getByText("许可证")).toBeTruthy();
-    expect(within(owners).getAllByText("待补充").length).toBe(2); // 许可证 + 官网/联系方式
+    expect(within(owners).getByText("未设置公开许可证")).toBeTruthy();
+    expect(within(owners).getAllByText("待补充").length).toBe(1); // 仅官网/联系方式
   });
 
   it("七个功能模块都有介绍，且不出现开发术语", async () => {
@@ -101,13 +102,14 @@ describe("关于软件页面", () => {
     }
   });
 
-  it("使用指引覆盖七个主题，且默认只展开第一个", async () => {
+  it("使用指引覆盖八个主题，且默认只展开第一个", async () => {
     render(<AboutPage />);
     const guides = await screen.findByRole("region", { name: "使用指引" });
     const details = guides.querySelectorAll("details");
-    expect(details.length).toBe(7);
+    expect(details.length).toBe(8);
     expect(details[0]?.open).toBe(true);
     expect(details[1]?.open).toBe(false);
+    expect(details[7]?.open).toBe(false);
   });
 
   it("指引可展开与收起", async () => {
@@ -188,5 +190,102 @@ describe("关于软件页面", () => {
     render(<AboutPage />);
     expect(await screen.findByText("尚无已分配的订单编号。")).toBeTruthy();
     expect(screen.queryByText("下一编号")).toBeNull();
+  });
+});
+
+describe("快捷键与内容规范", () => {
+  it("快捷键主题列出六组键位，范围与代码实现一致", async () => {
+    render(<AboutPage />);
+    const guides = await screen.findByRole("region", { name: "使用指引" });
+    const shortcuts = within(guides).getByText("快捷键与键盘操作").closest("details")!;
+    await userEvent.setup().click(within(shortcuts).getByText("快捷键与键盘操作"));
+
+    const rows = shortcuts.querySelectorAll("tbody tr");
+    expect(rows.length).toBe(6);
+    const table = shortcuts.textContent ?? "";
+    // 实现：⌘N 只在订单/客户/模板；设置页只有 ⌘S；⌘F 与方向键/Enter 只在订单列表
+    expect(table).toContain("订单、客户、流程模板");
+    expect(table).toContain("订单详情、客户、流程模板、设置");
+    expect(table).toContain("聚焦搜索框");
+    expect(table).toContain("订单列表");
+    expect(table).toContain("⌘ N");
+    expect(table).toContain("⌘ S");
+    expect(table).toContain("⌘ F");
+    expect(table).toContain("Esc");
+    // 不得出现未验证的 Windows 键位
+    expect(table).not.toContain("Ctrl");
+    expect(table).not.toContain("Cmd");
+  });
+
+  it("快捷键行为说明覆盖五条要点", async () => {
+    render(<AboutPage />);
+    const guides = await screen.findByRole("region", { name: "使用指引" });
+    const body = within(guides).getByText("快捷键与键盘操作").closest("details")!.textContent ?? "";
+    expect(body).toMatch(/只移动键盘光标，不会改变订单在队列里的顺序/);
+    expect(body).toMatch(/按 Enter 才会打开当前光标所在的订单/);
+    expect(body).toMatch(/⌘ S 只在存在未保存修改时执行保存/);
+    expect(body).toMatch(/Esc 按弹窗层级处理，只关最上面那一层/);
+    expect(body).toMatch(/输入框、文本域或下拉框里时，方向键与 Enter 只作用于输入内容/);
+  });
+
+  it("快捷键主题是第二个，排在快速开始之后", async () => {
+    render(<AboutPage />);
+    const guides = await screen.findByRole("region", { name: "使用指引" });
+    const titles = [...guides.querySelectorAll("summary")].map((s) => s.textContent);
+    expect(titles[0]).toBe("快速开始");
+    expect(titles[1]).toBe("快捷键与键盘操作");
+    expect(titles).toHaveLength(8);
+  });
+
+  it("使用指引不包含测试流程、预置数据与开发阶段编号", async () => {
+    render(<AboutPage />);
+    const guides = await screen.findByRole("region", { name: "使用指引" });
+    const text = guides.textContent ?? "";
+    for (const bad of ["DEV-", "预置场景", "预置数据", "验收", "自动化测试", "测试用例", "QA 测试环境"]) {
+      expect(text).not.toContain(bad);
+    }
+  });
+
+  it("功能模块说明同样不混入开发与测试内容", async () => {
+    render(<AboutPage />);
+    const modules = await screen.findByRole("region", { name: "功能模块" });
+    const text = modules.textContent ?? "";
+    for (const bad of ["DEV-", "预置", "验收", "测试数据"]) {
+      expect(text).not.toContain(bad);
+    }
+  });
+
+  it("保留专业术语：schema / generation / SQLite / WAL / CSV / 工作时区", async () => {
+    render(<AboutPage />);
+    await waitFor(() => expect(screen.getAllByText("gen-abc123def456").length).toBeGreaterThan(0));
+    const page = document.body.textContent ?? "";
+    for (const term of ["数据库结构版本", "数据代际", "SQLite", "日志模式", "工作时区"]) {
+      expect(page).toContain(term);
+    }
+    // CSV 只出现在功能模块的导出说明里
+    expect(page).toContain("CSV");
+  });
+
+  it("许可证改为「未设置公开许可证」，且不宣称任何开源协议", async () => {
+    render(<AboutPage />);
+    const owners = await screen.findByRole("region", { name: "开发与归属" });
+    expect(within(owners).getByText("未设置公开许可证")).toBeTruthy();
+    const text = owners.textContent ?? "";
+    for (const license of ["MIT", "Apache", "GPL", "BSD", "专有"]) {
+      expect(text).not.toContain(license);
+    }
+  });
+
+  it("QA 真实状态标识与数据环境字段未受影响", async () => {
+    render(<AboutPage />);
+    expect(await screen.findByTestId("qa-badge")).toBeTruthy();
+    const env = screen.getByRole("region", { name: "数据环境" });
+    expect(within(env).getByText(/QA 测试环境：数据目录与正式台账完全隔离/)).toBeTruthy();
+    expect(within(env).getByText("SQLite")).toBeTruthy();
+    expect(within(env).getByText("wal")).toBeTruthy();
+    expect(within(env).getByText("3.50.4")).toBeTruthy();
+    expect(within(env).getByText("AF-2026-0015")).toBeTruthy();
+    // 数据环境的真实状态不属于「用户指引」，仍然保留
+    expect(await screen.findByText(/QA 测试构建（预置场景）/)).toBeTruthy();
   });
 });
