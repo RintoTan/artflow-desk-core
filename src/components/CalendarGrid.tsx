@@ -34,6 +34,8 @@ type Props = {
   focused: DayIndex | null;
   /** +N 放日期行右侧（格宽够时），否则占独立底部行。 */
   topMore: boolean;
+  /** 图钉定位聚焦的订单：A 高亮、B 弱化其它条。 */
+  focusedOrderId: string | null;
   onOpenOrder: (id: string) => void;
   onReschedule: (order: OrderView) => void;
   onChipPointerDown: (payload: ChipDragStart) => void;
@@ -49,12 +51,14 @@ function tone(order: OrderView): string {
 function Chip({
   segment,
   previewed,
+  focusedOrderId,
   onOpenOrder,
   onReschedule,
   onChipPointerDown,
 }: {
   segment: Segment;
   previewed: boolean;
+  focusedOrderId: string | null;
   onOpenOrder: (id: string) => void;
   onReschedule: (order: OrderView) => void;
   onChipPointerDown: (payload: ChipDragStart) => void;
@@ -66,7 +70,7 @@ function Chip({
 
   return (
     <div
-      className="cal-seg"
+      className={`cal-seg${focusedOrderId === order.id ? " is-focus-target" : ""}`}
       style={{ gridColumn: `${segment.colStart + 1} / ${segment.colEnd + 2}`, gridRow: segment.lane + 2 }}
     >
     <button
@@ -156,6 +160,7 @@ export default function CalendarGrid({
   preview,
   focused,
   topMore,
+  focusedOrderId,
   onOpenOrder,
   onReschedule,
   onChipPointerDown,
@@ -218,6 +223,7 @@ export default function CalendarGrid({
       data-weeks={weeks.length}
       data-view={view}
       data-row-h={metrics.rowH}
+      data-focus-order={focusedOrderId ?? undefined}
       style={vars}
     >
       <div className="cal-weekdays" aria-hidden="true">
@@ -234,6 +240,7 @@ export default function CalendarGrid({
             key={week[0] ?? index}
             style={{ gridTemplateRows: templateRows }}
             data-row-h={metrics.rowH}
+            data-start={week[0]}
           >
             {week.map((day, col) => {
               const outside = !isSameMonth(day, anchor);
@@ -287,6 +294,7 @@ export default function CalendarGrid({
                 key={`${segment.order.id}-${index}`}
                 segment={segment}
                 previewed={preview?.orderId === segment.order.id}
+                focusedOrderId={focusedOrderId}
                 onOpenOrder={onOpenOrder}
                 onReschedule={onReschedule}
                 onChipPointerDown={onChipPointerDown}

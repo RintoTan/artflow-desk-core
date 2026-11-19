@@ -189,7 +189,7 @@ describe("订单显示", () => {
       order({ id: "a" }),
       order({ id: "none", code: "AF-2026-0002", title: "完全未排期", plannedStartDate: null, plannedDeliveryDate: null }),
     ]);
-    const pool = screen.getByLabelText("未排期订单");
+    const pool = screen.getByLabelText("订单导航");
     expect(within(pool).getByText("完全未排期")).toBeInTheDocument();
     const chips = [...document.querySelectorAll(".cal-chip")];
     expect(chips.map((c) => c.getAttribute("data-order-id"))).toEqual(["a"]);
@@ -237,14 +237,13 @@ describe("订单显示", () => {
     ]);
     // 默认关闭：终态不出现
     expect(document.querySelectorAll(".cal-chip")).toHaveLength(1);
-    expect(screen.queryByText("已结束且未排期")).not.toBeInTheDocument();
+    expect(screen.queryByText("已结束未排期")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("checkbox", { name: "显示已结束" }));
     const chip = document.querySelector<HTMLElement>('[data-order-id="done"]')!;
     expect(chip).toBeTruthy();
     expect(chip.className).toContain("is-terminal");
     expect(chip.getAttribute("data-mode")).toBe("none");
-    expect(screen.getByText("已结束且未排期")).toBeInTheDocument();
     expect(screen.getByText("已结束未排期")).toBeInTheDocument();
   });
 
@@ -262,7 +261,7 @@ describe("改期流程", () => {
     hoisted.updateOrderDetails.mockImplementation(async () => ipc(order()));
     await ready([order()]);
 
-    await user.click(screen.getByRole("button", { name: "为 AF-2026-0001 改期" }));
+    await user.click(within(screen.getByLabelText("订单导航")).getByRole("button", { name: "为 AF-2026-0001 改期" }));
     const dialog = await screen.findByRole("alertdialog");
     expect(within(dialog).getByText("改期确认")).toBeInTheDocument();
     expect(within(dialog).getByText("AF-2026-0001")).toBeInTheDocument();
@@ -297,7 +296,7 @@ describe("改期流程", () => {
   it("取消确认零写入", async () => {
     const user = userEvent.setup();
     await ready([order()]);
-    await user.click(screen.getByRole("button", { name: "为 AF-2026-0001 改期" }));
+    await user.click(within(screen.getByLabelText("订单导航")).getByRole("button", { name: "为 AF-2026-0001 改期" }));
     const dialog = await screen.findByRole("alertdialog");
     fireEvent.change(within(dialog).getByLabelText(/计划交付/), { target: { value: "2026-11-25" } });
     await user.click(within(dialog).getByRole("button", { name: "取消" }));
@@ -308,7 +307,7 @@ describe("改期流程", () => {
   it("开始晚于交付被拦在对话框里，不发请求", async () => {
     const user = userEvent.setup();
     await ready([order()]);
-    await user.click(screen.getByRole("button", { name: "为 AF-2026-0001 改期" }));
+    await user.click(within(screen.getByLabelText("订单导航")).getByRole("button", { name: "为 AF-2026-0001 改期" }));
     const dialog = await screen.findByRole("alertdialog");
     fireEvent.change(within(dialog).getByLabelText(/计划交付/), { target: { value: "2026-11-01" } });
     expect(within(dialog).getByText("计划交付日期不能早于计划开始日期")).toBeInTheDocument();
@@ -373,7 +372,7 @@ describe("改期流程", () => {
   it("清空一端后另一端保留", async () => {
     const user = userEvent.setup();
     await ready([order({ plannedStartDate: "2026-11-10", plannedDeliveryDate: "2026-11-14" })]);
-    await user.click(screen.getByRole("button", { name: "为 AF-2026-0001 改期" }));
+    await user.click(within(screen.getByLabelText("订单导航")).getByRole("button", { name: "为 AF-2026-0001 改期" }));
     const dialog = await screen.findByRole("alertdialog");
     const startInput = within(dialog).getByLabelText(/计划开始/) as HTMLInputElement;
     fireEvent.change(startInput, { target: { value: "" } });
@@ -389,7 +388,7 @@ describe("改期流程", () => {
     });
     await ready([order()]);
     const callsBefore = hoisted.listOrders.mock.calls.length;
-    await user.click(screen.getByRole("button", { name: "为 AF-2026-0001 改期" }));
+    await user.click(within(screen.getByLabelText("订单导航")).getByRole("button", { name: "为 AF-2026-0001 改期" }));
     const dialog = await screen.findByRole("alertdialog");
     fireEvent.change(within(dialog).getByLabelText(/计划交付/), { target: { value: "2026-11-28" } });
     await user.click(within(dialog).getByRole("button", { name: "确认改期" }));
@@ -509,7 +508,7 @@ describe("UI-06：未排期订单拖入日期格", () => {
     document.elementsFromPoint = (() => [cell]) as unknown as typeof document.elementsFromPoint;
 
     try {
-      const item = document.querySelector<HTMLElement>(".cal-pool-item")!;
+      const item = document.querySelector<HTMLElement>(".cal-rail-grip")!;
       fireEvent.pointerDown(item, { button: 0, clientX: 10, clientY: 10, pointerId: 7 });
       fireEvent.pointerMove(window, { clientX: 40, clientY: 40, pointerId: 7 });
       fireEvent.pointerMove(window, { clientX: 220, clientY: 220, pointerId: 7 });

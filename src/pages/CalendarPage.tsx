@@ -3,11 +3,10 @@ import { useNavigate } from "react-router-dom";
 
 import { api, describeError, isConflict, type OrderView } from "../bridge/commands";
 import CalendarGrid, { type ChipDragStart } from "../components/CalendarGrid";
+import OrderRail from "../components/OrderRail";
 import RescheduleDialog, { type ReschedulePlan } from "../components/RescheduleDialog";
 import {
   canReschedule,
-  compareUnscheduled,
-  dominantMonthDay,
   dropPlan,
   isTerminal,
   monthGridMetrics,
@@ -64,6 +63,12 @@ export default function CalendarPage() {
   const [viewportH, setViewportH] = useState(0);
   const [viewportW, setViewportW] = useState(0);
   const [showTerminal, setShowTerminal] = useState(false);
+  /** 左侧导航的搜索词（只影响左侧列表，不动日历）。 */
+  const [query, setQuery] = useState("");
+  /** 当前定位聚焦的订单（A+B 聚焦的 A）。 */
+  const [focusOrderId, setFocusOrderId] = useState<string | null>(null);
+  /** 左侧卡片的短暂高亮（未排期 / 无日期完成单定位时用）。 */
+  const [railFlash, setRailFlash] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -115,6 +120,16 @@ export default function CalendarPage() {
   }, [generation]);
 
   useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (dragRef.current !== null) return;  // 拖动中的 Esc 交给拖动自己的处理
+      setFocusOrderId(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
     const onFocus = () => setGeneration((n) => n + 1);
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
@@ -135,6 +150,8 @@ export default function CalendarPage() {
   const rowHRef = useRef(0);
   const prevRowHRef = useRef(0);
   const observedScrollRef = useRef<HTMLDivElement | null>(null);
+  /** 滚动处理的 rAF 句柄：一帧最多算一次。 */
+  const scrollFrameRef = useRef<number | null>(null);
   /** 上一帧的行高/视口/滚动位置：缩放时用它把视口中心钉在同一行。 */
   const lastFrameRef = useRef<{
     rowH: number;
@@ -410,13 +427,6 @@ export default function CalendarPage() {
   const active = orders.filter((order) => order.status === "active");
   const visible = showTerminal ? orders : active;
 
-  const unscheduledActive = orders
-    .filter((order) => order.status === "active" && orderSpan(order) === null)
-    .sort(compareUnscheduled);
-  const unscheduledTerminal = orders
-    .filter((order) => isTerminal(order) && orderSpan(order) === null)
-    .sort(compareUnscheduled);
-
   const previewRange = (() => {
     if (drag === null || !drag.armed) return null;
     if (drag.plan !== null) {
@@ -482,43 +492,99 @@ export default function CalendarPage() {
     }
   }
 
+  /** 滚动处理：每帧最多算一次，且完全按 DOM 里真实的可见行统计月份。 */
   function handleScroll() {
+    if (scrollFrameRef.current !== null) return;
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      applyScrollState();
+    });
+  }
+
+  function applyScrollState() {
     const el = scrollEl.current;
-    if (el === null || rangeStart === null || rowHRef.current === 0) return;
-    const rowH = rowHRef.current;
-    // 月份归属按"视口内可见格子的多数票"决定：跨月那一周里 6 天属于本月、
-    // 1 天属于下月时，标题不应该提前切到下个月。
-    const firstRow = Math.max(0, Math.floor(el.scrollTop / rowH));
-    const lastRow = Math.min(
-      rangeWeeks - 1,
-      Math.floor((el.scrollTop + Math.max(el.clientHeight - 1, 0)) / rowH),
-    );
-    // 只让"至少露出一半"的周行参与投票：贴在视口边上的半行不该决定整屏的月份
-    const visibleRows: DayIndex[][] = [];
-    for (let row = firstRow; row <= lastRow; row += 1) {
-      const top = row * rowH;
-      const overlap = Math.min(top + rowH, el.scrollTop + el.clientHeight) - Math.max(top, el.scrollTop);
-      if (overlap < rowH * 0.5) continue;
-      visibleRows.push(Array.from({ length: 7 }, (_, col) => rangeStart + row * 7 + col));
-    }
-    const winner = dominantMonthDay(visibleRows);
+    if (el === null) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.height <= 0) return;
+
+    // 月份归属：按"至少露出一半"的周行投票，每行投给它自己 7 天里占多数的月份。
+    // 不再用 scrollTop ÷ 行高反推算行号 —— 行高会随月份周数变化、窗口也会补/裁行，
+    // 那个换算一旦用了旧的 rangeStart 就会整个偏掉（之前“标题停在 8 月”的根因）。
+    const votes = new Map<number, { votes: number; day: DayIndex }>();
+    const rows = el.querySelectorAll<HTMLElement>(".cal-week");
+    rows.forEach((row) => {
+      const box = row.getBoundingClientRect();
+      const overlap = Math.min(box.bottom, rect.bottom) - Math.max(box.top, rect.top);
+      if (overlap < box.height * 0.5) return;
+      const start = Number(row.dataset.start);
+      if (!Number.isFinite(start) || start <= 0) return;
+      const perMonth = new Map<number, number>();
+      for (let i = 0; i < 7; i += 1) {
+        const key = monthKeyOf(start + i);
+        perMonth.set(key, (perMonth.get(key) ?? 0) + 1);
+      }
+      let bestKey = -1;
+      let bestCount = -1;
+      perMonth.forEach((count, key) => {
+        if (count > bestCount) {
+          bestKey = key;
+          bestCount = count;
+        }
+      });
+      const entry = votes.get(bestKey);
+      if (entry === undefined) votes.set(bestKey, { votes: 1, day: start });
+      else entry.votes += 1;
+    });
+
+    let winner: { votes: number; day: DayIndex } | null = null;
+    votes.forEach((entry) => {
+      if (winner === null || entry.votes > winner.votes) winner = entry;
+    });
     if (winner !== null) {
       const current = visibleAnchor ?? anchor;
-      if (current === null || monthKeyOf(winner) !== monthKeyOf(current)) setVisibleAnchor(winner);
+      if (current === null || monthKeyOf(current) !== monthKeyOf((winner as { day: DayIndex }).day)) {
+        setVisibleAnchor((winner as { day: DayIndex }).day);
+      }
     }
-    // 接近上下边界时提前补数据，滚动本身不中断
-    if (el.scrollTop < rowH * 4) extendWeeks("up");
-    else if (el.scrollTop + el.clientHeight > el.scrollHeight - rowH * 4) extendWeeks("down");
+
+    const rowH = rowHRef.current;
+    if (rowH > 0) {
+      if (el.scrollTop < rowH * 4) extendWeeks("up");
+      else if (el.scrollTop + el.clientHeight > el.scrollHeight - rowH * 4) extendWeeks("down");
+    }
   }
 
   /** 点击日期格：记录焦点；跨月时把当前可视月份切到那一天。 */
   function pickDay(day: DayIndex) {
+    setFocusOrderId(null);
     setFocusedDay(day);
     const base = visibleAnchor ?? anchor;
     if (base === null || monthKeyOf(day) !== monthKeyOf(base)) setVisibleAnchor(day);
   }
 
   /** 把某一天滚到视口（用于「今天」、月份跳转与视图切换）。 */
+  /** 图钉定位：已排期 → 滚到日期并 A+B 聚焦；未排期/无历史日期 → 定位左侧卡片。 */
+  function locateOrder(order: OrderView) {
+    if (focusOrderId === order.id) {
+      setFocusOrderId(null);
+      return;
+    }
+    const span = orderSpan(order);
+    if (span === null) {
+      setFocusOrderId(order.id);
+      setRailFlash(order.id);
+      window.setTimeout(() => setRailFlash((current) => (current === order.id ? null : current)), 1800);
+      return;
+    }
+    // 终态订单默认隐藏：定位时临时打开，但不改动用户开关状态以外的任何东西
+    if (isTerminal(order) && !showTerminal) setShowTerminal(true);
+    const target = span.from;
+    setFocusedDay(target);
+    if (view === "month") scrollToDay(target);
+    else setAnchor(target);
+    setFocusOrderId(order.id);
+  }
+
   function scrollToDay(day: DayIndex) {
     if (rangeStart === null) return;
     const needStart = weekStartOf(day) - 2 * 7;
@@ -546,6 +612,8 @@ export default function CalendarPage() {
   }
 
   function switchView(next: CalendarView) {
+    // 切换视图时清掉聚焦，避免把上一个视图的目标带到新视图
+    setFocusOrderId(null);
     if (next === "week") {
       // 月 → 周：停在当前可视日期所在的周
       if (visibleAnchor !== null) setAnchor(visibleAnchor);
@@ -597,85 +665,18 @@ export default function CalendarPage() {
       )}
 
       <div className="cal-body">
-        <aside className="cal-pool" aria-label="未排期订单">
-          <h3>
-            未排期订单 <span className="cal-count">{unscheduledActive.length}</span>
-          </h3>
-          {unscheduledActive.length === 0 ? (
-            <p className="cal-empty">所有活动订单都已排期。</p>
-          ) : (
-            <ul>
-              {unscheduledActive.map((order) => (
-                <li key={order.id}>
-                  <button
-                    type="button"
-                    className="cal-pool-item"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onPointerDown={(event) => {
-                      if (event.button !== 0) return;
-                      event.preventDefault();
-                      startDrag({ order, mode: "unscheduled", event });
-                    }}
-                    onClick={(event) => {
-                      if (event.detail === 0) openKeyboardDialog(order);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        openKeyboardDialog(order);
-                      }
-                    }}
-                  >
-                    <span className="mono">{order.code}</span>
-                    <strong>{order.title}</strong>
-                    <span className="cal-pool-sub">{order.clientName ?? "未关联客户"}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="cal-pool-reschedule"
-                    onClick={() => openKeyboardDialog(order)}
-                    aria-label={`为 ${order.code} 改期`}
-                  >
-                    改期
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {showTerminal && (
-            <section className="cal-pool-history">
-              <h3>
-                已结束且未排期 <span className="cal-count">{unscheduledTerminal.length}</span>
-              </h3>
-              {unscheduledTerminal.length === 0 ? (
-                <p className="cal-empty">没有。</p>
-              ) : (
-                <ul>
-                  {unscheduledTerminal.map((order) => (
-                    <li key={order.id}>
-                      <button
-                        type="button"
-                        className="cal-pool-item is-readonly"
-                        onClick={(event) => {
-                          if (event.detail === 0) return;
-                          navigate(`/orders?orderId=${order.id}`);
-                        }}
-                        title="已结束订单不可改期"
-                      >
-                        <span className="mono">{order.code}</span>
-                        <strong>{order.title}</strong>
-                        <span className="cal-pool-sub">
-                          {order.status === "complete" ? "已完成" : "已取消"}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          )}
-        </aside>
+        <OrderRail
+          orders={orders}
+          query={query}
+          onQuery={setQuery}
+          focusedOrderId={focusOrderId}
+          flashOrderId={railFlash}
+          showTerminal={showTerminal}
+          onOpenOrder={(order) => openOrder(order.id)}
+          onReschedule={openKeyboardDialog}
+          onLocate={locateOrder}
+          onDragStart={(order, event) => startDrag({ order, mode: orderSpan(order) === null ? "unscheduled" : "move", event })}
+        />
 
         <section className="cal-main" aria-label="日历">
           <div className="cal-toolbar">
@@ -721,6 +722,7 @@ export default function CalendarPage() {
             preview={previewRange}
             focused={focusedDay}
             topMore={topMore}
+            focusedOrderId={focusOrderId}
             onOpenOrder={openOrder}
             onReschedule={openKeyboardDialog}
             onChipPointerDown={startDrag}
