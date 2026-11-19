@@ -38,7 +38,7 @@ const NAV: NavItem[] = [
   { to: "/templates", label: "流程模板", icon: "templates" },
   { to: "/stats", label: "历史统计", icon: "stats" },
   { to: "/settings", label: "设置", icon: "settings" },
-  { to: "/status", label: "数据环境", icon: "status" },
+  { to: "/about", label: "关于软件", icon: "status" },
 ];
 
 /** 折叠后只剩图标，所以每个图标要能独立辨认，并配 title 提示。 */

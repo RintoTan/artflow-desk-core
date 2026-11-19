@@ -9,7 +9,7 @@ import OrdersPage from "./pages/OrdersPage";
 import StatsPage from "./pages/StatsPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import SettingsPage from "./pages/SettingsPage";
-import StatusPage from "./pages/StatusPage";
+import AboutPage from "./pages/AboutPage";
 import "./styles.css";
 
 const router = createHashRouter([
@@ -18,7 +18,9 @@ const router = createHashRouter([
     element: <App />,
     children: [
       { index: true, element: <DashboardPage /> },
-      { path: "status", element: <StatusPage /> },
+      { path: "about", element: <AboutPage /> },
+      // 旧入口保留跳转，避免历史链接失效
+      { path: "status", element: <AboutPage /> },
       { path: "stats", element: <StatsPage /> },
       { path: "orders", element: <OrdersPage /> },
       { path: "calendar", element: <CalendarPage /> },

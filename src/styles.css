@@ -7291,3 +7291,141 @@ dl.stat-row {
 .maintenance-confirm p {
   margin: 0;
 }
+
+/* ---------------------------------------------------------------- 关于软件 */
+
+.about-page {
+  display: grid;
+  gap: 14px;
+}
+
+.about-intro {
+  margin: 0 0 8px;
+  font-size: 13.5px;
+  line-height: 1.65;
+  max-width: 74ch;
+}
+
+.about-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.about-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 18px;
+}
+
+.about-fact {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.about-fact-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.about-fact-value {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.about-modules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.about-module {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-alt);
+  padding: 10px 12px;
+}
+
+.about-module h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.about-module-summary {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.about-module ul,
+.about-guide ul {
+  margin: 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.about-guides {
+  display: grid;
+  gap: 6px;
+}
+
+.about-guide {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-alt);
+  padding: 0 12px;
+}
+
+.about-guide > summary {
+  cursor: pointer;
+  padding: 9px 0;
+  font-size: 12.5px;
+  font-weight: 560;
+  list-style: none;
+}
+
+.about-guide > summary::marker,
+.about-guide > summary::-webkit-details-marker {
+  display: none;
+}
+
+.about-guide > summary::before {
+  content: "＋";
+  display: inline-block;
+  width: 16px;
+  color: var(--text-muted);
+}
+
+.about-guide[open] > summary::before {
+  content: "－";
+}
+
+.about-guide ul {
+  padding-bottom: 10px;
+}
+
+.about-qa-note {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-active);
+  background: var(--accent-soft);
+  font-size: 12.5px;
+}
+
+.about-sub {
+  margin: 16px 0 4px;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.about-error {
+  margin: 0 0 6px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
