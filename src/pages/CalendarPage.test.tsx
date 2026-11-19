@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OrderView } from "../bridge/commands";
+import { parseDayKey } from "../lib/scheduleBar";
 import { weekdayIndex } from "../lib/timeline";
 import CalendarPage from "./CalendarPage";
 
@@ -425,5 +426,100 @@ describe("数据加载", () => {
     await user.click(screen.getByRole("button", { name: "刷新" }));
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/刷新失败/));
     expect(document.querySelectorAll(".cal-chip").length).toBeGreaterThan(0);
+  });
+});
+
+describe("UI-06：+N 浮层与日期格交互", () => {
+  const overlap = ["01", "02", "03", "04"].map((n) =>
+    order({
+      id: `o${n}`,
+      code: `AF-2026-00${n}`,
+      title: `订单 ${n}`,
+      plannedStartDate: "2026-11-18",
+      plannedDeliveryDate: "2026-11-18",
+    }),
+  );
+
+  it("再次点击同一个 +N 关闭，点日历其它地方也关闭", async () => {
+    await ready(overlap);
+    const more = document.querySelector<HTMLElement>(".cal-more")!;
+    fireEvent.click(more, { detail: 1 });
+    expect(await screen.findByRole("dialog", { name: /2026-11-18 的订单/ })).toBeInTheDocument();
+
+    fireEvent.click(more, { detail: 1 });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: /2026-11-18 的订单/ })).not.toBeInTheDocument(),
+    );
+
+    fireEvent.click(more, { detail: 1 });
+    expect(await screen.findByRole("dialog", { name: /2026-11-18 的订单/ })).toBeInTheDocument();
+    fireEvent.pointerDown(document.querySelector(".cal-title")!);
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: /2026-11-18 的订单/ })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("按 Esc 关闭浮层", async () => {
+    await ready(overlap);
+    fireEvent.click(document.querySelector<HTMLElement>(".cal-more")!, { detail: 1 });
+    const popover = await screen.findByRole("dialog", { name: /2026-11-18 的订单/ });
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: /2026-11-18 的订单/ })).not.toBeInTheDocument(),
+    );
+    expect(popover).toBeTruthy();
+  });
+
+  it("点击浮层内部不关闭", async () => {
+    await ready(overlap);
+    fireEvent.click(document.querySelector<HTMLElement>(".cal-more")!, { detail: 1 });
+    const popover = await screen.findByRole("dialog", { name: /2026-11-18 的订单/ });
+    fireEvent.pointerDown(popover);
+    expect(screen.getByRole("dialog", { name: /2026-11-18 的订单/ })).toBeInTheDocument();
+  });
+
+  it("点击非当月日期：焦点落在该格并把月份切过去", async () => {
+    await ready([order()]);
+    const outside = [...document.querySelectorAll<HTMLElement>(".cal-day-bg")].find(
+      (cell) => cell.dataset.outside === "1" && Number(cell.dataset.day) > parseDayKey("2026-11-30")!,
+    )!;
+    expect(outside).toBeTruthy();
+    fireEvent.click(outside, { detail: 1 });
+    await waitFor(() => expect(screen.getByText("2026 年 12 月")).toBeInTheDocument());
+    const same = document.querySelector<HTMLElement>(`.cal-day-bg[data-day="${outside.dataset.day}"]`)!;
+    expect(same.dataset.focus).toBe("1");
+  });
+});
+
+describe("UI-06：未排期订单拖入日期格", () => {
+  it("松手直接开确认框，默认把落点写进交付日期", async () => {
+    await ready([
+      order({
+        id: "none",
+        code: "AF-2026-0002",
+        title: "完全未排期",
+        plannedStartDate: null,
+        plannedDeliveryDate: null,
+      }),
+    ]);
+    const target = parseDayKey("2026-12-18")!;
+    const cell = document.querySelector<HTMLElement>(`.cal-day-bg[data-day="${target}"]`)!;
+    // jsdom 没有 elementsFromPoint：按落点返回目标格
+    const original = document.elementsFromPoint;
+    document.elementsFromPoint = (() => [cell]) as unknown as typeof document.elementsFromPoint;
+
+    try {
+      const item = document.querySelector<HTMLElement>(".cal-pool-item")!;
+      fireEvent.pointerDown(item, { button: 0, clientX: 10, clientY: 10, pointerId: 7 });
+      fireEvent.pointerMove(window, { clientX: 40, clientY: 40, pointerId: 7 });
+      fireEvent.pointerMove(window, { clientX: 220, clientY: 220, pointerId: 7 });
+      fireEvent.pointerUp(window, { clientX: 220, clientY: 220, pointerId: 7 });
+
+      const dialog = await screen.findByRole("alertdialog");
+      expect((within(dialog).getByLabelText(/计划交付/) as HTMLInputElement).value).toBe("2026-12-18");
+      expect((within(dialog).getByLabelText(/计划开始/) as HTMLInputElement).value).toBe("");
+    } finally {
+      document.elementsFromPoint = original;
+    }
   });
 });

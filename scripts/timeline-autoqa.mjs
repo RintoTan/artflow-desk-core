@@ -835,6 +835,47 @@ async function main() {
 
   results.screenshots.tip = { hover: shotTip, mark: shotMark, keyboard: shotKeyboard };
 
+  // ---------------- D：订单跳转目标（浏览器侧只验 href 与 ID 对应关系）
+  // 真点击跳转由组件测试覆盖：本脚本的夹具只喂工作台需要的命令，
+  // 直接进 /orders 会因缺少订单页数据回退，不能拿它当"跳转失败"。
+  const navTargets = await evaluate(
+    send,
+    `(() => {
+      // 信息列和轨道是两个兄弟容器，链接在 .timeline-info-col 里
+      const scheduled = [...document.querySelectorAll(".timeline-info[data-order-id]")].map((link) => ({
+        id: link.dataset.orderId,
+        href: link.getAttribute("href"),
+        title: link.getAttribute("title"),
+        text: (link.querySelector(".timeline-title")?.textContent || "").slice(0, 12),
+      }));
+      const unscheduled = [...document.querySelectorAll(".timeline-unscheduled a")].map((a) => ({
+        href: a.getAttribute("href"),
+        text: (a.textContent || "").trim().slice(0, 40),
+      }));
+      return { scheduled, unscheduled };
+    })()`,
+  );
+  results.measurements.navigation = navTargets;
+
+  check(
+    "每条轨道行都指向 /orders?orderId=<自身 id>",
+    navTargets.scheduled.length > 0 &&
+      navTargets.scheduled.every((row) => row.href === `/orders?orderId=${row.id}`),
+    navTargets.scheduled.map((r) => r.href).join(" | "),
+  );
+  check(
+    "完全未排期订单同样有可跳转链接且带真实 id",
+    navTargets.unscheduled.length > 0 &&
+      navTargets.unscheduled.every((row) => /^\/orders\?orderId=[^&]+$/.test(row.href || "")),
+    navTargets.unscheduled.map((r) => `${r.text} → ${r.href}`).join(" | "),
+  );
+  check(
+    "跳转用的是订单 id 而不是编号",
+    navTargets.scheduled.every((row) => !(row.href || "").includes("AF-")) &&
+      navTargets.unscheduled.every((row) => !(row.href || "").includes("AF-")),
+    `行 id 示例：${navTargets.scheduled[0]?.id ?? "-"}`,
+  );
+
   // 提示不能吃鼠标事件，也不能改变排期图形本身的命中目标。
   // 真实跳转由组件测试覆盖（jsdom + MemoryRouter）：本脚本的夹具只喂了工作台
   // 需要的命令，直接导航到 /orders 会因缺少订单页数据而回退，不能当作产品缺陷。

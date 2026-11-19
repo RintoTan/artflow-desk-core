@@ -7,14 +7,18 @@ import RescheduleDialog, { type ReschedulePlan } from "../components/RescheduleD
 import {
   canReschedule,
   compareUnscheduled,
+  dominantMonthDay,
   dropPlan,
   isTerminal,
+  monthGridMetrics,
+  monthKeyOf,
   monthTitle,
   orderSpan,
   rescheduleInput,
   shiftMonth,
   shiftWeek,
   weekDays,
+  weekGridMetrics,
   weekStartOf,
   weekTitle,
   type CalendarView,
@@ -51,8 +55,12 @@ export default function CalendarPage() {
   /** 连续周行的起点（某周周一）与总周数；滚动到边界时向两侧扩展。 */
   const [rangeStart, setRangeStart] = useState<DayIndex | null>(null);
   const [rangeWeeks, setRangeWeeks] = useState(29);
-  /** 当前可视中心日期所属月份，用于月份标题与当月着色。 */
+  /** 当前可视范围内占格最多的月份，用于月份标题与当月着色。 */
   const [visibleAnchor, setVisibleAnchor] = useState<DayIndex | null>(null);
+  /** 点击过的日期（非当月日期也照样可点）。 */
+  const [focusedDay, setFocusedDay] = useState<DayIndex | null>(null);
+  /** 日历可视高度：行高按它分配，窗口变化时跟着变。 */
+  const [viewportH, setViewportH] = useState(0);
   const [showTerminal, setShowTerminal] = useState(false);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [dialog, setDialog] = useState<DialogState | null>(null);
@@ -123,6 +131,9 @@ export default function CalendarPage() {
   }, [today]);
 
   const rowHRef = useRef(0);
+  const prevRowHRef = useRef(0);
+  const observedScrollRef = useRef<HTMLDivElement | null>(null);
+  const viewportObserverRef = useRef<ResizeObserver | null>(null);
   const prependRef = useRef(0);
   const scrollTargetRef = useRef<DayIndex | null>(null);
   const scrollEl = useRef<HTMLDivElement | null>(null);
@@ -133,7 +144,18 @@ export default function CalendarPage() {
     const el = scrollEl.current;
     const first = el?.querySelector<HTMLElement>(".cal-week");
     if (!el || !first) return;
-    rowHRef.current = first.getBoundingClientRect().height || rowHRef.current;
+    const measured = first.getBoundingClientRect().height || 0;
+    if (measured > 0 && prevRowHRef.current > 0 && Math.abs(measured - prevRowHRef.current) > 0.5) {
+      // 窗口尺寸变化让行高变了：按"视口中心的那一行"折算 scrollTop，
+      // 否则行高一变，视口内容就会整体平移。
+      const centerRow = (el.scrollTop + el.clientHeight / 2) / prevRowHRef.current;
+      rowHRef.current = measured;
+      prevRowHRef.current = measured;
+      el.scrollTop = Math.max(0, centerRow * measured - el.clientHeight / 2);
+    } else if (measured > 0) {
+      rowHRef.current = measured;
+      prevRowHRef.current = measured;
+    }
     if (prependRef.current > 0) {
       // 向上补日期时把新增高度补给 scrollTop，视口内容保持不动
       el.scrollTop += prependRef.current * rowHRef.current;
@@ -151,6 +173,26 @@ export default function CalendarPage() {
       scrollTargetRef.current = null;
       setVisibleAnchor(target);
     }
+  });
+
+  /**
+   * 跟踪日历可视高度：月视图行高按它分配，订单数量不参与。
+   *
+   * 首次渲染时还在"正在读取订单"的分支里，`.cal-scroll` 尚未挂载，
+   * 所以这里不用依赖数组，每次渲染检查一次挂载元素是否换了。
+   */
+  useLayoutEffect(() => {
+    const el = scrollEl.current;
+    if (el === null) return;
+    if (observedScrollRef.current === el) return;
+    observedScrollRef.current = el;
+    const update = () => setViewportH(el.clientHeight);
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    viewportObserverRef.current?.disconnect();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    viewportObserverRef.current = observer;
   });
 
   // 拖放：在 window 上收尾，不用 setPointerCapture（会吞 click）
@@ -179,7 +221,14 @@ export default function CalendarPage() {
         setDrag((prev) => (prev === null ? prev : { ...prev, targetDay: null, plan: null, blocked: null }));
         return;
       }
-      const plan = dropPlan(drag.order, day, drag.mode);
+      // 未排期订单拖进格子：默认写交付日期（与「改期」默认预填交付一致），
+      // 两个字段都会带进确认框，用户可以再改或清空。
+      const plan = dropPlan(
+        drag.order,
+        day,
+        drag.mode,
+        drag.mode === "unscheduled" ? "delivery" : undefined,
+      );
       setDrag((prev) =>
         prev === null
           ? prev
@@ -344,6 +393,7 @@ export default function CalendarPage() {
 
   const monthAnchor = view === "month" ? (visibleAnchor ?? anchor) : anchor;
   const title = view === "month" ? monthTitle(monthAnchor) : weekTitle(anchor);
+  const metrics = view === "month" ? monthGridMetrics(viewportH) : weekGridMetrics();
 
   /** 距离今天最多往回 / 往前各 60 周，超出就不再扩，避免 DOM 无限增长。 */
   const MAX_BACK_WEEKS = 60;
@@ -369,12 +419,36 @@ export default function CalendarPage() {
     const el = scrollEl.current;
     if (el === null || rangeStart === null || rowHRef.current === 0) return;
     const rowH = rowHRef.current;
-    const index = Math.floor((el.scrollTop + el.clientHeight / 2) / rowH);
-    const clamped = Math.max(0, Math.min(rangeWeeks - 1, index));
-    setVisibleAnchor(rangeStart + clamped * 7 + 3);
+    // 月份归属按"视口内可见格子的多数票"决定：跨月那一周里 6 天属于本月、
+    // 1 天属于下月时，标题不应该提前切到下个月。
+    const firstRow = Math.max(0, Math.floor(el.scrollTop / rowH));
+    const lastRow = Math.min(
+      rangeWeeks - 1,
+      Math.floor((el.scrollTop + Math.max(el.clientHeight - 1, 0)) / rowH),
+    );
+    // 只让"至少露出一半"的周行参与投票：贴在视口边上的半行不该决定整屏的月份
+    const visibleRows: DayIndex[][] = [];
+    for (let row = firstRow; row <= lastRow; row += 1) {
+      const top = row * rowH;
+      const overlap = Math.min(top + rowH, el.scrollTop + el.clientHeight) - Math.max(top, el.scrollTop);
+      if (overlap < rowH * 0.5) continue;
+      visibleRows.push(Array.from({ length: 7 }, (_, col) => rangeStart + row * 7 + col));
+    }
+    const winner = dominantMonthDay(visibleRows);
+    if (winner !== null) {
+      const current = visibleAnchor ?? anchor;
+      if (current === null || monthKeyOf(winner) !== monthKeyOf(current)) setVisibleAnchor(winner);
+    }
     // 接近上下边界时提前补数据，滚动本身不中断
     if (el.scrollTop < rowH * 4) extendWeeks("up");
     else if (el.scrollTop + el.clientHeight > el.scrollHeight - rowH * 4) extendWeeks("down");
+  }
+
+  /** 点击日期格：记录焦点；跨月时把当前可视月份切到那一天。 */
+  function pickDay(day: DayIndex) {
+    setFocusedDay(day);
+    const base = visibleAnchor ?? anchor;
+    if (base === null || monthKeyOf(day) !== monthKeyOf(base)) setVisibleAnchor(day);
   }
 
   /** 把某一天滚到视口（用于「今天」、月份跳转与视图切换）。 */
@@ -551,6 +625,7 @@ export default function CalendarPage() {
                 className="cal-today"
                 onClick={() => {
                   setAnchor(today);
+                  setFocusedDay(today);
                   if (view === "month") scrollToDay(today);
                   else setAnchor(today);
                 }}
@@ -575,10 +650,13 @@ export default function CalendarPage() {
             today={today}
             weeks={weeks}
             orders={visible}
+            metrics={metrics}
             preview={previewRange}
+            focused={focusedDay}
             onOpenOrder={openOrder}
             onReschedule={openKeyboardDialog}
             onChipPointerDown={startDrag}
+            onPickDay={pickDay}
           />
           </div>
 

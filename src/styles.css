@@ -5224,6 +5224,8 @@ dl.stat-row {
 
 .cal-day-num {
   grid-row: 1;
+  position: relative;
+  z-index: 2;
   padding: 3px 7px 1px;
   font-size: 11px;
   color: var(--text-muted);
@@ -5348,7 +5350,11 @@ dl.stat-row {
 .cal-chip.tone-cancelled { color: var(--text-muted); background: var(--neutral-soft); border-color: var(--border); }
 
 .cal-more {
-  margin: 0 3px 2px;
+  /* 今天格与非当月格带 opacity，会形成层叠上下文并把格子背景画在普通流内容之上；
+     没有定位与 z-index 时 +N 会被那层背景盖住 —— 视觉上可见，鼠标却点不到。 */
+  position: relative;
+  z-index: 3;
+  margin: 0 3px 1px;
   align-self: end;
   justify-self: start;
   font-size: 10.5px;
@@ -5696,7 +5702,7 @@ dl.stat-row {
 
 .cal-day-num {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 3px;
   padding: 4px 6px 2px;
   font-size: 11.5px;
@@ -6372,4 +6378,44 @@ dl.stat-row {
 /* 连续滚动时，周行沿用统一行高，保证 scrollTop 与周序号线性对应 */
 .cal-view-month .cal-week {
   --cal-week-row: auto;
+}
+
+/* ---------------------------------------------------------------- DEV-06D-3-UI-06 网格与命中修复 */
+/*
+ * 只做三件事：
+ *   1) 日期格可以点（选中日期 → 更新焦点与可视月份），但格子本身不进 Tab 顺序；
+ *   2) 焦点框用绝对定位的环，不受格子 opacity 影响；
+ *   3) 行高由页面按视口算好写进 gridTemplateRows，订单条与 +N 不参与撑高。
+ */
+.cal-day-bg {
+  cursor: pointer;
+}
+
+.cal-day-bg[data-focus="1"] {
+  background: var(--accent-soft);
+}
+
+.cal-focus-ring {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0.6;
+}
+
+.cal-day-num[data-focus="1"] .cal-day-pill {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* 订单条与折叠入口都按各自轨道垂直居中，轨道高度变化不改变内容尺寸 */
+.cal-seg {
+  align-self: center;
+}
+
+.cal-chip {
+  max-height: 19px;
 }

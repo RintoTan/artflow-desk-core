@@ -22,6 +22,99 @@ export const MONTH_CELLS = MONTH_ROWS * 7;
 /** 月视图每周 3 条轨道，周视图每周 6 条。 */
 export const LANES: Record<CalendarView, number> = { month: 3, week: 6 };
 
+/**
+ * 网格行度量（单位 px）。
+ *
+ * 每个月行都由三段固定组成：日期数字行 + N 条订单轨道 + 折叠行。
+ * 订单条与 +N 只在自己的轨道里排布，永远不会改变格子的高度。
+ */
+export type GridMetrics = {
+  /** 日期数字行高。 */
+  numH: number;
+  /** 单条订单轨道高。 */
+  laneH: number;
+  /** 折叠行高（+N）。 */
+  moreH: number;
+  /** 整行高度 = numH + laneH × 轨道数 + moreH。 */
+  rowH: number;
+};
+
+/** 日期数字行：27px 的今天圆环 + 上下留白。 */
+export const NUM_ROW_H = 32;
+/** 折叠行：容得下 18px 的 +N 胶囊。 */
+export const MORE_ROW_H = 20;
+/** 单条订单轨道的最小高度（19px 的订单条 + 呼吸）。 */
+export const LANE_MIN_H = 22;
+/** 行高上限：再高只会拉长空白，不会让内容更好读。 */
+export const ROW_MAX_H = 168;
+
+function metricsFor(lanes: number, numH: number, moreH: number, rowH: number): GridMetrics {
+  const laneH = Math.max(LANE_MIN_H, Math.floor((rowH - numH - moreH) / lanes));
+  return { numH, laneH, moreH, rowH: numH + laneH * lanes + moreH };
+}
+
+/**
+ * 月视图行高：按日历可视高度分配，预算按 6 周计 ——
+ * 任何一个月（4 / 5 / 6 周）都能在同一个行高下完整放下，
+ * 所以连续滚动跨月时行高恒定，视口不会跳动。
+ */
+export function monthGridMetrics(available: number): GridMetrics {
+  const lanes = LANES.month;
+  const base = NUM_ROW_H + MORE_ROW_H + lanes * LANE_MIN_H;
+  const target = available > 0 ? Math.floor(available / MONTH_ROWS) : base;
+  return metricsFor(lanes, NUM_ROW_H, MORE_ROW_H, Math.max(base, Math.min(ROW_MAX_H, target)));
+}
+
+/** 周视图保持自己的独立密度：6 条轨道、不加高。 */
+export function weekGridMetrics(): GridMetrics {
+  const lanes = LANES.week;
+  return metricsFor(lanes, NUM_ROW_H, MORE_ROW_H, NUM_ROW_H + MORE_ROW_H + lanes * LANE_MIN_H);
+}
+
+/** 该天所属月份的序号（年 × 12 + 月），用于月份归属比较。 */
+export function monthKeyOf(day: DayIndex): number {
+  const c = civilFromDays(day);
+  return c.year * 12 + (c.month - 1);
+}
+
+/**
+ * 视口内月份归属：**每一行投一票**，投给该行 7 天里占多数的那个月，
+ * 得票最多的月份胜出（平票取更早出现的那一行），返回它的第一个可见日。
+ *
+ * 为什么按行而不按格：跨月那一周是 6 天新月 + 1 天旧月，
+ * 按格投票时，小窗口下只要它露出来就会把整屏的月份抢过去；
+ * 按行投票等于问"屏幕上主体是几个星期几月"，和眼睛看到的一致。
+ */
+export function dominantMonthDay(rows: DayIndex[][]): DayIndex | null {
+  const rowVotes = new Map<number, { votes: number; first: DayIndex }>();
+  for (const row of rows) {
+    if (row.length === 0) continue;
+    const perMonth = new Map<number, number>();
+    for (const day of row) {
+      const key = monthKeyOf(day);
+      perMonth.set(key, (perMonth.get(key) ?? 0) + 1);
+    }
+    let winnerKey: number | null = null;
+    let winnerCount = -1;
+    for (const [key, count] of perMonth) {
+      if (count > winnerCount) {
+        winnerKey = key;
+        winnerCount = count;
+      }
+    }
+    if (winnerKey === null) continue;
+    const first = row.find((day) => monthKeyOf(day) === winnerKey) ?? row[0]!;
+    const entry = rowVotes.get(winnerKey);
+    if (entry === undefined) rowVotes.set(winnerKey, { votes: 1, first });
+    else entry.votes += 1;
+  }
+  let best: { votes: number; first: DayIndex } | null = null;
+  for (const entry of rowVotes.values()) {
+    if (best === null || entry.votes > best.votes) best = entry;
+  }
+  return best === null ? null : best.first;
+}
+
 /** 该天所在周的周一（与时间线共用 `WEEK_START_OFFSET`）。 */
 export function weekStartOf(day: DayIndex): DayIndex {
   const offset = (weekdayIndex(day) - WEEK_START_OFFSET + 7) % 7;

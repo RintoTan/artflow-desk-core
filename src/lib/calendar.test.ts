@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import type { OrderView } from "../bridge/commands";
-import { parseDayKey } from "./scheduleBar";
+import { civilFromDays, parseDayKey } from "./scheduleBar";
+import {
+  LANE_MIN_H,
+  MORE_ROW_H,
+  NUM_ROW_H,
+  dominantMonthDay,
+  monthGridMetrics,
+  weekGridMetrics,
+} from "./calendar";
 import {
   LANES,
   MONTH_CELLS,
@@ -372,5 +380,75 @@ describe("未排期池排序", () => {
     const b = order({ id: "b", code: "AF-0001", createdAt: "2026-11-01T00:00:00.000Z" });
     const c = order({ id: "c", code: "AF-0000", createdAt: "2026-11-02T00:00:00.000Z" });
     expect([a, b, c].sort(compareUnscheduled).map((o) => o.id)).toEqual(["b", "c", "a"]);
+  });
+});
+
+describe("月视图网格度量", () => {
+  it("行高随可视高度增加，但不超过上限", () => {
+    const small = monthGridMetrics(560);
+    const large = monthGridMetrics(1000);
+    const huge = monthGridMetrics(4000);
+    expect(small.rowH).toBeLessThanOrEqual(large.rowH);
+    expect(large.rowH).toBeGreaterThan(small.rowH);
+    expect(huge.rowH).toBeLessThanOrEqual(168);
+  });
+
+  it("矮窗口回落到最小行高，不会把内容压扁", () => {
+    const tiny = monthGridMetrics(0);
+    expect(tiny.rowH).toBe(NUM_ROW_H + MORE_ROW_H + LANES.month * LANE_MIN_H);
+    expect(tiny.laneH).toBe(LANE_MIN_H);
+  });
+
+  it("行高恰好等于三段之和，轨道永远不小于最小高度", () => {
+    for (const available of [0, 300, 560, 720, 900, 1100, 2000]) {
+      const m = monthGridMetrics(available);
+      expect(m.rowH).toBe(m.numH + m.laneH * LANES.month + m.moreH);
+      expect(m.laneH).toBeGreaterThanOrEqual(LANE_MIN_H);
+    }
+  });
+
+  it("6 个整行能放进可视高度时，行高预算按 6 周算", () => {
+    const m = monthGridMetrics(6 * 118);
+    expect(m.rowH).toBeGreaterThanOrEqual(118);
+    expect(m.rowH * 6).toBeLessThanOrEqual(6 * 118 + 1);
+  });
+
+  it("周视图度量与月视图解耦（6 条轨道）", () => {
+    const week = weekGridMetrics();
+    expect(week.laneH).toBe(LANE_MIN_H);
+    expect(week.rowH).toBe(NUM_ROW_H + MORE_ROW_H + LANES.week * LANE_MIN_H);
+  });
+});
+
+describe("月份归属投票", () => {
+  const row = (...days: number[]) => days;
+
+  it("11 月末那一周里有 1 天属于 12 月时，整行仍算 11 月", () => {
+    const nov30 = day("2026-11-30");
+    const rows = [
+      row(nov30 - 7, ...Array.from({ length: 6 }, (_, i) => nov30 - 7 + 1 + i)),
+      row(nov30, ...Array.from({ length: 6 }, (_, i) => nov30 + 1 + i)),
+    ];
+    // 第一行整体是 11 月，第二行是 6 天 12 月 + 1 天 11 月 → 1:1 平票取更早的行
+    const winner = dominantMonthDay(rows);
+    expect(winner).not.toBeNull();
+    expect(civilFromDays(winner!).month).toBe(11);
+  });
+
+  it("整屏都是下个月时才会切到下个月", () => {
+    const dec7 = day("2026-12-07");
+    const rows = [0, 1, 2].map((i) => Array.from({ length: 7 }, (_, c) => dec7 + i * 7 + c));
+    const winner = dominantMonthDay(rows);
+    expect(civilFromDays(winner!).month).toBe(12);
+  });
+
+  it("跨年：12 月与次年 1 月各自独立计票", () => {
+    const jan4 = day("2027-01-04");
+    const rows = [0, 1].map((i) => Array.from({ length: 7 }, (_, c) => jan4 + i * 7 + c));
+    expect(civilFromDays(dominantMonthDay(rows)!).year).toBe(2027);
+  });
+
+  it("没有任何可见行时返回 null", () => {
+    expect(dominantMonthDay([])).toBeNull();
   });
 });

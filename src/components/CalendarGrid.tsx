@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { OrderView } from "../bridge/commands";
 import { civilFromDays, formatDayKey, type DayIndex } from "../lib/scheduleBar";
 import {
-  LANES,
   isSameMonth,
+  LANES,
   layoutWeek,
   type CalendarView,
   type DropMode,
+  type GridMetrics,
   type Segment,
 } from "../lib/calendar";
 
@@ -26,11 +27,16 @@ type Props = {
   today: DayIndex;
   weeks: DayIndex[][];
   orders: OrderView[];
+  /** 日期格度量：三段行高由页面按视口算出，订单数量不参与。 */
+  metrics: GridMetrics;
   /** 选中的订单：原位置保留为参考（虚线幽灵），目标位置画预览条。 */
   preview: { orderId: string; from: DayIndex; to: DayIndex; valid: boolean } | null;
+  /** 点击过（或当前聚焦）的日期。 */
+  focused: DayIndex | null;
   onOpenOrder: (id: string) => void;
   onReschedule: (order: OrderView) => void;
   onChipPointerDown: (payload: ChipDragStart) => void;
+  onPickDay: (day: DayIndex) => void;
 };
 
 function tone(order: OrderView): string {
@@ -145,27 +151,56 @@ export default function CalendarGrid({
   today,
   weeks,
   orders,
+  metrics,
   preview,
+  focused,
   onOpenOrder,
   onReschedule,
   onChipPointerDown,
+  onPickDay,
 }: Props) {
-  const maxLanes = LANES[view];
+  const laneCount = LANES[view];
   const layouts = useMemo(
-    () => weeks.map((week) => layoutWeek(orders, week[0] ?? 0, maxLanes)),
-    [weeks, orders, maxLanes],
+    () => weeks.map((week) => layoutWeek(orders, week[0] ?? 0, laneCount)),
+    [weeks, orders, laneCount],
   );
 
   const [more, setMore] = useState<{ day: DayIndex; orders: OrderView[]; x: number; y: number } | null>(
     null,
   );
 
+  const closeMore = useCallback(() => setMore(null), []);
+
   useEffect(() => {
     if (more === null) return;
-    const close = () => setMore(null);
-    window.addEventListener("scroll", close, true);
-    return () => window.removeEventListener("scroll", close, true);
-  }, [more]);
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      // 浮层内部：交给它自己的按钮处理，不在这里关闭
+      if (target.closest(".cal-popover") !== null) return;
+      // +N 自身：由它的 click 负责"开/关/切换"，避免先关再开
+      if (target.closest(".cal-more") !== null) return;
+      closeMore();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        closeMore();
+      }
+    };
+    // 浮层是 position: fixed 的，跟随滚动会脱离锚点，所以滚动即关闭
+    const onScroll = () => closeMore();
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [more, closeMore]);
+
+  const templateRows = `${metrics.numH}px repeat(${laneCount}, ${metrics.laneH}px) ${metrics.moreH}px`;
 
   return (
     <div className={`cal-grid cal-view-${view}`} data-weeks={weeks.length} data-view={view}>
@@ -176,30 +211,43 @@ export default function CalendarGrid({
       </div>
 
       {weeks.map((week, index) => {
-        const layout = layouts[index] ?? layoutWeek([], week[0] ?? 0, maxLanes);
+        const layout = layouts[index] ?? layoutWeek([], week[0] ?? 0, laneCount);
         return (
           <div
             className="cal-week"
             key={week[0] ?? index}
-            style={{ gridTemplateRows: `auto repeat(${maxLanes}, 22px) 18px` }}
+            style={{ gridTemplateRows: templateRows }}
+            data-row-h={metrics.rowH}
           >
-            {week.map((day, col) => (
-              <div
-                key={`bg-${day}`}
-                className="cal-day-bg"
-                data-day={day}
-                data-today={day === today ? "1" : undefined}
-                data-outside={isSameMonth(day, anchor) ? undefined : "1"}
-                data-preview={
-                  preview !== null && day >= preview.from && day <= preview.to
-                    ? preview.valid
-                      ? "1"
-                      : "invalid"
-                    : undefined
-                }
-                style={{ gridColumn: col + 1 }}
-              />
-            ))}
+            {week.map((day, col) => {
+              const outside = !isSameMonth(day, anchor);
+              return (
+                <div
+                  key={`bg-${day}`}
+                  className="cal-day-bg"
+                  data-day={day}
+                  data-today={day === today ? "1" : undefined}
+                  data-outside={outside ? "1" : undefined}
+                  data-focus={day === focused ? "1" : undefined}
+                  data-preview={
+                    preview !== null && day >= preview.from && day <= preview.to
+                      ? preview.valid
+                        ? "1"
+                        : "invalid"
+                      : undefined
+                  }
+                  role="gridcell"
+                  aria-label={formatDayKey(day)}
+                  aria-selected={day === focused ? true : undefined}
+                  style={{ gridColumn: col + 1 }}
+                  onClick={(event) => {
+                    // 拖动收尾那一下不算"选中日期"，避免拖完顺手改焦点
+                    if (event.detail === 0) return;
+                    onPickDay(day);
+                  }}
+                />
+              );
+            })}
             {week.map((day, col) => {
               const d = civilFromDays(day);
               const isToday = day === today;
@@ -209,6 +257,8 @@ export default function CalendarGrid({
                   className={`cal-day-num${isToday ? " is-today" : ""}`}
                   style={{ gridColumn: col + 1 }}
                   data-outside={isSameMonth(day, anchor) ? undefined : "1"}
+                  data-focus={day === focused ? "1" : undefined}
+                  aria-hidden="true"
                 >
                   {d.day === 1 && <span className="cal-day-month">{d.month} 月</span>}
                   <span className="cal-day-pill">{d.day}</span>
@@ -246,20 +296,47 @@ export default function CalendarGrid({
                 );
               })()}
 
+            {focused !== null && week[0] !== undefined && focused >= week[0] && focused <= week[0] + 6 && (
+              <div
+                className="cal-focus-ring"
+                aria-hidden="true"
+                style={{
+                  left: `${((focused - week[0]) / 7) * 100}%`,
+                  width: `${100 / 7}%`,
+                }}
+              />
+            )}
+
             {week.map((day, col) => {
               const hidden = layout.hidden.get(day);
               if (!hidden || hidden.length === 0) return null;
+              const open = more !== null && more.day === day;
               return (
                 <button
                   key={`more-${day}`}
                   type="button"
                   className="cal-more"
-                  style={{ gridColumn: col + 1, gridRow: maxLanes + 2 }}
+                  style={{ gridColumn: col + 1, gridRow: laneCount + 2 }}
+                  aria-expanded={open}
+                  aria-label={`${formatDayKey(day)} 还有 ${hidden.length} 笔订单`}
+                  // 按下不抢焦点：聚焦会触发 WebKit 把按钮滚进视口，
+                  // 滚动事件会立刻把刚开的浮层关掉（原生窗口里表现为"点了没反应"）。
+                  onMouseDown={(event) => event.preventDefault()}
                   onClick={(event) => {
+                    if (open) {
+                      closeMore();
+                      return;
+                    }
                     const rect = event.currentTarget.getBoundingClientRect();
-                    // 浮层宽 300、最高 320：贴边时要往回收，避免跑出视口
+                    // 浮层宽 300、最高 320：贴边时要往回收，避免跑出视口。
+                    // 下方放不下就翻到按钮上方 —— 否则浮层会盖住 +N 本身，
+                    // 再点同一个 +N 就变成了"点在浮层里"，关了又像没反应。
                     const x = Math.max(8, Math.min(rect.left, window.innerWidth - 308));
-                    const y = Math.max(8, Math.min(rect.bottom, window.innerHeight - 328));
+                    const below = rect.bottom + 4;
+                    const y =
+                      below + 328 <= window.innerHeight - 8
+                        ? below
+                        : Math.max(8, rect.top - 328 - 4);
                     setMore({ day, orders: hidden, x, y });
                   }}
                 >
@@ -273,10 +350,15 @@ export default function CalendarGrid({
 
       {more !== null &&
         createPortal(
-          <div className="cal-popover" role="dialog" aria-label={`${formatDayKey(more.day)} 的订单`} style={{ left: more.x, top: more.y }}>
+          <div
+            className="cal-popover"
+            role="dialog"
+            aria-label={`${formatDayKey(more.day)} 的订单`}
+            style={{ left: more.x, top: more.y }}
+          >
             <header>
               <strong>{formatDayKey(more.day)}</strong>
-              <button type="button" onClick={() => setMore(null)} aria-label="关闭">
+              <button type="button" onClick={closeMore} aria-label="关闭">
                 ×
               </button>
             </header>
@@ -291,13 +373,19 @@ export default function CalendarGrid({
                     </span>
                   </div>
                   <div className="cal-popover-actions">
-                    <button type="button" onClick={() => onOpenOrder(order.id)}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closeMore();
+                        onOpenOrder(order.id);
+                      }}
+                    >
                       详情
                     </button>
                     <button
                       type="button"
                       onClick={() => {
-                        setMore(null);
+                        closeMore();
                         onReschedule(order);
                       }}
                       disabled={order.status !== "active"}
