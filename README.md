@@ -1,67 +1,119 @@
-# ArtFlow Desk Core
+# ArtFlow Desk Core · 画师助手
 
-面向单画师的本地优先桌面委托管理工具。数据完全保存在本机，不依赖云同步、在线账号或客户网页。
+> 面向独立画师的本地优先桌面委托管理工具。
+> A local-first commission management desktop app for independent artists.
 
-> 产品名：**ArtFlow Desk Core**（2026-11-17 由 ArtFlow miniDesk 更名）。
-> 应用标识仍为 `dev.artflow.minidesk`，数据目录、数据库与编号规则均未改变。
+![工作台](docs/assets/screenshots/01-dashboard.png)
 
-- 桌面外壳：Tauri 2（macOS / Windows）
-- 前端：React 19 + TypeScript + Vite
-- 数据：Rust + rusqlite（SQLite），所有 SQL 集中在 Rust 侧
-- 应用标识：`dev.artflow.minidesk`
+## 这是什么
 
-## 当前状态
+ArtFlow Desk Core 是一款为独立画师设计的桌面委托管理工具，把订单、客户、制作流程、交付排期和数据管理收在一个清晰的工作空间里，减少来回翻聊天记录和表格的时间。
 
-**DEV-01 已完成：正式工程骨架与数据基座。**
+- **本地优先**：所有数据存在你自己的电脑上，不依赖云同步，客户也不需要注册账号。
+- **单画师工作流**：从接单、排期、画到第几阶段、什么时候交付，一条线走完。
+- **可迁移**：数据可整体导出为备份包，换电脑时带走即可。
 
-已实现：
+> Web 端 ArtFlow Desk 与桌面端 ArtFlow Desk Core 属于同一产品体系下的两个独立产品：工程、数据与发布相互独立，不共享数据库。本仓库只包含桌面端。
 
-- 单一业务数据库（订单、订单阶段、生命周期事件、客户、模板、附件元数据、清理任务、主题、设置）
-- 可演进的 schema 迁移链（v1），升级在隔离数据代际执行，验证后才切换指针
-- 订单编号 `AF-YYYY-NNNN`：独立年度高水位，恢复旧备份不回退，删除不复用
-- 持久工作时区（IANA）：改时区不改已保存的时间点
-- 跨进程数据目录独占锁，第二个进程返回 `BUSY`
-- 启动自检：严格区分"真正首次启动"与"数据环境异常"
-- 最小正式窗口（Arctic Blue 基线）+ 环境状态页 + 可用的工作时区设置
+## 界面
 
-**尚未实现**（见 `docs/DEV-CONVENTIONS.md` 与各页面标注）：
+| 订单列表 | 订单详情与制作阶段 |
+| --- | --- |
+| ![订单列表](docs/assets/screenshots/02-orders.png) | ![订单详情](docs/assets/screenshots/03-order-detail.png) |
 
-订单列表与详情、制作流程推进/返工/开工、客户管理、模板管理、队列排序、
-工作台统计、CSV 导出、主题编辑器、附件导入与图片查看器、
-完整备份与恢复、Windows 构建。
+| 日历排期 | 数据备份与恢复 |
+| --- | --- |
+| ![日历](docs/assets/screenshots/04-calendar.png) | ![备份](docs/assets/screenshots/07-backup.png) |
 
-这不是 v1.0 的可交付版本。
+| 关于软件 | 使用指引 |
+| --- | --- |
+| ![关于](docs/assets/screenshots/05-about.png) | ![指引](docs/assets/screenshots/06-guide.png) |
+
+截图来自 QA 测试环境（虚构数据），非真实客户信息。
+
+## 核心功能
+
+- **工作台**：进行中/排队中/制作中订单计数，三日内到期、今天到期、已逾期的交付提醒，本月完成次数，跨订单项目时间线。
+- **订单管理**：卡片 / 看板 / 表格三种视图；新建、编辑、复制、取消；队列排序；制作阶段推进、返工与跳级；完整制作历史。
+- **客户管理**：客户资料与标签，订单可关联客户并下钻查看该客户的全部委托。
+- **流程模板**：自定义制作阶段模板，新订单按模板生成自己的阶段副本，改模板不影响已有订单的历史。
+- **日历排期**：月视图 / 周视图，按计划起止日期铺排，拖动或选日期即可改期，改期写入排期历史。
+- **历史统计**：按月查看完成情况与收入分布，客户/模板维度下钻，按当前筛选导出 CSV。
+- **附件管理**：参考图片多选导入、拖拽导入、缩略图与原图预览；隔离文件与导入记录可手动维护。
+- **数据备份与恢复**：整库快照 + 附件 + 校验清单打包成 ZIP；恢复前自动安全快照，全程在隔离代际里完成。
+- **系统设置**：主题（浅色 / 深色 / 跟随系统）、强调色、应用图标、工作时区、备份与附件维护。
+
+## 视觉体系
+
+- **Arctic Blue**：默认浅色主题，冷调、低饱和，长时间看不累。
+- **Arctic Line**：图标与应用图标的线条语言。
+- **Orbit / Layers / Wave**：三套可切换的应用图标主题。
+
+## 支持平台
+
+| 平台 | 状态 | 说明 |
+| --- | --- | --- |
+| macOS 13.0+ (Apple Silicon) | Demo 可用 | ad-hoc 签名，未公证 |
+| Windows 10 1809+ / 11 (x64) | CI 构建 | 需 Windows 实机验收 |
+
+## 下载 Demo
+
+见 [Releases](../../releases) 页。每次 Demo 都会附带 `SHA256SUMS.txt`。
+
+- **正式版**（`ArtFlow Desk Core`）：用你自己的真实数据，标识 `dev.artflow.minidesk`。
+- **QA 版**（`ArtFlow Desk Core QA`）：演示与试玩用，标识 `dev.artflow.minidesk.qa`，数据与正式版完全隔离。
+
+> 当前版本**未做 Apple Developer ID 签名与公证**，macOS 首次打开需「右键 → 打开」；Windows 首次运行会有 SmartScreen 提示。这不是缺陷，是尚未配置签名证书。
+
+## 安装与首次启动
+
+- macOS：[用户手册](docs/user-guide/macOS-USER-GUIDE.md)
+- Windows：[用户手册](docs/user-guide/Windows-USER-GUIDE.md)
+
+## 数据与隐私
+
+- 数据默认位置：macOS `~/Library/Application Support/dev.artflow.minidesk`；Windows `%APPDATA%\dev.artflow.minidesk`。
+- 不联网、不上传、不集成任何第三方分析或云服务。
+- 备份包**未加密**，内含客户与订单信息，请妥善保存。
+
+详见 [SECURITY-AND-PRIVACY.md](docs/architecture/SECURITY-AND-PRIVACY.md)。
+
+## 项目文档
+
+| 入口 | 内容 |
+| --- | --- |
+| [docs/README.md](docs/README.md) | 文档总索引 |
+| [产品概览](docs/product/PRODUCT-OVERVIEW.md) | 定位、用户、边界 |
+| [功能地图](docs/product/FEATURE-MAP.md) | 每个功能模块的实际能力 |
+| [路线图](docs/product/PRODUCT-ROADMAP.md) | 已完成 / 进行中 / 暂缓 |
+| [产品决策](docs/product/PRODUCT-DECISIONS.md) | 关键取舍与理由 |
+| [系统架构](docs/architecture/SYSTEM-OVERVIEW.md) | 技术栈与模块划分 |
+| [数据架构](docs/architecture/DATA-ARCHITECTURE.md) | 代际、迁移、备份格式 |
+| [已知限制](docs/releases/KNOWN-LIMITATIONS.md) | 当前版本的边界 |
 
 ## 开发
 
 ```bash
-npm install
-npm run tauri dev      # 启动桌面应用（开发模式）
-npm run typecheck      # TypeScript 类型检查
-npm run build          # 前端生产构建
-cd src-tauri && cargo test   # Rust 测试（含真实双进程锁测试）
+npm ci
+npm run tauri dev            # 开发模式
+npm run tauri build          # 本机构建
+npx tauri build --config src-tauri/tauri.qa.conf.json  # QA 版
 ```
 
-## 数据目录
+测试：`cargo test --manifest-path src-tauri/Cargo.toml`、`npx vitest run`、`npx tsc --noEmit`。
 
-macOS：`~/Library/Application Support/dev.artflow.minidesk/`
+Windows 构建见 [.github/workflows/windows-build.yml](.github/workflows/windows-build.yml)（GitHub Actions 手动触发）。
 
-```text
-environment.json        环境标记（区分首次启动与数据异常）
-.write.lock             跨进程独占锁
-state/
-  active.json           活动数据代际指针
-  highwater.sqlite      年度编号高水位（独立于业务代际）
-generations/
-  gen-<id>/
-    database.sqlite     唯一业务数据库
-    attachments/originals/   原图
-    attachments/thumbs/      缩略图缓存
-backups/                本地备份产物
-recovery/state.json     未完成的恢复/升级事务
-```
+## 开发者与版权
 
-## 文档
+| 项目 | 信息 |
+| --- | --- |
+| 开发者 | RINTO |
+| 维护者 | RINTO |
+| 版权所有者 | RINTO |
+| 所属产品体系 | ArtFlow Desk |
 
-- [开发规范](docs/DEV-CONVENTIONS.md)
-- [技术实验归档](docs/tv/README.md)：TV-01～TV-03.5 的实验结论，**不是**正式功能验收
+## 许可证
+
+**尚未指定公开许可证。** 仓库中不包含 LICENSE 文件，也不代表以任何开源协议授权使用、分发或修改。
+如需授权，请联系版权所有者 RINTO。

@@ -352,7 +352,9 @@
   /* ------------------------------------------------------------ 容器响应 */
   @container workspace (max-width: 900px) {
     #timelinePanel { --info-w: 236px; }
-    .tl-legend .legend-text { display: none; }
+    /* 图例文字保留，只收紧间距与字号；不靠"只剩色块"表达含义 */
+    .tl-legend { gap: 8px; font-size: 10.5px; }
+    .tl-legend i { width: 12px; height: 7px; margin-right: 3px; }
   }
   @container workspace (max-width: 640px) {
     #timelinePanel { --info-w: 178px; --row-h: 52px; }
@@ -361,6 +363,7 @@
     .tl-bar { top: 18px; }
     .tl-mark { top: 22px; }
     .metric-hint { display: none; }
+    .tl-legend { gap: 6px; font-size: 10px; }
     .metric-card { padding: 9px 11px; }
     .metric-value { font-size: 20px; }
   }
@@ -405,6 +408,61 @@
     color: var(--text);
     background: var(--surface);
   }
+
+  /* ------------------------------------------------------------ 滚动条状态板 */
+  .sb-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 10px; }
+  .sb-card {
+    margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: linear-gradient(180deg, var(--surface), var(--surface-alt));
+    display: grid; grid-template-columns: minmax(0, 1fr) 26px; gap: 10px; align-items: stretch;
+  }
+  .sb-card figcaption { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .sb-card figcaption strong { font-size: 12px; }
+  .sb-card figcaption span { font-size: 10.5px; color: var(--text-muted); line-height: 1.35; }
+  .sb-track {
+    position: relative; width: 26px; border-radius: 999px; overflow: hidden;
+    background: var(--surface); border: 1px dashed var(--border-strong);
+  }
+  .sb-card[data-state="dragging"] .sb-track { background: color-mix(in srgb, var(--accent) 7%, var(--surface-alt)); }
+  .sb-thumb {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    width: 4px; height: 34px; border-radius: 999px;
+    background: rgba(44, 111, 181, 0.14);
+  }
+  .theme-dark .sb-thumb { background: rgba(90, 167, 234, 0.16); }
+  .sb-card[data-state="hover"] .sb-thumb { width: 6px; background: rgba(44, 111, 181, 0.32); }
+  .theme-dark .sb-card[data-state="hover"] .sb-thumb { background: rgba(90, 167, 234, 0.34); }
+  .sb-card[data-state="scrolling"] .sb-thumb { width: 10px; background: rgba(44, 111, 181, 0.55); }
+  .theme-dark .sb-card[data-state="scrolling"] .sb-thumb { background: rgba(90, 167, 234, 0.58); }
+  .sb-card[data-state="dragging"] .sb-thumb { width: 10px; background: rgba(44, 111, 181, 0.74); }
+  .theme-dark .sb-card[data-state="dragging"] .sb-thumb { background: rgba(90, 167, 234, 0.78); }
+
+  .sb-live { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+  /* 容器本身不声明任何滚动条样式；两套策略各自独立成类，互不继承。 */
+  .sb-live-box {
+    height: 168px; overflow-y: auto; padding: 10px 12px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border); background: var(--surface);
+  }
+  .sb-live-box p { margin: 0 0 6px; font-size: 11.5px; }
+  .sb-live-box p:first-child { font-weight: 600; font-size: 12px; }
+  .theme-dark.sb-live-box { color-scheme: dark; }
+
+  /* macOS 策略：一个 scrollbar-* 声明都不写，交给系统 overlay。 */
+  .sb-native { /* 有意留空：此处禁止出现 scrollbar-width / scrollbar-color */ }
+
+  /* Windows 策略：只用标准属性。不写 ::-webkit-scrollbar，
+     因为标准属性非 auto 时 UA 会忽略伪元素，混用会得到"看似没生效"的结果。
+     因此本样例不承诺任何固定像素宽度。 */
+  .sb-win {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(44, 111, 181, 0.42) transparent;
+  }
+
+  .sb-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  .sb-table th, .sb-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .sb-table th { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+  .sb-table code { font-family: "SF Mono", ui-monospace, monospace; font-size: 10.5px; }
+
 </style>
 </head>
 <body>
@@ -507,12 +565,12 @@
 
         <div class="tl-meta">
           <div class="tl-range" id="rangeLabel">—</div>
-          <div class="tl-legend" aria-hidden="true">
-            <span><i style="background:#a9cdec;border:1px solid rgba(28,74,120,.28)"></i><span class="legend-text">按排期</span></span>
-            <span><i style="background:#f5e5c4;border:1px solid #d8bd8a"></i><span class="legend-text">三日内</span></span>
-            <span><i style="background:#f6d7a8;border:1px solid #d2a45f"></i><span class="legend-text">今天到期</span></span>
-            <span><i style="background:#f0c3ba;border:1px solid #cf9184"></i><span class="legend-text">已逾期</span></span>
-            <span><i style="background:#e9eef3;border:1px dashed #b9c7d5"></i><span class="legend-text">已结束</span></span>
+          <div class="tl-legend" role="list" aria-label="排期状态图例">
+            <span role="listitem"><i style="background:#a9cdec;border:1px solid rgba(28,74,120,.28)"></i><span class="legend-text">按排期</span></span>
+            <span role="listitem"><i style="background:#f5e5c4;border:1px solid #d8bd8a"></i><span class="legend-text">三日内</span></span>
+            <span role="listitem"><i style="background:#f6d7a8;border:1px solid #d2a45f"></i><span class="legend-text">今天到期</span></span>
+            <span role="listitem"><i style="background:#f0c3ba;border:1px solid #cf9184"></i><span class="legend-text">已逾期</span></span>
+            <span role="listitem"><i style="background:#e9eef3;border:1px dashed #b9c7d5"></i><span class="legend-text">已结束</span></span>
           </div>
           <label class="tl-toggle">
             <input type="checkbox" id="showTerminal" /> 显示已结束
@@ -921,6 +979,11 @@ function rowGeometry(order, win, scale, today) {
   };
 
   const $ = (id) => document.getElementById(id);
+
+  // ?container=900 把主内容容器固定为该宽度（padding 归零），用于区分
+  // "视口 900px → 主内容容器 clientWidth 649px（含 60px 水平内边距），内容盒 589px"
+  // 与 "容器本身 900px" 两种情形。
+  const containerParam = Number(params.get("container")) || 0;
   const esc = (value) =>
     String(value == null ? "" : value).replace(/[&<>"']/g, (ch) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
@@ -1246,32 +1309,42 @@ function rowGeometry(order, win, scale, today) {
           <p>目标：不抢内容的注意力，但永不"永久隐藏"。四种状态 × 两套主题。</p></div>
           <span class="badge">设计稿 · 未实施</span></header>
 
-        <h3 style="margin:6px 0 8px;font-size:13px">状态定义（浅色 / Arctic Blue）</h3>
+        <h3 style="margin:6px 0 8px;font-size:13px">状态定义 · 浅色 / Arctic Blue</h3>
+        <p class="hint" style="margin:0 0 8px">
+          以下四张卡片是<strong>静态视觉规范示意</strong>：尺寸与颜色是设计基线，由 HTML/CSS 绘制，
+          不是浏览器滚动条的真实渲染，也不是交互实测。
+        </p>
         <div id="sbLight" class="sb-board"></div>
 
-        <h3 style="margin:22px 0 8px;font-size:13px">状态定义（深色）</h3>
+        <h3 style="margin:22px 0 8px;font-size:13px">状态定义 · 深色</h3>
         <div id="sbDark" class="sb-board theme-dark"></div>
 
-        <h3 style="margin:22px 0 8px;font-size:13px">平台分治：同一段内容，两种策略</h3>
+        <h3 style="margin:22px 0 8px;font-size:13px">平台分治：同一段内容，两种策略（CSS 实际渲染 · Blink 无头，非目标平台）</h3>
+        <p class="hint" style="margin:-2px 0 8px">
+          这一组是真实的 <code>overflow-y:auto</code> 容器：左两栏<strong>不写任何滚动条样式</strong>，
+          右一栏只用标准属性。可以看到的实际效果仅代表 macOS Chromium；
+          WKWebView / WebView2 的真实表现仍是 NOT RUN。
+        </p>
         <div class="sb-live">
-          <div class="sb-live-box" id="liveLight" tabindex="0" aria-label="macOS 策略：不改滚动条样式">
-            <p>macOS · 不改样式（系统 overlay）</p>
+          <div class="sb-live-box sb-native" id="liveLight" tabindex="0" aria-label="macOS 策略：不改滚动条样式">
+            <p>macOS · 不写任何滚动条样式（系统 overlay）</p>
             ${Array.from({ length: 12 }, (_, i) => `<p class="muted">第 ${i + 1} 行示例内容；滚动时才会出现系统滚动条。</p>`).join("")}
           </div>
-          <div class="sb-live-box theme-dark" id="liveDark" tabindex="0" aria-label="深色主题：不改样式">
+          <div class="sb-live-box sb-native theme-dark" id="liveDark" tabindex="0" aria-label="深色主题：不改样式">
             <p>深色 · 不改样式（系统 overlay）</p>
             ${Array.from({ length: 12 }, (_, i) => `<p class="muted">第 ${i + 1} 行示例内容；深色下由 color-scheme 决定拇指颜色。</p>`).join("")}
           </div>
-          <div class="sb-live-box is-win" tabindex="0" aria-label="Windows 策略：10px 细轨道">
-            <p>Windows 近似 · 10px 细轨道（Blink 渲染）</p>
-            ${Array.from({ length: 12 }, (_, i) => `<p class="muted">第 ${i + 1} 行示例内容；Windows 本来就占位，定制不损失 overlay。</p>`).join("")}
+          <div class="sb-live-box sb-win" id="liveWin" tabindex="0" aria-label="Windows 策略：标准属性 thin + 颜色">
+            <p>Windows · <code>scrollbar-width:thin</code> + <code>scrollbar-color</code></p>
+            ${Array.from({ length: 12 }, (_, i) => `<p class="muted">第 ${i + 1} 行示例内容；宽度由系统 thin 决定，未承诺 10px。</p>`).join("")}
           </div>
         </div>
         <p class="hint" id="sbDiag">—</p>
         <p class="hint">
           <strong>实测结论：</strong>macOS Chromium 下只要设置 <code>scrollbar-color</code>（或 <code>::-webkit-scrollbar</code>），
-          overlay 滚动条就会变成常驻占位（本次实测 15px，<code>offsetWidth − clientWidth = 0</code> 变成 15）。
-          因此本方案按平台分治：macOS 保持原样，Windows 才做细轨道定制。
+          overlay 滚动条就会变成常驻占位。占位宽度按容器边框分开记：
+          <code>滚动条 = offsetWidth − clientWidth − borderLeft − borderRight</code>。
+          上一轮报告里的 15 与 17 不是矛盾，而是两个不同测量对象（见下方诊断与 04 §3）。
         </p>
       </section>
 
@@ -1296,7 +1369,7 @@ function rowGeometry(order, win, scale, today) {
       { state: "静止", note: "拇指 4px · 14% 不透明，轨道透明；不滚动 600ms 后回到这一档", pos: 30, on: "idle" },
       { state: "悬停", note: "拇指 6px · 32% 不透明，轨道保持透明", pos: 40, on: "hover" },
       { state: "滚动中", note: "拇指 10px · 55% 不透明，滚动停止 600ms 后回落到悬停档", pos: 56, on: "scrolling" },
-      { state: "拖动", note: "拇指 10px · 74% 不透明，轨道 6% 底色；命中区 12px", pos: 68, on: "dragging" },
+      { state: "拖动", note: "拇指 10px · 74% 不透明，轨道 6% 底色；拖动命中区由系统决定（未实测）", pos: 68, on: "dragging" },
     ];
     const boardHtml = () => boards.map((b) => `
       <figure class="sb-card" data-state="${b.on}">
@@ -1306,13 +1379,40 @@ function rowGeometry(order, win, scale, today) {
     $("sbLight").innerHTML = boardHtml();
     $("sbDark").innerHTML = boardHtml();
 
+    /** 滚动条占位必须减掉边框：offsetWidth 含 border，clientWidth 不含。 */
+    const measure = (el) => {
+      const cs = getComputedStyle(el);
+      const border = parseFloat(cs.borderLeftWidth || "0") + parseFloat(cs.borderRightWidth || "0");
+      return {
+        id: el.id || el.className,
+        offsetWidth: el.offsetWidth,
+        clientWidth: el.clientWidth,
+        borderX: border,
+        scrollbar: Math.max(0, el.offsetWidth - el.clientWidth - border),
+        computedScrollbarWidth: cs.scrollbarWidth || "(unsupported)",
+        computedScrollbarColor: cs.scrollbarColor || "(unsupported)",
+        scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight,
+      };
+    };
+
     const diag = () => {
-      const el = $("liveLight");
-      const gutter = el.offsetWidth - el.clientWidth;
-      const inner = window.innerWidth - document.documentElement.clientWidth;
+      const samples = ["liveLight", "liveDark", "liveWin"].map((id) => measure($(id)));
+      const page = {
+        innerWidth: window.innerWidth,
+        docClientWidth: document.documentElement.clientWidth,
+        pageScrollbar: window.innerWidth - document.documentElement.clientWidth,
+      };
+      const fmt = (m) => `${m.id}：滚动条 ${m.scrollbar}px（offset ${m.offsetWidth} − client ${m.clientWidth} − 边框 ${m.borderX}）· computed width=${m.computedScrollbarWidth} · color=${m.computedScrollbarColor}`;
       $("sbDiag").textContent =
-        `实测：样例容器占位 ${gutter}px（0 = overlay 滚动条，>0 = 经典滚动条）；` +
-        `页面级占位 ${inner}px；平台 ${navigator.platform}；devicePixelRatio ${window.devicePixelRatio}`;
+        `${fmt(samples[0])} ｜ ${fmt(samples[1])} ｜ ${fmt(samples[2])} ｜ ` +
+        `页面级：innerWidth ${page.innerWidth}，documentElement.clientWidth ${page.docClientWidth}，` +
+        `占位 ${page.pageScrollbar}px · devicePixelRatio ${window.devicePixelRatio} · ${navigator.platform}`;
+      const pre = document.createElement("pre");
+      pre.id = "sbdiag-json";
+      pre.textContent = JSON.stringify({ samples, page, dpr: window.devicePixelRatio, ua: navigator.userAgent }, null, 1);
+      pre.style.cssText = "position:absolute;left:-99999px";
+      document.body.appendChild(pre);
     };
     diag();
     window.addEventListener("resize", diag);
@@ -1475,11 +1575,99 @@ function rowGeometry(order, win, scale, today) {
     })();
     check("条形左端 = 同一坐标系的 dayToX(11-10)", Math.abs(barX - tickX) < 0.01, `${barX} vs ${tickX}`);
 
+    // 容器与图例：视口宽度 ≠ 容器宽度，两者都要能测
+    const mainInner = $("mainInner");
+    const sidebarW = document.querySelector(".sidebar").getBoundingClientRect().width;
+    const csMain = getComputedStyle(mainInner);
+    const padInline = parseFloat(csMain.paddingLeft || "0") + parseFloat(csMain.paddingRight || "0");
+    // clientWidth 含 padding；容器查询量的是内容盒，所以两者要分开算。
+    const pageScroll = window.innerWidth - document.documentElement.clientWidth;
+    const expectedContainer = containerParam || Math.round(window.innerWidth - sidebarW - pageScroll);
+    check("主区容器 clientWidth = 视口 − 侧栏 − 页面滚动条（或 ?container 指定值）",
+      Math.abs(mainInner.clientWidth - expectedContainer) <= 1,
+      `${mainInner.clientWidth} vs ${expectedContainer}（视口 ${window.innerWidth}，侧栏 ${sidebarW}，页面滚动条 ${pageScroll}）`);
+
+    const cw = Math.round(mainInner.clientWidth - padInline);
+    const expectedInfo = cw <= 640 ? 178 : cw <= 900 ? 236 : 300;
+    const infoVar = parseInt(getComputedStyle($("timelinePanel")).getPropertyValue("--info-w"), 10);
+    check("信息列宽度按容器宽度分档", infoVar === expectedInfo, `${infoVar} vs ${expectedInfo}（容器 ${cw}）`);
+
+    const frameRect = $("tlFrame").getBoundingClientRect();
+    const infoRect = document.querySelector(".tl-left").getBoundingClientRect();
+    const trackRect = $("trackScroll").getBoundingClientRect();
+    check("信息列 + 轨道 + 分隔线 = 时间线框宽",
+      Math.abs(infoRect.width + trackRect.width + 1 - frameRect.width) <= 1,
+      `${infoRect.width}+${trackRect.width}+1 vs ${frameRect.width}`);
+
+    const legendTexts = [...document.querySelectorAll(".tl-legend .legend-text")];
+    check("图例文字在窄容器下仍然可见",
+      legendTexts.length === 5 && legendTexts.every((n) => n.offsetWidth > 0 && n.offsetHeight > 0),
+      `可见 ${legendTexts.filter((n) => n.offsetWidth > 0).length}/${legendTexts.length}`);
+
+    const trackCS = getComputedStyle($("trackScroll"));
+    check("时间线轨道没有作者设置的滚动条样式",
+      ["auto", ""].includes(trackCS.scrollbarWidth) && ["auto", ""].includes(trackCS.scrollbarColor),
+      `width=${trackCS.scrollbarWidth} color=${trackCS.scrollbarColor}`);
+
     const el = $("selftest");
     el.textContent = `SELFTEST ${fail === 0 ? "OK" : "FAILED"} · pass=${pass} fail=${fail}\n${out.join("\n")}`;
     el.hidden = false;
     el.style.cssText = "position:absolute;left:-99999px;top:0";
     document.body.dataset.selftest = fail === 0 ? "ok" : "failed";
+  }
+
+  /** 状态板专项审计：作用域是否真的分离（R1 / R2）。 */
+  function runBoardAudit() {
+    const out = [];
+    let pass = 0;
+    let fail = 0;
+    const check = (name, condition, detail) => {
+      if (condition) { pass++; out.push(`PASS ${name}`); }
+      else { fail++; out.push(`FAIL ${name}${detail ? ` — ${detail}` : ""}`); }
+    };
+    const cs = (id) => getComputedStyle($(id));
+    const nativeWidth = cs("liveLight").scrollbarWidth;
+    const nativeColor = cs("liveLight").scrollbarColor;
+    const darkWidth = cs("liveDark").scrollbarWidth;
+    const darkColor = cs("liveDark").scrollbarColor;
+    const winWidth = cs("liveWin").scrollbarWidth;
+    const winColor = cs("liveWin").scrollbarColor;
+
+    check("原生样例（浅）computed 无滚动条定制",
+      ["auto", ""].includes(nativeWidth) && ["auto", ""].includes(nativeColor),
+      `width=${nativeWidth} color=${nativeColor}`);
+    check("原生样例（深）computed 无滚动条定制",
+      ["auto", ""].includes(darkWidth) && ["auto", ""].includes(darkColor),
+      `width=${darkWidth} color=${darkColor}`);
+    check("Windows 样例使用 scrollbar-width: thin", winWidth === "thin", String(winWidth));
+    check("Windows 样例的 scrollbar-color 不是 auto",
+      Boolean(winColor) && winColor !== "auto", String(winColor));
+
+    let webkitRules = 0;
+    for (const sheet of document.styleSheets) {
+      let rules = [];
+      try { rules = [...sheet.cssRules]; } catch { rules = []; }
+      webkitRules += rules.filter((r) => r.cssText && r.cssText.includes("::-webkit-scrollbar")).length;
+    }
+    check("全文档 0 条 ::-webkit-scrollbar 规则（不与标准属性混用）", webkitRules === 0, `${webkitRules} 条`);
+
+    const diagPre = document.getElementById("sbdiag-json");
+    let diagOk = false;
+    let diagDetail = "缺少诊断输出";
+    if (diagPre) {
+      try {
+        const data = JSON.parse(diagPre.textContent);
+        diagOk = data.samples.length === 3 && data.samples.every((x) => Number.isFinite(x.scrollbar));
+        diagDetail = data.samples.map((x) => `${x.id}:${x.scrollbar}px/${x.computedScrollbarWidth}`).join(" ");
+      } catch (e) { diagDetail = String(e); }
+    }
+    check("三个样例分别独立测量并输出", diagOk, diagDetail);
+
+    const el = $("selftest");
+    el.hidden = false;
+    el.style.cssText = "position:absolute;left:-99999px;top:0";
+    el.textContent = `BOARD AUDIT ${fail === 0 ? "OK" : "FAILED"} · pass=${pass} fail=${fail}\n${out.join("\n")}`;
+    document.body.dataset.boardAudit = fail === 0 ? "ok" : "failed";
   }
 
   window.addEventListener("error", (event) => {
@@ -1489,8 +1677,16 @@ function rowGeometry(order, win, scale, today) {
     document.body.dataset.runtimeError = event.message;
   });
 
+  if (containerParam >= 480) {
+    const mainInner = $("mainInner");
+    mainInner.style.width = `${containerParam}px`;
+    mainInner.style.paddingInline = "0px";
+    document.body.dataset.container = String(containerParam);
+  }
+
   if (params.get("view") === "scrollbar") {
     renderScrollbarBoard();
+    if (params.get("selftest") === "1") runBoardAudit();
   } else {
     renderAll();
   }
@@ -1521,6 +1717,11 @@ function rowGeometry(order, win, scale, today) {
         pageGutter: window.innerWidth - document.documentElement.clientWidth,
       },
       axisHeight: Math.round($("axis").getBoundingClientRect().height * 100) / 100,
+      container: {
+        requested: containerParam || null,
+        mainInnerClientWidth: $("mainInner").clientWidth,
+        viewport: window.innerWidth,
+      },
       rows,
       info,
     };
@@ -1531,63 +1732,8 @@ function rowGeometry(order, win, scale, today) {
     document.body.appendChild(pre);
   }
 
-  if (params.get("selftest") === "1") runSelfTest();
+  if (params.get("selftest") === "1" && params.get("view") !== "scrollbar") runSelfTest();
 })();
 </script>
 </body>
 </html>
-<style>
-  /* ------------------------------------------------------------ 滚动条状态板 */
-  .sb-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 10px; }
-  .sb-card {
-    margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
-    background: linear-gradient(180deg, var(--surface), var(--surface-alt));
-    display: grid; grid-template-columns: minmax(0, 1fr) 26px; gap: 10px; align-items: stretch;
-  }
-  .sb-card figcaption { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .sb-card figcaption strong { font-size: 12px; }
-  .sb-card figcaption span { font-size: 10.5px; color: var(--text-muted); line-height: 1.35; }
-  .sb-track {
-    position: relative; width: 26px; border-radius: 999px; overflow: hidden;
-    background: var(--surface); border: 1px dashed var(--border-strong);
-  }
-  .sb-card[data-state="dragging"] .sb-track { background: color-mix(in srgb, var(--accent) 7%, var(--surface-alt)); }
-  .sb-thumb {
-    position: absolute; left: 50%; transform: translateX(-50%);
-    width: 4px; height: 34px; border-radius: 999px;
-    background: rgba(44, 111, 181, 0.14);
-  }
-  .theme-dark .sb-thumb { background: rgba(90, 167, 234, 0.16); }
-  .sb-card[data-state="hover"] .sb-thumb { width: 6px; background: rgba(44, 111, 181, 0.32); }
-  .theme-dark .sb-card[data-state="hover"] .sb-thumb { background: rgba(90, 167, 234, 0.34); }
-  .sb-card[data-state="scrolling"] .sb-thumb { width: 10px; background: rgba(44, 111, 181, 0.55); }
-  .theme-dark .sb-card[data-state="scrolling"] .sb-thumb { background: rgba(90, 167, 234, 0.58); }
-  .sb-card[data-state="dragging"] .sb-thumb { width: 10px; background: rgba(44, 111, 181, 0.74); }
-  .theme-dark .sb-card[data-state="dragging"] .sb-thumb { background: rgba(90, 167, 234, 0.78); }
-
-  .sb-live { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
-  .sb-live-box {
-    height: 168px; overflow-y: auto; padding: 10px 12px; border-radius: var(--radius-sm);
-    border: 1px solid var(--border); background: var(--surface);
-    scrollbar-color: rgba(44, 111, 181, 0.42) transparent;
-  }
-  .sb-live-box p { margin: 0 0 6px; font-size: 11.5px; }
-  .sb-live-box p:first-child { font-weight: 600; font-size: 12px; }
-  .sb-live-box.filled { background: var(--surface); }
-  .theme-dark.sb-live-box { color-scheme: dark; }
-  .sb-live-box.is-win {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(44, 111, 181, 0.42) transparent;
-  }
-  .sb-live-box.is-win::-webkit-scrollbar { width: 10px; }
-  .sb-live-box.is-win::-webkit-scrollbar-track { background: rgba(24, 40, 56, 0.04); }
-  .sb-live-box.is-win::-webkit-scrollbar-thumb {
-    background: rgba(44, 111, 181, 0.42); border-radius: 999px;
-    border: 2px solid transparent; background-clip: padding-box;
-  }
-
-  .sb-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
-  .sb-table th, .sb-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  .sb-table th { font-size: 11px; color: var(--text-muted); font-weight: 600; }
-  .sb-table code { font-family: "SF Mono", ui-monospace, monospace; font-size: 10.5px; }
-</style>
