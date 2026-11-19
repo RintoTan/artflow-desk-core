@@ -2,6 +2,7 @@ pub mod app_icon;
 pub mod backup;
 pub mod attachments;
 pub mod clients;
+pub mod maintenance;
 pub mod orders;
 pub mod preferences;
 pub mod queue;

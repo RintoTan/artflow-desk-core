@@ -236,6 +236,45 @@ export type BackupRestored = {
   preRestoreBackup: string | null;
 };
 
+export type QuarantineItem = {
+  name: string;
+  bytes: number;
+  modifiedAt: string;
+  referenced: boolean;
+};
+
+export type QuarantineReport = {
+  generation: string;
+  dir: string;
+  items: QuarantineItem[];
+  totalBytes: number;
+  referencedCount: number;
+  removableCount: number;
+  removableBytes: number;
+};
+
+export type QuarantineCleared = {
+  removed: number;
+  skippedReferenced: number;
+  skippedUnsafe: number;
+  bytesFreed: number;
+  errors: string[];
+};
+
+export type JobsReport = {
+  counts: { pending: number; running: number; done: number; failed: number; total: number };
+  prunable: number;
+  oldestDoneAt: string | null;
+};
+
+export type PruneReport = {
+  cutoff: string;
+  matched: number;
+  removed: number;
+  keptPending: number;
+  keptRecent: number;
+};
+
 export type SkipInput = LifecycleInput & {
   targetStageId: string;
   reason?: string | null;
@@ -301,6 +340,14 @@ export const api = {
   backupRestore: (path: string) => invoke<BackupRestored>("backup_restore", { path }),
   backupSetReminder: (days: number) => invoke<BackupStatus>("backup_set_reminder", { days }),
   restartApp: () => invoke<void>("restart_app"),
+
+  maintenanceQuarantine: () => invoke<QuarantineReport>("maintenance_quarantine"),
+  maintenanceQuarantineClear: (names: string[]) =>
+    invoke<QuarantineCleared>("maintenance_quarantine_clear", { names }),
+  maintenanceJobs: (pruneDays: number) =>
+    invoke<JobsReport>("maintenance_jobs", { pruneDays }),
+  maintenanceJobsPrune: (input: { olderThanDays: number; dryRun: boolean }) =>
+    invoke<PruneReport>("maintenance_jobs_prune", { input }),
 
   workflowAddStage: (input: {
     orderId: string;

@@ -4,6 +4,7 @@ pub mod attachments;
 pub mod clients;
 pub mod events;
 pub mod lifecycle;
+pub mod maintenance;
 pub mod numbering;
 pub mod orders;
 pub mod queue;

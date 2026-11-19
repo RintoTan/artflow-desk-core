@@ -7237,3 +7237,57 @@ dl.stat-row {
 .backup-danger {
   color: var(--danger);
 }
+
+/* ---------------------------------------------------------------- 附件维护 */
+
+.maintenance-sub {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  text-transform: none;
+}
+
+.maintenance-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.maintenance-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 10px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.maintenance-list li:last-child {
+  border-bottom: none;
+}
+
+.maintenance-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.maintenance-confirm {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-active);
+  border-radius: 8px;
+  background: var(--surface-alt);
+  display: grid;
+  gap: 6px;
+}
+
+.maintenance-confirm p {
+  margin: 0;
+}
