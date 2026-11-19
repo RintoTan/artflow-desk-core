@@ -462,8 +462,10 @@ fn stored_paths_are_portable_relative_and_inside_the_generation() {
         .unwrap();
     assert!(rel.starts_with("attachments/originals/"));
     assert!(!rel.contains(':') && !rel.contains('\\'));
-    assert!(view.original_path.contains("generations"));
-    assert!(view.original_path.contains("attachments/originals"));
+    // 绝对路径用平台分隔符（Windows 是反斜杠），断言时先归一化再比较
+    let absolute = view.original_path.replace('\\', "/");
+    assert!(absolute.contains("generations"), "{absolute}");
+    assert!(absolute.contains("attachments/originals"), "{absolute}");
 }
 
 #[test]
