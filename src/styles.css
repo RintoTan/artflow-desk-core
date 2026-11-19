@@ -7162,3 +7162,78 @@ dl.stat-row {
 .cal-scroll {
   overflow-anchor: none;
 }
+
+/* ---------------------------------------------------------------- 数据备份 */
+
+.backup-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 18px;
+  margin: 4px 0 12px;
+}
+
+.backup-facts div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.backup-facts dt {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.backup-facts dd {
+  margin: 0;
+  font-size: 13px;
+}
+
+.backup-facts dd.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.backup-reminder-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.backup-reminder-field select {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.backup-reminder,
+.backup-notice {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-active);
+  background: var(--accent-soft);
+  font-size: 12.5px;
+}
+
+.backup-notice {
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+}
+
+.backup-danger {
+  color: var(--danger);
+}

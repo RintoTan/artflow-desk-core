@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, describeError, type TimezoneInfo } from "../bridge/commands";
 import { AppIconImage } from "../components/AppIconImage";
+import BackupPanel from "../components/BackupPanel";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { NavIcon } from "../components/NavIcon";
 import {
@@ -502,10 +503,12 @@ export default function SettingsPage() {
       </section>
       </div>
 
+      <BackupPanel onError={setError} />
+
       <section className="panel panel-quiet settings-module settings-module-full">
         <h2>本阶段尚未提供的设置</h2>
         <p className="muted">
-          启动页面、备份提醒等属于后续阶段，界面在此明确标注，不会用占位控件伪装成已实现功能。
+          启动页面、自动定时备份属于后续阶段，界面在此明确标注，不会用占位控件伪装成已实现功能。
         </p>
       </section>
       </div>

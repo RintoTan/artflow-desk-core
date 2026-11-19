@@ -1,4 +1,5 @@
 pub mod app_icon;
+pub mod backup;
 pub mod attachments;
 pub mod clients;
 pub mod orders;

@@ -164,6 +164,78 @@ export type LifecycleInput = {
 
 export type ReworkInput = LifecycleInput & { targetStageId: string | null };
 
+export type BackupStatus = {
+  schemaVersion: number;
+  formatVersion: number;
+  appVersion: string;
+  generation: string;
+  root: string;
+  workingTimezone: string;
+  lastSuccessAt: string | null;
+  lastPath: string | null;
+  reminderDays: number;
+  reminderDue: boolean;
+  daysSinceLast: number | null;
+  lastError: string | null;
+  orders: number;
+  attachments: number;
+  databaseBytes: number;
+  reachable: boolean;
+};
+
+export type BackupSummary = {
+  orders: number;
+  activeOrders: number;
+  clients: number;
+  templates: number;
+  events: number;
+  attachments: number;
+  stageSkips: number;
+  reschedules: number;
+};
+
+export type BackupCreated = {
+  path: string;
+  bytes: number;
+  files: number;
+  attachmentFiles: number;
+  databaseBytes: number;
+  schemaVersion: number;
+  summary: BackupSummary;
+  createdAt: string;
+};
+
+export type BackupPreview = {
+  path: string;
+  formatVersion: number;
+  appVersion: string;
+  schemaVersion: number;
+  createdAt: string;
+  workingTimezone: string;
+  sourceGenerationId: string | null;
+  files: number;
+  attachmentFiles: number;
+  bytes: number;
+  /** `current` / `older`（可在隔离代际内迁移）/ `newer`（拒绝） */
+  schemaRelation: "current" | "older" | "newer" | string;
+  summary: BackupSummary;
+  canRestore: boolean;
+  blockReason: string | null;
+};
+
+export type BackupRestored = {
+  newGeneration: string;
+  previousGeneration: string;
+  migratedFrom: number;
+  schemaVersion: number;
+  summary: BackupSummary;
+  raisedWatermarks: Array<{ year: number; lastAllocated: number }>;
+  missingThumbs: number;
+  cleanupTasksRetargeted: number;
+  staleJobsClosed: number;
+  preRestoreBackup: string | null;
+};
+
 export type SkipInput = LifecycleInput & {
   targetStageId: string;
   reason?: string | null;
@@ -221,6 +293,14 @@ export const api = {
   completeOrder: (input: LifecycleInput) => invoke<OrderView>("complete_order", { input }),
   cancelOrder: (input: LifecycleInput) => invoke<OrderView>("cancel_order", { input }),
   reopenOrder: (input: LifecycleInput) => invoke<OrderView>("reopen_order", { input }),
+
+  backupStatus: () => invoke<BackupStatus>("backup_status"),
+  backupCreate: (targetPath?: string | null) =>
+    invoke<BackupCreated>("backup_create", { targetPath: targetPath ?? null }),
+  backupInspect: (path: string) => invoke<BackupPreview>("backup_inspect", { path }),
+  backupRestore: (path: string) => invoke<BackupRestored>("backup_restore", { path }),
+  backupSetReminder: (days: number) => invoke<BackupStatus>("backup_set_reminder", { days }),
+  restartApp: () => invoke<void>("restart_app"),
 
   workflowAddStage: (input: {
     orderId: string;
