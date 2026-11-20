@@ -394,6 +394,8 @@ export default function TrashPage() {
 
       {emptySummary ? (
         <div className="trash-result" role="status">
+          {/* 文本与按钮分开成两块：文字纵向排列，按钮不再挤压正文。 */}
+          <div className="trash-result-copy">
           <p>
             数据库：已永久删除 {emptySummary.okBatches} 批
             {emptySummary.ordersPurged > 0 ? `、共 ${emptySummary.ordersPurged} 个订单` : ""}
@@ -414,6 +416,7 @@ export default function TrashPage() {
           {emptyRetryError && !emptyOpen ? (
             <p className="notice notice-error">重试未成功：{emptyRetryError}</p>
           ) : null}
+          </div>
           {emptySummary.failed.length > 0 ? (
             <button
               type="button"

@@ -7756,9 +7756,11 @@ dl.stat-row {
 /* 清空结果条：与「附件清理未完成」区分，使用中性色而不是警告色。 */
 .trash-result {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  /* 窄窗口时按钮换行到文字下方，而不是把正文压成窄列。 */
+  flex-wrap: wrap;
   margin: 0 0 14px;
   padding: 12px 14px;
   border: 1px solid var(--border);
@@ -7766,9 +7768,24 @@ dl.stat-row {
   background: var(--surface-soft);
 }
 
-.trash-result p {
+/* 结果文字纵向排列：数据库一段、附件一段，各自整行阅读。 */
+.trash-result-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.trash-result-copy p {
   margin: 0;
   font-size: 13px;
+  line-height: 1.55;
+}
+
+.trash-result > .btn {
+  flex: none;
+  margin-top: 2px;
 }
 
 /* 清空确认框里的三行数字。 */

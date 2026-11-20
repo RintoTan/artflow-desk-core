@@ -702,4 +702,41 @@ describe("刷新期间的清空入口保护", () => {
     resolveSnapshot(snapshot());
     expect(await screen.findByRole("button", { name: "清空回收站…" })).toBeEnabled();
   });
+
+  it("结果条把两段说明收在同一个纵向文本块里，按钮不挤压正文", async () => {
+    const user = userEvent.setup();
+    mocks.empty.mockResolvedValueOnce({
+      batches: [
+        { label: "客户「甲」+1 单", ok: true, ordersPurged: 1, filesRegistered: 2, cleanupPending: 3, error: null },
+        { label: "客户「乙」+2 单", ok: false, ordersPurged: 0, filesRegistered: 0, cleanupPending: 0, error: "injected" },
+      ],
+      purgedBatches: 1,
+      failedBatches: 1,
+      ordersPurged: 1,
+      filesRegistered: 2,
+      cleanupPending: 3,
+    });
+    arrange();
+    mocks.cleanupStatus.mockResolvedValue({ failed: 3, oldestCreatedAt: null });
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "清空回收站…" }));
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.change(within(dialog).getByLabelText("清空确认文字"), {
+      target: { value: "清空回收站" },
+    });
+    await user.click(within(dialog).getByRole("button", { name: "永久删除" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+
+    const result = document.querySelector(".trash-result") as HTMLElement;
+    const copy = result.querySelector(".trash-result-copy") as HTMLElement;
+    expect(copy).not.toBeNull();
+    expect(within(copy).getByText(/数据库：已永久删除/)).toBeInTheDocument();
+    expect(within(copy).getByText(/附件清理：当前全局仍有 3 个/)).toBeInTheDocument();
+
+    // 按钮是文本块的兄弟节点，不能挤在段落之间。
+    const retry = within(result).getByRole("button", { name: "重试未完成" });
+    expect(copy).not.toContainElement(retry);
+    expect(result.firstElementChild).toBe(copy);
+  });
 });
