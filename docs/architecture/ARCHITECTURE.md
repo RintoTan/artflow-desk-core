@@ -60,9 +60,9 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | `bridge/commands.ts` | 命令类型与 `api` 封装，**invoke 的唯一出口** |
 | `styles.css` | 原生 CSS + 设计令牌（Arctic Blue） |
 
-## 数据模型（schema v7）
+## 数据模型（schema v8）
 
-> 删除、回收站、数据重置与存储位置迁移的设计见 [DATA-LIFECYCLE.md](DATA-LIFECYCLE.md)（v0.1.1 草案，待评审）。
+> 删除、回收站、数据重置与存储位置迁移的详细设计与实现约束见 [DATA-LIFECYCLE.md](DATA-LIFECYCLE.md)（已实施并验收）。
 
 ### 核心表
 
@@ -77,6 +77,13 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | `clients` / `client_tags` | 客户与标签 |
 | `stage_templates` | 流程模板（保留一个系统默认模板） |
 
+### 软删除与可见性（v8）
+
+- `orders` 与 `clients` 各增 `deleted_at`、`deleted_batch`；删除是**可见性**，不改 `status`，也不新增状态值。
+- 新增三个视图：`orders_visible`、`orders_trashed`、`clients_visible`。业务查询读视图，备份、诊断、幂等与模板守卫读基表。
+- 按 id 的业务读写另经 `store::visibility` 守卫（不存在 → `NOT_FOUND`，在回收站 → `CONFLICT`），列表与聚合由视图承担。
+- **SQLite 视图在建表时展开 `SELECT *`**：此后给 `orders` / `clients` 加列，必须先 `DROP VIEW` 再重建，否则视图列会滞后于基表。
+
 ### 关键关系与约束
 
 - `order_stages` 与 `orders` 是**副本关系**：建单时复制模板阶段，之后改模板不影响已有订单，历史因此不可被追溯改写。
@@ -87,7 +94,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 
 ### 迁移链
 
-`APP_SCHEMA_VERSION = 7`，迁移 append-only：只允许新增 `vN → vN+1`，不允许改写历史迁移文件。
+`APP_SCHEMA_VERSION = 8`，迁移 append-only：只允许新增 `vN → vN+1`，不允许改写历史迁移文件。
 
 | 版本 | 内容 |
 | --- | --- |
@@ -95,6 +102,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | v2–v5 | 队列、排期、标签、作业与清理任务 |
 | v6 | `order_events` 增加 `rescheduled` 与改期六字段（原/新开始与交付日期、原因、来源） |
 | v7 | `order_events` 增加 `stage_skipped`、`skipped_stages`、`skip_reason` |
+| v8 | `orders` / `clients` 增加 `deleted_at`、`deleted_batch` 与部分索引；新增 `orders_visible` / `orders_trashed` / `clients_visible` 视图 |
 
 ## 关键机制
 
