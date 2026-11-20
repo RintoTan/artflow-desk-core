@@ -1,12 +1,12 @@
 # 数据生命周期设计（v0.1.1）
 
-- 版本：**v1.3（在 v1.2 基础上回填 02A/02B 查询可见性裁定：CSV 状态文案、模板全量守卫、备份摘要口径、回收站界面粒度）**
-- 状态：待实施。规格已冻结，本文件只描述方案，不改动 schema。
+- 版本：**v1.4（回填 DEV-0.1.1-02 实际实施结果与 DISPLAY_JOIN 例外；规格本身未变）**
+- 状态：**数据层已实施并验收**（schema v8 + 视图 + 守卫 + 查询改造 + 导出/摘要 + lint）。回收站界面、永久删除交互、数据重置、存储位置迁移、单实例激活仍待实施。
 - 覆盖：WP-06 数据重置与存储位置、WP-07 单实例与退出、WP-08 回收站与永久删除、WP-05 红点数据来源
 - 依据：`DEV-0.1.1-01` / `-01R` 架构审查 + `02A` 查询盘点 / `02B` 最终修订 + 产品负责人 Q1–Q8 与 02B 裁定（2026-11-20）
-- 代码事实均来自 `master` @ `d0b11d0`（v8 之前）
+- 代码事实：§0 为 v8 之前的基线（`master` @ `d0b11d0`）；§0.2 为实施后的实际状态（`master` @ `0530a77`）
 
-## 0. 现状（已核对源码）
+## 0. 实施前现状（v8 之前，已核对源码）
 
 | 项 | 现状 |
 | --- | --- |
@@ -51,6 +51,24 @@ INSERT OR IGNORE INTO cleanup_tasks (id, generation, order_id, rel_path, reason,
 ```
 
 **结论**：`order_id` 与 `reason` 属于既有 schema，**不需要为永久删除新增 migration**。真正的约束是那条**部分唯一索引**——同一 `(generation, rel_path)` 只允许一条 `pending`，所以写入必须用 `INSERT OR IGNORE`（现有代码已如此），不能用裸 `INSERT`。
+
+## 0.2 已实施（DEV-0.1.1-02，schema v8）
+
+以下为实际落地的代码结构，替代此前「待实施」的描述。
+
+| 层 | 落地物 | 说明 |
+| --- | --- | --- |
+| schema | `store/migrations/v8.rs` | `orders` / `clients` 各加 `deleted_at`、`deleted_batch`；两个部分索引；**不新增表**；v1–v7 零改动 |
+| 视图 | `orders_visible` / `orders_trashed` / `clients_visible` | 读侧统一入口。**列在创建视图时展开**：以后给基表加列必须先 `DROP VIEW` 再重建，`migration_v8.rs` 有长期断言 |
+| 守卫 | `store/visibility.rs` | `Scope { Visible, Trashed }`、`require_visible_order` / `require_trashed_order` / `require_visible_client` / `require_trashed_client`、`require_order` 分派、`order_scope` |
+| 读取改造 | 30 处 V 类查询（28 订单 + 2 客户，6 个文件） | `list` / 详情 / 客户卡片子查询 / 队列 / 工作台 / 统计 / CSV |
+| 写入守卫 | 22 个按 id 入口 | 事务内、版本校验之前；已删除记录一律 `CONFLICT` |
+| 导出与摘要 | `export.rs` / `manifest.rs` | CSV 默认走视图，`includeTrashed` 才读基表；`DataSummary` 增加 `trashedOrders` / `trashedClients`，`orders` / `clients` 仍是含回收站的总数 |
+| 防回归 | `tests/sql_visibility_lint.rs` | 业务代码出现裸 `FROM orders` / `FROM clients` 即失败；豁免精确到「行文本 + 行数」，29 条豁免覆盖 32 处命中 |
+
+错误码约定：记录不存在用 `NOT_FOUND`，存在但在回收站用 `CONFLICT`（文案含「请先恢复」）。前端把 `NOT_FOUND` 当作「数据已不存在」并刷新列表，若回收站也用 `NOT_FOUND`，「请先恢复」的提示会被刷新抹掉。
+
+**历史读取不受影响**：`events::list`、`orders::stages` 读基表且不加守卫，回收站订单的完整时间线仍可读出。这是刻意保留的能力——拒绝业务操作不等于拒绝查看历史。
 
 ## 1. 不变量
 
@@ -102,7 +120,7 @@ active ────────→ trashed ────────→ active
 | 完整数据备份 | **必须包含** | 备份是快照，不按可见性裁剪 |
 | 备份摘要 | 分类统计 | `DataSummary` 增加 `trashedOrders` / `trashedClients` |
 
-改造清单（按 `FROM orders` 出现次数）：
+改造清单是**实施前的估算**（按 `FROM orders` 出现次数），实际改动以 §0.2 的 30 处为准；下表保留用于追溯当初为什么认定「43+9 处都需要逐处判断」：
 
 | 文件 | 次数 | 备注 |
 | --- | ---: | --- |
@@ -117,6 +135,34 @@ active ────────→ trashed ────────→ active
 | `backup/manifest.rs` / `commands/backup.rs` | 3 | 摘要计数（此处**不过滤**） |
 
 编号唯一性不受影响：`orders.code` 仍 `UNIQUE` 且包含已删除行，删除不回收编号。
+
+### 3.1 保留读基表的例外（有意为之）
+
+`tests/sql_visibility_lint.rs` 的豁免清单就是这份例外的权威列表。按用途归为十类：
+
+| 类别 | 为什么必须读全量 |
+| --- | --- |
+| `MIGRATION_SCHEMA` | 视图自身的定义 |
+| `GUARD_SELF` | 守卫判断「是否已删除」只能读 `deleted_at` |
+| `BACKUP_SNAPSHOT` | 备份是快照，裁剪即丢数据 |
+| `DIAGNOSTICS` | 诊断要报真实行数 |
+| `IDEMPOTENCY` | `request_id` 重放必须能找到已删除订单，否则重复建单 |
+| `TEMPLATE_GUARD` | 回收站订单仍持有模板引用，列无外键，只能靠这条守卫 |
+| `GUARDED_READ` | 入口已有守卫，内部读基表是为了取守卫不返回的字段 |
+| `EXPORT_DYNAMIC` | 按 `includeTrashed` 动态选表 |
+| `DISPLAY_JOIN` | 见下 |
+| `QA_FIXTURE` | 夹具要核对「库里确实有 N 条」 |
+
+**`DISPLAY_JOIN` 是唯一一类「可以不读全量但选择读全量」的例外**（产品负责人 2026-11-20 裁定保留）：
+`orders::load`、`queue::list`、`export::collect_orders` 三处用 `LEFT JOIN clients` 取客户显示名。
+
+理由与代价：
+
+- 正常路径下客户与订单同批进出回收站，可见订单的客户必然可见，与 `clients_visible` 等价；
+- 如果因异常数据出现「客户已删、订单未删」，读基表能继续显示客户名，读视图会变成空白；
+- 代价是这类异常下会展示一个已删除客户的名字。判定为可接受：名字本身不是敏感业务操作入口，且空白反而更像数据损坏。
+
+不为统一而改动这三处；若 WP-03 回收站界面出现显示冲突，再重新讨论。
 
 ## 4. 客户删除与恢复
 
@@ -464,18 +510,21 @@ if meta.file_type().is_file() {
 按产品裁定调整为：
 
 ```
-DEV-0.1.1-01R  方案修订（本文件）           ← 当前
-WP-01          五项 P3（与数据层无关，先出可见成果）
-DEV-0.1.1-02   v8 迁移 + 查询面改造（43+9 处过滤）
-DEV-0.1.1-03   回收站完整功能（删除/恢复/永久删除/附件清理/界面）
-DEV-0.1.1-04   数据重置（新代际 + 选择性回填 + 就地重置）
-DEV-0.1.1-05   单实例与存储位置迁移（先锁与退出，再开放自定义路径）
-DEV-0.1.1-06   双平台验收（数据安全、迁移失败回滚、UI）
+DEV-0.1.1-01R  方案修订（本文件）           DONE  v1.3 冻结
+WP-01          五项 P3（与数据层无关）      DONE  d0b11d0
+DEV-0.1.1-02   v8 迁移 + 数据可见性层       DONE  93646ee / ccf90c9 / abf1417 /
+                                                  f272393 / 2e643ec / 0530a77
+DEV-0.1.1-03   回收站完整功能（删除/恢复/永久删除/附件清理/界面）   待实施
+DEV-0.1.1-04   数据重置（新代际 + 选择性回填 + 就地重置）          待实施
+DEV-0.1.1-05   单实例与存储位置迁移（先锁与退出，再开放自定义路径） 待实施
+DEV-0.1.1-06   双平台验收（数据安全、迁移失败回滚、UI）            待实施
 ```
+
+02 的完成意味着**数据层可支撑回收站功能**，不意味着用户已经能删除或恢复订单：`deleted_at` 目前只有测试直接写入，没有任何删除/恢复命令，也没有入口。
 
 ## 13. 需同步的文档（实施时）
 
-- `PRODUCT-DECISIONS.md`：补 Q1–Q8 为正式决策（回收站由「暂缓」转为实施）；
-- `ROADMAP.md`：进行中加入 v0.1.1 七个工作包；
-- `PROJECT-STATUS.md`：§2.1 的 PASS 基线记为「产品负责人裁定，非复测」；
-- `ARCHITECTURE.md`：数据模型补 v8 列说明。
+- `PRODUCT-DECISIONS.md`：Q1–Q8 已转为正式决策（2026-11-20，见该文件 §15–§18）；
+- `ROADMAP.md`：v0.1.1 工作包已登记，DEV-0.1.1-02 标为 DONE；
+- `PROJECT-STATUS.md`：§2.1 的 PASS 基线记为「产品负责人裁定，非复测」，数据生命周期数据层已登记；
+- `ARCHITECTURE.md`：尚未补 v8 列说明，数据模型以本文件 §0.2 / §2 为准（补写属独立文档任务，本次未做）。
