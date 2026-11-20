@@ -13,13 +13,18 @@
 | DEV-07-ABOUT (+FIX-01/02) | 关于软件页、快捷键指引、自适应换行 | DONE |
 | DEV-08 | macOS 初代 Demo（`.app` 构建 + QA 原生验收） | DONE |
 | DEV-09A | Windows 平台适配（ico、跨平台数据路径） | DONE |
-| DEV-09B | Windows 构建工作流与实机测试手册 | DONE（工作流已就绪，等待运行） |
+| DEV-09B | Windows 构建工作流与实机测试手册 | DONE（工作流已运行，产物已产出） |
+| DEV-11 | Windows Demo 重建、退出生命周期修复、冒烟测试收敛 | DONE |
+| DEV-12 | 全域压力测试虚拟数据集（72 订单 / 30 客户 / 10 模板） | DONE（隔离环境恢复验证通过） |
+| WIN-REAL-TEST-2026-11-20 | Windows 真机两阶段验收（56 项） | 核心功能基本通过 |
 
 ## 进行中
 
 | 项 | 说明 |
 | --- | --- |
-| Windows Demo | GitHub Actions 构建 → 产物 → 用户实机验收 |
+| 双平台体验优化 | 当前阶段：视觉一致性、DPI 与布局、滚动、⌘/Ctrl、附件与备份体验、错误与空状态 |
+| Windows 系统级兼容（T01–T40） | 安装/卸载/重装、SmartScreen、DPI 125%/200%、中文路径、断网，全部 NOT RUN |
+| macOS demo.2 运行验收 | 当前发布批次的 macOS 产物只有静态复核；DEV-08 的 13 项 PASS 不能直接沿用 |
 | 代码签名与公证 | macOS 需 Apple Developer ID；Windows 需代码签名证书。未配置 |
 
 ## 暂缓
@@ -32,7 +37,7 @@
 | 画廊 / 作品集 | 与「参考图不自动进入作品集」的边界冲突，独立立项 |
 | 多订单图片引用、阶段级图片 | 需求未验证，先观察使用方式 |
 | 旧数据代际清理入口 | 涉及回退能力，需产品决策 |
-| Windows 与 macOS 备份互恢复 | 需先有 Windows 实机验收 |
+| Windows 与 macOS 备份互恢复 | 单向已验证（DEV-12 包 → Windows 恢复）；反向（Windows 导出 → macOS 恢复）未验证 |
 
 ## 不在计划内
 

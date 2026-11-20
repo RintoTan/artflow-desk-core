@@ -1,9 +1,8 @@
 # ArtFlow Desk Core｜Windows 实机测试手册
 
-> **当前状态：自动化冒烟已在 GitHub Actions 的 `windows-latest` 上执行；Windows 真机（物理机/虚拟机）手动项全部 NOT RUN。**
-> 自动化只能证明「进程能起、窗口能建、关闭后进程能退、二次启动不受残留影响」，
-> 不能证明安装、卸载、DPI、中文路径、SmartScreen、真实显卡驱动下的渲染。
-> 两类结果必须分开记录，不要把 CI 的 PASS 当成实机 PASS。
+> **当前状态（2026-11-20）**：自动化冒烟已在 GitHub Actions 的 `windows-latest` 上执行；真机侧另跑了一套两阶段验收矩阵（PHASE-01 十项 + PHASE-02 46 项），结果见下方第 4.5 节。
+> **但本文件第 5 节的 40 项清单仍未逐项执行**（安装/卸载、SmartScreen、中文路径、DPI 125%/200%、断网等），保持在 NOT RUN。
+> 两套范围不能互相替代：一套是功能矩阵，一套是安装与系统级兼容清单。不要把任一侧的 PASS 当成另一侧的 PASS。
 
 ---
 
@@ -59,6 +58,29 @@ Production 与 QA 的区别是「数据目录与窗口标题」**。四者不要
 | A09 | 窗口内容渲染正确（不是白屏） | **NOT RUN（Runner 无法可靠判定内容）** |
 
 具体结果见当次 Actions 运行的 `ArtFlowDesk-Windows-Production` / `-QA` artifact 内 `smoke-*.log`。
+
+## 4.5 真机验收结果索引（2026-11-20，独立于本清单）
+
+设备：Windows 11 专业版 10.0.26200 · i7-13700K · 31.75 GB · 1920×1080 @150% · WebView2 157.0.4341.60
+产物：`v0.1.0-demo.2`（run `44636228801` / 提交 `d8cef55`）
+
+| 阶段 | 项数 | 结果 |
+| --- | ---: | --- |
+| PHASE-01 | 10 | 全部通过 |
+| PHASE-02 | 46 | 31 PASS · 0 FAIL · 5 PARTIAL · 7 NOT RUN · 3 BLOCKED |
+
+结论：**核心功能实机验收基本通过**；无 P0/P1/P2，5 个 P3，1 个待确认（D-06 新建入口）。
+
+这两份材料的**原件不在本仓库内**，而是在项目所有者本地的项目工作区（`ArtFlowDesk-Workspace/`，不随仓库分发、不提交 Git）。它们在本机上的相对位置是：
+
+| 材料 | 工作区内的相对位置 |
+| --- | --- |
+| 汇总报告 | `03-ENGINEERING-REPORTS/WIN-REAL-TEST-2026-11-20-Windows实机验收总报告.md` |
+| 原始证据（82 个文件） | `04-TEST-EVIDENCE/Windows/WIN-REAL-TEST-2026-11-20/raw/` |
+
+> 请不要把上表当作跨机器可用的链接：工作区根目录由项目所有者指定，换一台机器或换一位使用者都不存在。需要追溯时向项目所有者索取，或查阅 Release 页与本仓库的 [Windows-DEMO.md](../releases/Windows-DEMO.md)。
+
+原始 46 项矩阵与本清单的 T 编号**不是一一对应**，请勿把某一项的 PASS 迁移到另一项的结论上。
 
 ---
 

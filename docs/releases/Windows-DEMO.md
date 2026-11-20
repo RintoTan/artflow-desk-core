@@ -52,7 +52,18 @@ Production 与 QA（clean / seeded）各自执行两轮，并检查数据目录�
 
 ## 实机验收
 
-尚未在任何一台真实 Windows 电脑上执行。清单见 [WINDOWS-MANUAL-TEST.md](../development/WINDOWS-MANUAL-TEST.md)，全部标记 NOT RUN。
+**2026-11-20 已在真实 Windows 11 设备上完成两阶段验收**（Windows 11 专业版 10.0.26200 / i7-13700K / 31.75 GB / 1920×1080 @150% / WebView2 157.0.4341.60）。
+
+| 阶段 | 内容 | 结果 |
+| --- | --- | --- |
+| PHASE-01 | 启停重启、八页显示、QA Clean、Clean/Seeded 隔离、DEV-12 恢复、v7/v1 兼容、三视图与搜索、无进程残留 | 十项通过 |
+| PHASE-02 | 客户 / 模板 / 日历 / 统计 / 附件 / 历史 / 编号 / 备份 / DPI / 断网 | 46 项：31 PASS · 0 FAIL · 5 PARTIAL · 7 NOT RUN · 3 BLOCKED |
+
+结论：**核心功能实机验收基本通过**，无 P0/P1/P2；已记录 5 个 P3（状态列英文枚举、QA 横幅场景名、DEV-06A 标注、恢复预览缺时区、月视图表头滚出）与 1 个待确认项（订单新建入口未响应）。
+
+未完成项（附件逐张预览、编号接续、备份导出、完成月收入、事件级明细、DPI 125%/200%、断网启动、客户页搜索）不代表故障，属未执行或被环境阻断。
+
+测试清单仍见 [WINDOWS-MANUAL-TEST.md](../development/WINDOWS-MANUAL-TEST.md)（该清单的安装/卸载等项仍未执行，与上述实机验收是两套范围）。
 
 ## 已知限制
 
