@@ -18,6 +18,7 @@ import { ScheduleOverview } from "../components/ScheduleOverview";
 import { TruncatedTitle } from "../components/TitleTooltip";
 import { localDayIndex } from "../lib/scheduleBar";
 import { orderStatusLabel } from "../lib/orderStatus";
+import { workStateLabel } from "../lib/workState";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import {
   densityClass,
@@ -50,13 +51,6 @@ import {
 } from "../bridge/commands";
 
 // ---------------------------------------------------------------- 展示辅助
-
-const WORK_LABEL: Record<string, string> = {
-  queued: "排队中",
-  inProgress: "制作中",
-  completed: "已完成",
-  cancelled: "已取消",
-};
 
 const EVENT_LABEL: Record<string, string> = {
   created: "创建订单",
@@ -1092,7 +1086,7 @@ export default function OrdersPage() {
                     </TruncatedTitle>
                     <span className="order-row-meta">
                       <span className={`dot dot-${order.workState}`} />
-                      {WORK_LABEL[order.workState]}
+                      {workStateLabel(order.workState)}
                       {order.currentStageTitle ? ` · ${order.currentStageTitle}` : ""}
                       {order.clientName ? ` · ${order.clientName}` : ""}
                     </span>
@@ -1250,7 +1244,7 @@ export default function OrdersPage() {
                       {orderStatusLabel(detail.status)}
                     </span>
                     <span className={`chip chip-state-${detail.workState}`}>
-                      {WORK_LABEL[detail.workState]}
+                      {workStateLabel(detail.workState)}
                     </span>
                   </div>
                   {/* 详情的订单标题是整页唯一的 h1；页头的「订单」是 h2 区段标题。 */}

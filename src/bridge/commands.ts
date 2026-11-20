@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import type { WorkStateKey } from "../lib/workState";
+
 export type AppError = { code: string; message: string };
 
 export type YearWatermark = { year: number; lastAllocated: number };
@@ -694,4 +696,124 @@ export const attachmentApi = {
     invoke<AttachmentView>("attachment_repair", { input }),
   updateMeta: (input: UpdateAttachmentMetaInput) =>
     invoke<AttachmentView>("attachment_update_meta", { input }),
+};
+
+// ---------------------------------------------------------------- 回收站
+
+/** 回收站里的一条订单。删除时间可能早于所属客户组（删客户前它已单独删过）。 */
+export type TrashOrder = {
+  id: string;
+  code: string;
+  title: string;
+  deletedAt: string;
+  /** 删除前的制作进度，不是 `orders.status`。 */
+  workState: WorkStateKey;
+  /** 原客户名；客户组成员为 null（组头已有名字）。 */
+  originalClientName: string | null;
+  /** 附件**记录**数，不是文件数（一条记录对应原图 + 缩略图）。 */
+  attachmentCount: number;
+};
+
+export type TrashGroup = {
+  clientId: string;
+  clientName: string;
+  deletedAt: string;
+  orders: TrashOrder[];
+};
+
+export type TrashSnapshot = {
+  groups: TrashGroup[];
+  looseOrders: TrashOrder[];
+  groupCount: number;
+  looseOrderCount: number;
+  /** 全部回收站订单，含客户组内部。 */
+  totalOrderCount: number;
+};
+
+/** 删除客户前的影响范围。 */
+export type ClientDeleteImpact = {
+  clientId: string;
+  clientName: string;
+  /** 客户名下全部订单（含已在回收站的）。 */
+  orderCount: number;
+  /** 其中已经在回收站的，会被并入本次客户组。 */
+  alreadyTrashed: number;
+};
+
+export type DeletedOrder = { orderId: string; deletedAt: string };
+
+export type DeletedClient = {
+  clientId: string;
+  deletedAt: string;
+  ordersTrashed: number;
+  ordersAlreadyTrashed: number;
+};
+
+export type RestoredOrder = { orderId: string; ordersRestored: number };
+
+export type RestoredClient = {
+  clientId: string;
+  ordersRestored: number;
+  clientsRestored: number;
+};
+
+/** 一次永久删除的附件清理结果：记录数、登记文件数、实际清理结果分开报。 */
+export type PurgeCleanup = {
+  cleaned: number;
+  pending: number;
+  pendingPaths: string[];
+};
+
+export type PurgeResult = {
+  ordersPurged: number;
+  attachmentsRemoved: number;
+  filesRegistered: number;
+  cleanup: PurgeCleanup;
+};
+
+export type PurgeGroupResult = {
+  clientId: string;
+  clientsPurged: number;
+  ordersPurged: number;
+  attachmentsRemoved: number;
+  filesRegistered: number;
+  cleanup: PurgeCleanup;
+};
+
+export type TrashBatchOutcome = {
+  label: string;
+  ok: boolean;
+  ordersPurged: number;
+  filesRegistered: number;
+  cleanupPending: number;
+  error: string | null;
+};
+
+export type EmptyTrashResult = {
+  batches: TrashBatchOutcome[];
+  purgedBatches: number;
+  failedBatches: number;
+  ordersPurged: number;
+  filesRegistered: number;
+  cleanupPending: number;
+};
+
+export type PurgeCleanupStatus = {
+  failed: number;
+  oldestCreatedAt: string | null;
+};
+
+export const trashApi = {
+  snapshot: () => invoke<TrashSnapshot>("trash_snapshot"),
+  clientDeleteImpact: (clientId: string) =>
+    invoke<ClientDeleteImpact>("trash_client_delete_impact", { clientId }),
+  deleteOrder: (orderId: string) => invoke<DeletedOrder>("trash_delete_order", { orderId }),
+  deleteClient: (clientId: string) => invoke<DeletedClient>("trash_delete_client", { clientId }),
+  restoreOrder: (orderId: string) => invoke<RestoredOrder>("trash_restore_order", { orderId }),
+  restoreClient: (clientId: string) => invoke<RestoredClient>("trash_restore_client", { clientId }),
+  purgeOrder: (orderId: string) => invoke<PurgeResult>("trash_purge_order", { orderId }),
+  purgeClient: (clientId: string) => invoke<PurgeGroupResult>("trash_purge_client", { clientId }),
+  empty: () => invoke<EmptyTrashResult>("trash_empty"),
+  cleanupStatus: () => invoke<PurgeCleanupStatus>("trash_cleanup_status"),
+  retryCleanup: () => invoke<PurgeCleanupStatus>("trash_retry_cleanup"),
 };

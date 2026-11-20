@@ -5,6 +5,7 @@ import { useElementWidth } from "../lib/useElementWidth";
 import type { OrderView } from "../bridge/commands";
 import { orderStatusLabel } from "../lib/orderStatus";
 import { riskBadge } from "../lib/ordersView";
+import { workStateLabel } from "../lib/workState";
 
 export type SortKey = "code" | "client" | "title" | "source" | "stage" | "status" | "delivery" | "amount";
 
@@ -14,13 +15,6 @@ type Props = {
   onOpen: (orderId: string) => void;
   formatMoney: (cents: number | null) => string;
   formatDate: (value: string | null) => string;
-};
-
-const WORK_LABEL: Record<string, string> = {
-  queued: "排队中",
-  inProgress: "制作中",
-  completed: "已完成",
-  cancelled: "已取消",
 };
 
 function compare(a: OrderView, b: OrderView, key: SortKey): number {
@@ -163,7 +157,7 @@ export default function OrderTable({
                     <span className="table-sub">
                       <span className={`chip chip-${order.status}`}>{orderStatusLabel(order.status)}</span>
                       {order.status === "active" && (
-                        <span className="muted"> · {WORK_LABEL[order.workState]}</span>
+                        <span className="muted"> · {workStateLabel(order.workState)}</span>
                       )}
                     </span>
                   </td>
@@ -196,7 +190,7 @@ export default function OrderTable({
                   <td>
                     <span className={`chip chip-${order.status}`}>{orderStatusLabel(order.status)}</span>
                     {order.status === "active" && (
-                      <span className="muted table-sub">{WORK_LABEL[order.workState]}</span>
+                      <span className="muted table-sub">{workStateLabel(order.workState)}</span>
                     )}
                   </td>
                   <td>{formatDate(order.plannedDeliveryDate)}</td>
