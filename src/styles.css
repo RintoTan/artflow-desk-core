@@ -7731,3 +7731,79 @@ dl.stat-row {
   outline-offset: 3px;
   border-radius: 3px;
 }
+
+/* 详情页底部的危险操作区：与编辑动作分开，靠留白和细边框区分。 */
+.danger-zone {
+  margin-top: 18px;
+  border-color: var(--danger-border);
+}
+
+.danger-zone > .muted {
+  margin: 0 0 10px;
+}
+
+/* 回收站行内操作：不挤压标题与元信息。 */
+.trash-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 4px;
+}
+
+.trash-group-head .trash-actions {
+  margin-left: 0;
+}
+
+/* 清空结果条：与「附件清理未完成」区分，使用中性色而不是警告色。 */
+.trash-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+
+.trash-result p {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* 清空确认框里的三行数字。 */
+.purge-counts {
+  list-style: none;
+  margin: 10px 0 12px;
+  padding: 0;
+  display: flex;
+  gap: 20px;
+}
+
+.purge-counts li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.purge-counts span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.purge-counts strong {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 状态不可用：一句话 + 一个恢复入口，横向排列，不抢注意力。 */
+.trash-cleanup-unavailable {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.trash-cleanup-unavailable > p {
+  margin: 0;
+}

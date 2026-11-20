@@ -19,6 +19,7 @@ import { TruncatedTitle } from "../components/TitleTooltip";
 import { localDayIndex } from "../lib/scheduleBar";
 import { orderStatusLabel } from "../lib/orderStatus";
 import { workStateLabel } from "../lib/workState";
+import { useQaRefresh } from "../lib/qaRefresh";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import {
   densityClass,
@@ -36,6 +37,7 @@ import {
   api,
   describeError,
   isConflict,
+  trashApi,
   newRequestId,
   preferenceApi,
   queueApi,
@@ -250,6 +252,11 @@ export default function OrdersPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deleteInFlight = useRef(false);
+  const refreshQa = useQaRefresh();
   const [draftError, setDraftError] = useState<string | null>(null);
 
   const [creating, setCreating] = useState(false);
@@ -384,6 +391,47 @@ export default function OrdersPage() {
     },
     [],
   );
+
+  const reloadList = useCallback(async () => {
+    setOrders(await api.listOrders());
+  }, []);
+
+  /**
+   * 移入回收站：可恢复，所以不是永久删除。
+   * 成功后关掉详情、刷新列表，并让 QA 横幅的计数跟着变。
+   */
+  const moveOrderToTrash = useCallback(async () => {
+    if (!detail || deleteInFlight.current) return;
+    deleteInFlight.current = true;
+    setDeleteBusy(true);
+    setDeleteError(null);
+
+    try {
+      await trashApi.deleteOrder(detail.id);
+    } catch (e) {
+      setDeleteError(describeError(e));
+      deleteInFlight.current = false;
+      setDeleteBusy(false);
+      return;
+    }
+
+    // 删除已成功：先落实界面结果，再刷新列表。
+    // 列表刷新失败只是「界面没跟上」，不能回写成删除失败。
+    setDeleteOpen(false);
+    setDetail(null);
+    setEvents([]);
+    setNotice("已移入回收站");
+    refreshQa();
+
+    try {
+      await reloadList();
+    } catch (e) {
+      setError(describeError(e));
+    } finally {
+      deleteInFlight.current = false;
+      setDeleteBusy(false);
+    }
+  }, [detail, refreshQa, reloadList]);
 
   useEffect(() => {
     let alive = true;
@@ -1368,11 +1416,53 @@ export default function OrdersPage() {
             <ScheduleHistory events={events} formatTime={formatTime} />
             </div>
             </div>
+
+            {/* 危险操作区：与编辑、生命周期按钮分开，永远在抽屉最底部。 */}
+            <section className="panel danger-zone">
+              <header className="panel-head compact">
+                <h2>危险操作</h2>
+                <span className="muted">删除后可随时恢复</span>
+              </header>
+              <p className="muted">
+                订单会被移入回收站，制作历史、阶段与附件都会保留。
+              </p>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn btn-quiet-danger"
+                  disabled={busy || deleteBusy}
+                  onClick={() => {
+                    setDeleteError(null);
+                    setDeleteOpen(true);
+                  }}
+                >
+                  移入回收站…
+                </button>
+              </div>
+            </section>
           </>
         )}
 
       </section>
       </div>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        title="移入回收站？"
+        confirmLabel="移入回收站"
+        busy={deleteBusy}
+        error={deleteError}
+        onCancel={() => {
+          if (deleteBusy) return;
+          setDeleteOpen(false);
+          setDeleteError(null);
+        }}
+        onConfirm={moveOrderToTrash}
+      >
+        <p>
+          订单「{detail?.title ?? ""}」将被移入回收站。你可以随时在回收站中恢复此订单。
+        </p>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={exportOpen}

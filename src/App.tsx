@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 
 import { api, describeError } from "./bridge/commands";
 import UnsavedChangesDialog from "./components/UnsavedChangesDialog";
+import { QaRefreshContext } from "./lib/qaRefresh";
 import { AppIconImage } from "./components/AppIconImage";
 import { NavIcon, type NavIconName } from "./components/NavIcon";
 import { currentIcon, loadIcon, subscribeIcon } from "./lib/appIcon";
@@ -82,6 +83,29 @@ export default function App() {
   const [closeError, setCloseError] = useState<string | null>(null);
   const [closeBusy, setCloseBusy] = useState(false);
 
+  const applyStatus = useCallback((status: Awaited<ReturnType<typeof api.status>>) => {
+    setQa(
+      status.qaMode
+        ? {
+            scenario: status.qaScenario ?? null,
+            orders: status.orders ?? 0,
+            clients: status.clients ?? 0,
+            templates: status.templates ?? 0,
+          }
+        : null,
+    );
+  }, []);
+
+  /** 只刷新横幅：删除/恢复后让它显示的计数不再是旧的。 */
+  const refreshQa = useCallback(() => {
+    void api
+      .status()
+      .then(applyStatus)
+      .catch(() => {
+        /* 读不到就保持原值，不打扰用户 */
+      });
+  }, [applyStatus]);
+
   const hasDraft = useHasUnsavedDraft();
   const [themeTick, setThemeTick] = useState(0);
   const [collapsed, setCollapsed] = useState(() => {
@@ -142,16 +166,7 @@ export default function App() {
       .status()
       .then((status) => {
         if (!alive) return;
-        setQa(
-          status.qaMode
-            ? {
-                scenario: status.qaScenario ?? null,
-                orders: status.orders ?? 0,
-                clients: status.clients ?? 0,
-                templates: status.templates ?? 0,
-              }
-            : null,
-        );
+        applyStatus(status);
       })
       .catch(() => {
         /* 状态查询失败不影响外壳渲染 */
@@ -400,7 +415,9 @@ export default function App() {
               {typeof __BUILD_ID__ === "string" ? __BUILD_ID__ : "dev"}
             </p>
           )}
-          <Outlet />
+          <QaRefreshContext.Provider value={refreshQa}>
+            <Outlet />
+          </QaRefreshContext.Provider>
         </div>
       </main>
 

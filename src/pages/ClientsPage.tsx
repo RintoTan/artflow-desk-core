@@ -1,16 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import ConfirmDialog from "../components/ConfirmDialog";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import { orderStatusLabel } from "../lib/orderStatus";
 import { usePageShortcuts } from "../lib/shortcuts";
 import { useUnsavedGuard } from "../lib/unsavedRegistry";
+import { useQaRefresh } from "../lib/qaRefresh";
 import {
   api,
   clientApi,
   clientTagApi,
   describeError,
   isConflict,
+  trashApi,
+  type ClientDeleteImpact,
   type ClientDetail,
   type ClientTag,
   type ClientView,
@@ -51,6 +55,14 @@ export default function ClientsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteImpact, setDeleteImpact] = useState<ClientDeleteImpact | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deleteInFlight = useRef(false);
+  /** 影响范围请求的序号：旧请求返回时如果序号已变，就不再写回状态。 */
+  const impactSeq = useRef(0);
+  const refreshQa = useQaRefresh();
   const [pendingSwitch, setPendingSwitch] = useState<{ id: string } | { create: true } | null>(null);
 
   const [allTags, setAllTags] = useState<ClientTag[]>([]);
@@ -92,6 +104,67 @@ export default function ClientsPage() {
     const list = await clientApi.list();
     setClients(list);
   }, []);
+
+  /** 打开删除确认前先取影响范围：订单总数与「其中已在回收站」的数量都必须来自服务端。 */
+  const openDeleteClient = useCallback(async () => {
+    if (!detail) return;
+    const seq = ++impactSeq.current;
+    setDeleteImpact(null);
+    setDeleteError(null);
+    setDeleteOpen(true);
+    try {
+      const impact = await trashApi.clientDeleteImpact(detail.client.id);
+      // 期间可能已经取消并换了别的客户；旧结果一律丢弃。
+      if (seq !== impactSeq.current) return;
+      setDeleteImpact(impact);
+    } catch (e) {
+      if (seq !== impactSeq.current) return;
+      setDeleteError(describeError(e));
+    }
+  }, [detail]);
+
+  const moveClientToTrash = useCallback(async () => {
+    if (!detail || !deleteImpact || deleteInFlight.current) return;
+    // 确认框展示的影响范围必须就是当前这个客户，否则不执行。
+    if (deleteImpact.clientId !== detail.client.id) return;
+
+    const targetId = deleteImpact.clientId;
+    deleteInFlight.current = true;
+    setDeleteBusy(true);
+    setDeleteError(null);
+
+    let result;
+    try {
+      result = await trashApi.deleteClient(targetId);
+    } catch (e) {
+      setDeleteError(describeError(e));
+      deleteInFlight.current = false;
+      setDeleteBusy(false);
+      return;
+    }
+
+    // 删除已经成功。之后的列表刷新失败属于「数据已变、界面没跟上」，
+    // 不能写回确认框当成删除失败，更不能再显示一次确认框。
+    setDeleteOpen(false);
+    setDeleteImpact(null);
+    setDetail(null);
+    setDraft(null);
+    setNotice(
+      result.ordersTrashed > 0
+        ? `已移入回收站（含 ${result.ordersTrashed} 个订单）`
+        : "已移入回收站",
+    );
+    refreshQa();
+
+    try {
+      await loadList();
+    } catch (e) {
+      setError(describeError(e));
+    } finally {
+      deleteInFlight.current = false;
+      setDeleteBusy(false);
+    }
+  }, [detail, deleteImpact, loadList, refreshQa]);
 
   const select = useCallback(async (id: string) => {
     setError(null);
@@ -663,8 +736,65 @@ export default function ClientsPage() {
                 </table>
               )}
             </section>
+
+            {/* 危险操作区：放在详情最底部，与资料、标签、订单列表分开。 */}
+            <section className="panel danger-zone">
+              <header className="panel-head compact">
+                <h2>危险操作</h2>
+                <span className="muted">删除后可随时恢复</span>
+              </header>
+              <p className="muted">
+                客户与其名下的全部订单会一起移入回收站，制作历史与附件都会保留。
+              </p>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn btn-quiet-danger"
+                  disabled={busy || deleteBusy}
+                  onClick={() => void openDeleteClient()}
+                >
+                  移入回收站…
+                </button>
+              </div>
+            </section>
           </>
         )}
+
+        <ConfirmDialog
+          open={deleteOpen}
+          title="移入回收站？"
+          confirmLabel="移入回收站"
+          busy={deleteBusy}
+          error={deleteError}
+          confirmDisabled={
+            deleteImpact === null || deleteImpact.clientId !== detail?.client.id
+          }
+          onCancel={() => {
+            if (deleteBusy) return;
+            // 让仍在路上的影响范围请求作废。
+            impactSeq.current += 1;
+            setDeleteOpen(false);
+            setDeleteImpact(null);
+            setDeleteError(null);
+          }}
+          onConfirm={moveClientToTrash}
+        >
+          {deleteImpact ? (
+            <>
+              <p>
+                客户「{deleteImpact.clientName}」及其 {deleteImpact.orderCount} 个关联订单将一起移入回收站，
+                可随时恢复。
+              </p>
+              {deleteImpact.alreadyTrashed > 0 ? (
+                <p className="muted">
+                  其中 {deleteImpact.alreadyTrashed} 个订单此前已在回收站，本次将一并归入该客户组。
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p className="muted">正在统计影响范围…</p>
+          )}
+        </ConfirmDialog>
 
         <UnsavedChangesDialog
           open={pendingSwitch !== null}
