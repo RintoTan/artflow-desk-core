@@ -75,8 +75,7 @@ fn v3_database_upgrades_all_the_way_to_v7_without_losing_events() {
 
     // 2) 打开同一目录 → v3 → v4 → v5 → v6 → v7 连续升级。
     let env = common::open(&root);
-    assert_eq!(user_version(&env), 7);
-    assert_eq!(migrations::APP_SCHEMA_VERSION, 7);
+    assert_eq!(user_version(&env), migrations::APP_SCHEMA_VERSION);
 
     let conn = env.open_db().unwrap();
     let (id, kind, from_title): (i64, String, Option<String>) = conn
@@ -115,7 +114,7 @@ fn v5_database_upgrades_to_v7() {
     };
 
     let env = common::open(&root);
-    assert_eq!(user_version(&env), 7);
+    assert_eq!(user_version(&env), migrations::APP_SCHEMA_VERSION);
     let kinds: Vec<String> = {
         let conn = env.open_db().unwrap();
         let mut stmt = conn
@@ -162,7 +161,7 @@ fn v6_keeps_reschedule_fields_and_rebuilds_all_three_indexes() {
     };
 
     let env = common::open(&root);
-    assert_eq!(user_version(&env), 7);
+    assert_eq!(user_version(&env), migrations::APP_SCHEMA_VERSION);
     let conn = env.open_db().unwrap();
 
     let (os, od, ns, nd, reason, source): (
@@ -219,7 +218,7 @@ fn v7_enforces_cascade_and_skip_snapshot_rules() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("data");
     let env = common::open(&root);
-    assert_eq!(user_version(&env), 7);
+    assert_eq!(user_version(&env), migrations::APP_SCHEMA_VERSION);
 
     let mut conn = env.open_db().unwrap();
     let order_id = common::insert_order(&mut conn, "AF-2026-0004", "约束演练");
@@ -286,7 +285,7 @@ fn reopening_a_v7_database_does_not_migrate_again() {
 
     let (generation, rows) = {
         let env = common::open(&root);
-        assert_eq!(user_version(&env), 7);
+        assert_eq!(user_version(&env), migrations::APP_SCHEMA_VERSION);
         let mut conn = env.open_db().unwrap();
         let id = common::insert_order(&mut conn, "AF-2026-0005", "重复启动");
         insert_legacy_event(&mut conn, &id, "created", "2026-11-20T10:00:00+08:00");
@@ -297,7 +296,7 @@ fn reopening_a_v7_database_does_not_migrate_again() {
     };
 
     let env = common::open(&root);
-    assert_eq!(user_version(&env), 7);
+    assert_eq!(user_version(&env), migrations::APP_SCHEMA_VERSION);
     assert_eq!(
         env.active_generation(),
         generation,
@@ -355,7 +354,7 @@ fn failed_v7_migration_rolls_back_whole_step() {
     drop(conn);
     drop(env);
 
-    // 换回正常迁移表仍可升级到 v7。
+    // 换回正常迁移表仍可升级到最新版本。
     let env = common::open(&root);
-    assert_eq!(user_version(&env), 7);
+    assert_eq!(user_version(&env), migrations::APP_SCHEMA_VERSION);
 }
