@@ -215,6 +215,20 @@ describe("客户页：标签与动态统计", () => {
     expect(free).not.toBeDisabled();
   });
 
+  it("关联订单的状态列显示中文，不出现英文枚举", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(screen.getAllByText("林小满").length).toBeGreaterThan(0));
+
+    const [row] = screen.getAllByRole("button", { name: /林小满/ });
+    if (!row) throw new Error("未找到客户行");
+    await user.click(row);
+    await waitFor(() => expect(screen.getByText("AF-2026-0001")).toBeInTheDocument());
+
+    expect(screen.getByText("活动")).toBeInTheDocument();
+    expect(screen.queryByText("active")).toBeNull();
+  });
+
   it("按客户 ID 跳转到订单页", async () => {
     const user = userEvent.setup();
     renderPage();

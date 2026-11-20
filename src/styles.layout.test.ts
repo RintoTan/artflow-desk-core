@@ -222,3 +222,18 @@ describe("DEV-06B-UI-POLISH 规则守卫", () => {
     expect(dark).toMatch(/--tooltip-bg:/);
   });
 });
+
+describe("月视图星期表头吸附", () => {
+  const weekdays = blockAt(".cal-weekdays {");
+  const grid = blockAt(".cal-grid {");
+
+  it("表头吸附到滚动容器顶部，且背景不透明", () => {
+    expect(weekdays).toMatch(/position:\s*sticky/);
+    expect(weekdays).toMatch(/top:\s*0/);
+    expect(weekdays).toMatch(/background:\s*var\(--surface-alt\)/);
+  });
+
+  it("网格用 clip 而非 hidden，避免建立滚动容器使 sticky 失效", () => {
+    expect(grid).toMatch(/overflow:\s*clip/);
+  });
+});

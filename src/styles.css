@@ -5208,7 +5208,10 @@ dl.stat-row {
   min-width: 620px;
   border: 1px solid var(--border);
   border-radius: 10px;
+  /* hidden 会建立滚动容器，使内部 sticky 失效；clip 只裁剪、不建立滚动上下文。
+     前者作旧引擎回退，后者在 WebKit/WebView2 上生效。 */
   overflow: hidden;
+  overflow: clip;
 }
 
 .cal-weekdays {
@@ -5216,6 +5219,10 @@ dl.stat-row {
   grid-template-columns: repeat(7, minmax(0, 1fr));
   background: var(--surface-alt);
   border-bottom: 1px solid var(--border);
+  /* 吸附在 .cal-scroll 顶部；背景必须不透明，否则日期内容会透上来 */
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .cal-weekdays span {

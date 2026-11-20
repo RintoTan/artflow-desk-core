@@ -30,6 +30,23 @@ type NavItem = {
   end?: boolean;
 };
 
+/**
+ * QA 场景文案：场景名来自环境，数量来自真实库。
+ * 两者一起显示，避免「恢复 72 单后横幅仍写空白场景」这类误判。
+ */
+function qaScenarioLabel(qa: { scenario: string | null; orders: number }): string {
+  if (!qa.scenario) {
+    return "未知场景";
+  }
+  if (qa.scenario === "clean") {
+    return qa.orders > 0 ? "空白场景 · 已导入数据" : "空白场景";
+  }
+  if (qa.scenario === "seeded") {
+    return "预置场景";
+  }
+  return `场景 ${qa.scenario}`;
+}
+
 const NAV: NavItem[] = [
   { to: "/", label: "工作台", icon: "dashboard", end: true },
   { to: "/calendar", label: "日历", icon: "calendar" },
@@ -55,7 +72,12 @@ export default function App() {
   const route = useLocation();
   const isCalendar = route.pathname.startsWith("/calendar");
   // QA 模式必须在界面上一眼可见：连不上后端时保持普通外观，不猜。
-  const [qa, setQa] = useState<{ scenario: string | null } | null>(null);
+  const [qa, setQa] = useState<{
+    scenario: string | null;
+    orders: number;
+    clients: number;
+    templates: number;
+  } | null>(null);
   const [closeKind, setCloseKind] = useState<CloseKind | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
   const [closeBusy, setCloseBusy] = useState(false);
@@ -120,7 +142,16 @@ export default function App() {
       .status()
       .then((status) => {
         if (!alive) return;
-        setQa(status.qaMode ? { scenario: status.qaScenario ?? null } : null);
+        setQa(
+          status.qaMode
+            ? {
+                scenario: status.qaScenario ?? null,
+                orders: status.orders ?? 0,
+                clients: status.clients ?? 0,
+                templates: status.templates ?? 0,
+              }
+            : null,
+        );
       })
       .catch(() => {
         /* 状态查询失败不影响外壳渲染 */
@@ -351,10 +382,12 @@ export default function App() {
             <span className="nav-label">{collapsed ? "展开" : "折叠"}</span>
           </button>
 
-          <footer className="sidebar-foot">
-            <span>{hasDraft ? "有未保存的修改" : "DEV-06A 关窗保护"}</span>
-            <span className="muted">未完成 v1.0</span>
-          </footer>
+          {import.meta.env.DEV && (
+            <footer className="sidebar-foot">
+              <span>{hasDraft ? "有未保存的修改" : "DEV-06A 关窗保护"}</span>
+              <span className="muted">未完成 v1.0</span>
+            </footer>
+          )}
         </div>
       </aside>
 
@@ -362,8 +395,9 @@ export default function App() {
         <div className={`main-inner${isCalendar ? " main-inner-fixed" : ""}`}>
           {qa && (
             <p className="qa-banner" role="status">
-              <strong>QA 测试环境</strong>（{qa.scenario === "clean" ? "空白场景" : "预置场景"}）·
-              数据目录与正式台账完全隔离 · 构建 {typeof __BUILD_ID__ === "string" ? __BUILD_ID__ : "dev"}
+              <strong>QA 测试环境</strong>（{qaScenarioLabel(qa)}）· 当前 {qa.orders} 单 /{" "}
+              {qa.clients} 客户 / {qa.templates} 模板 · 数据目录与正式台账完全隔离 · 构建{" "}
+              {typeof __BUILD_ID__ === "string" ? __BUILD_ID__ : "dev"}
             </p>
           )}
           <Outlet />

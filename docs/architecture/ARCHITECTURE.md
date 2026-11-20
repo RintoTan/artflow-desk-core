@@ -62,6 +62,8 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 
 ## 数据模型（schema v7）
 
+> 删除、回收站、数据重置与存储位置迁移的设计见 [DATA-LIFECYCLE.md](DATA-LIFECYCLE.md)（v0.1.1 草案，待评审）。
+
 ### 核心表
 
 | 表 | 说明 |

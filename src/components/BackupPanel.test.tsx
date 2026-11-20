@@ -184,6 +184,7 @@ describe("数据备份面板", () => {
     expect(within(dialog).getByText(/in\.zip/)).toBeTruthy();
     expect(within(dialog).getByText(/结构版本与应用一致/)).toBeTruthy();
     expect(within(dialog).getByText(/跳级 1 条/)).toBeTruthy();
+    expect(within(dialog).getByText(/工作时区：Asia\/Shanghai/)).toBeTruthy();
 
     await user.click(within(dialog).getByRole("button", { name: "取消" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();

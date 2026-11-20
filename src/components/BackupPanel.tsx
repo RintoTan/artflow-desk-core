@@ -254,6 +254,7 @@ export default function BackupPanel({ onError }: { onError: (message: string) =>
               <strong>{preview.path.split("/").pop() ?? preview.path}</strong>
             </p>
             <p className="muted">创建时间：{formatMoment(preview.createdAt)}</p>
+            <p className="muted">工作时区：{preview.workingTimezone || "备份未记录"}</p>
             <p>
               备份结构 v{preview.schemaVersion} · 备份格式 v{preview.formatVersion} · 应用{" "}
               {preview.appVersion}

@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useElementWidth } from "../lib/useElementWidth";
 
 import type { OrderView } from "../bridge/commands";
+import { orderStatusLabel } from "../lib/orderStatus";
 import { riskBadge } from "../lib/ordersView";
 
 export type SortKey = "code" | "client" | "title" | "source" | "stage" | "status" | "delivery" | "amount";
@@ -13,12 +14,6 @@ type Props = {
   onOpen: (orderId: string) => void;
   formatMoney: (cents: number | null) => string;
   formatDate: (value: string | null) => string;
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  active: "活动",
-  complete: "已完成",
-  cancelled: "已取消",
 };
 
 const WORK_LABEL: Record<string, string> = {
@@ -166,7 +161,7 @@ export default function OrderTable({
                   <td>
                     <span className="table-main">{order.currentStageTitle ?? "—"}</span>
                     <span className="table-sub">
-                      <span className={`chip chip-${order.status}`}>{STATUS_LABEL[order.status]}</span>
+                      <span className={`chip chip-${order.status}`}>{orderStatusLabel(order.status)}</span>
                       {order.status === "active" && (
                         <span className="muted"> · {WORK_LABEL[order.workState]}</span>
                       )}
@@ -199,7 +194,7 @@ export default function OrderTable({
                   <td className="col-secondary">{order.commissionType ?? "—"}</td>
                   <td>{order.currentStageTitle ?? "—"}</td>
                   <td>
-                    <span className={`chip chip-${order.status}`}>{STATUS_LABEL[order.status]}</span>
+                    <span className={`chip chip-${order.status}`}>{orderStatusLabel(order.status)}</span>
                     {order.status === "active" && (
                       <span className="muted table-sub">{WORK_LABEL[order.workState]}</span>
                     )}

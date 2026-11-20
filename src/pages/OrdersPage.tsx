@@ -17,6 +17,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import { ScheduleOverview } from "../components/ScheduleOverview";
 import { TruncatedTitle } from "../components/TitleTooltip";
 import { localDayIndex } from "../lib/scheduleBar";
+import { orderStatusLabel } from "../lib/orderStatus";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import {
   densityClass,
@@ -49,12 +50,6 @@ import {
 } from "../bridge/commands";
 
 // ---------------------------------------------------------------- 展示辅助
-
-const STATUS_LABEL: Record<string, string> = {
-  active: "活动",
-  complete: "已完成",
-  cancelled: "已取消",
-};
 
 const WORK_LABEL: Record<string, string> = {
   queued: "排队中",
@@ -1085,7 +1080,7 @@ export default function OrdersPage() {
                   >
                     <span className="order-row-top">
                       <code className="order-code">{order.code}</code>
-                      <span className={`chip chip-${order.status}`}>{STATUS_LABEL[order.status]}</span>
+                      <span className={`chip chip-${order.status}`}>{orderStatusLabel(order.status)}</span>
                     </span>
                     <TruncatedTitle className="order-row-title" text={order.title}>
                       {order.title}
@@ -1252,7 +1247,7 @@ export default function OrdersPage() {
                   <div className="detail-code">
                     <code>{detail.code}</code>
                     <span className={`chip chip-${detail.status}`}>
-                      {STATUS_LABEL[detail.status]}
+                      {orderStatusLabel(detail.status)}
                     </span>
                     <span className={`chip chip-state-${detail.workState}`}>
                       {WORK_LABEL[detail.workState]}

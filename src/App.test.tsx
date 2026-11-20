@@ -41,6 +41,41 @@ describe("QA 模式标识", () => {
     expect(banner).toHaveTextContent("完全隔离");
   });
 
+  it("横幅同时显示场景与真实数据量", async () => {
+    status.mockImplementation(
+      async () =>
+        ({
+          qaMode: true,
+          qaScenario: "seeded",
+          orders: 72,
+          clients: 30,
+          templates: 10,
+        }) as unknown as EnvironmentStatus,
+    );
+    await renderShell();
+    const banner = await screen.findByRole("status");
+    expect(banner).toHaveTextContent("预置场景");
+    expect(banner).toHaveTextContent("当前 72 单");
+    expect(banner).toHaveTextContent("30 客户");
+    expect(banner).toHaveTextContent("10 模板");
+  });
+
+  it("空白场景里已有数据时额外标注，不冒充空白", async () => {
+    status.mockImplementation(
+      async () =>
+        ({
+          qaMode: true,
+          qaScenario: "clean",
+          orders: 72,
+          clients: 30,
+          templates: 10,
+        }) as unknown as EnvironmentStatus,
+    );
+    await renderShell();
+    const banner = await screen.findByRole("status");
+    expect(banner).toHaveTextContent("空白场景 · 已导入数据");
+  });
+
   it("正式模式下没有横幅", async () => {
     status.mockImplementation(async () => ({ qaMode: false } as unknown as EnvironmentStatus));
     await renderShell();

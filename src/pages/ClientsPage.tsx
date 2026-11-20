@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
+import { orderStatusLabel } from "../lib/orderStatus";
 import { usePageShortcuts } from "../lib/shortcuts";
 import { useUnsavedGuard } from "../lib/unsavedRegistry";
 import {
@@ -654,7 +655,7 @@ export default function ClientsPage() {
                       <tr key={order.id}>
                         <td className="mono">{order.code}</td>
                         <td>{order.title}</td>
-                        <td>{order.status}</td>
+                        <td>{orderStatusLabel(order.status)}</td>
                         <td>{order.currentStageTitle ?? "—"}</td>
                       </tr>
                     ))}
