@@ -34,6 +34,8 @@ pub fn list_orders(state: State<'_, AppState>) -> AppResult<Vec<OrderView>> {
 #[tauri::command]
 pub fn get_order(state: State<'_, AppState>, order_id: String) -> AppResult<OrderView> {
     let conn = state.env.open_db()?;
+    // 详情是业务读：回收站订单不回「不存在」，回「请先恢复」。
+    crate::store::visibility::require_visible_order(&conn, &order_id)?;
     orders::load(&conn, &order_id)
 }
 

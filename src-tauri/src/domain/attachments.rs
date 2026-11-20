@@ -24,6 +24,7 @@ use crate::media::import::{self, ValidatedImage};
 use crate::media::thumb;
 use crate::media::{self, ImageKind};
 use crate::store::paths::Layout;
+use crate::store::visibility;
 use crate::store::timezone;
 
 const DIR_ORIGINALS: &str = "attachments/originals";
@@ -146,11 +147,10 @@ fn extension_of(path: &str) -> String {
 
 // ---------------------------------------------------------------- 读取
 
+/// 附件总是挂在一条**有效**订单上：导入、读取、崩溃恢复都先过守卫。
+/// 订单进回收站后，附件视图不再作为业务数据暴露（历史由订单时间线保留）。
 fn order_exists(conn: &Connection, order_id: &str) -> AppResult<()> {
-    let found: Option<i64> = conn
-        .query_row("SELECT 1 FROM orders WHERE id = ?1", [order_id], |r| r.get(0))
-        .optional()?;
-    found.map(|_| ()).ok_or_else(|| AppError::not_found("订单不存在"))
+    visibility::require_visible_order(conn, order_id)
 }
 
 /// 只把"确定在代际目录内"的路径交给前端。

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain::lifecycle::{self, WorkState};
 use crate::error::{AppError, AppResult};
+use crate::store::visibility;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -124,6 +125,7 @@ pub struct MoveInput {
 
 pub fn move_order(conn: &mut Connection, input: MoveInput) -> AppResult<QueueSnapshot> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_order(&tx, &input.order_id)?;
     let current = revision(&tx)?;
     if current != input.expected_queue_revision {
         return Err(AppError::conflict(format!(

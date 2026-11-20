@@ -11,6 +11,7 @@ use crate::domain::lifecycle::{self, STATUS_ACTIVE};
 use crate::domain::orders::{self, OrderView};
 use crate::error::{AppError, AppResult};
 use crate::store::timezone;
+use crate::store::visibility;
 
 fn clean_stage_title(raw: &str) -> AppResult<String> {
     let title = raw.trim();
@@ -156,6 +157,7 @@ pub struct AddStageInput {
 pub fn add_stage(conn: &mut Connection, input: AddStageInput) -> AppResult<OrderView> {
     let title = clean_stage_title(&input.title)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_order(&tx, &input.order_id)?;
     if let Some(rid) = input.request_id.as_deref() {
         if events::request_already_applied(&tx, &input.order_id, rid)? {
             let view = orders::load(&tx, &input.order_id)?;
@@ -214,6 +216,7 @@ pub struct RenameStageInput {
 pub fn rename_stage(conn: &mut Connection, input: RenameStageInput) -> AppResult<OrderView> {
     let title = clean_stage_title(&input.title)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_order(&tx, &input.order_id)?;
     if let Some(rid) = input.request_id.as_deref() {
         if events::request_already_applied(&tx, &input.order_id, rid)? {
             let view = orders::load(&tx, &input.order_id)?;
@@ -280,6 +283,7 @@ pub struct RemoveStageInput {
 
 pub fn remove_stage(conn: &mut Connection, input: RemoveStageInput) -> AppResult<OrderView> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_order(&tx, &input.order_id)?;
     if let Some(rid) = input.request_id.as_deref() {
         if events::request_already_applied(&tx, &input.order_id, rid)? {
             let view = orders::load(&tx, &input.order_id)?;
@@ -354,6 +358,7 @@ pub struct ReorderStagesInput {
 
 pub fn reorder_stages(conn: &mut Connection, input: ReorderStagesInput) -> AppResult<OrderView> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_order(&tx, &input.order_id)?;
     if let Some(rid) = input.request_id.as_deref() {
         if events::request_already_applied(&tx, &input.order_id, rid)? {
             let view = orders::load(&tx, &input.order_id)?;

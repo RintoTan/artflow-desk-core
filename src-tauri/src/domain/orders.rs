@@ -13,6 +13,7 @@ use crate::error::{AppError, AppResult};
 use crate::store::highwater::HighWater;
 use crate::store::settings;
 use crate::store::timezone;
+use crate::store::visibility;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -195,7 +196,9 @@ pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
                 r.get::<_, Option<String>>(20)?,
             ))
         },
-    )?;
+    )
+    .optional()?
+    .ok_or_else(|| AppError::not_found("订单不存在"))?;
 
     let current_stage_id = row.9.clone();
     let stage_views: Vec<StageView> = facts
@@ -345,14 +348,7 @@ pub fn create_order(
     let new_client = match &input.client {
         ClientChoice::None => None,
         ClientChoice::Existing { client_id } => {
-            let exists: Option<String> = conn
-                .query_row("SELECT id FROM clients WHERE id = ?1", [client_id], |r| {
-                    r.get(0)
-                })
-                .optional()?;
-            if exists.is_none() {
-                return Err(AppError::not_found("选择的客户不存在"));
-            }
+            visibility::require_visible_client(conn, client_id)?;
             None
         }
         ClientChoice::New {
@@ -566,6 +562,7 @@ pub fn update_details(conn: &mut Connection, input: UpdateDetailsInput) -> AppRe
     };
 
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_order(&tx, &input.order_id)?;
 
     let current = tx
         .query_row(
@@ -592,12 +589,7 @@ pub fn update_details(conn: &mut Connection, input: UpdateDetailsInput) -> AppRe
         .ok_or_else(|| AppError::not_found("订单不存在"))?;
 
     if let Some(id) = &client_id {
-        let exists: Option<String> = tx
-            .query_row("SELECT id FROM clients WHERE id = ?1", [id], |r| r.get(0))
-            .optional()?;
-        if exists.is_none() {
-            return Err(AppError::not_found("选择的客户不存在"));
-        }
+        visibility::require_visible_client(&tx, id)?;
     }
 
     // 内容完全一致时视为保存成功，不再 bump revision。

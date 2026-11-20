@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
 use crate::store::timezone;
+use crate::store::visibility;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -229,14 +230,7 @@ pub fn delete_tag(conn: &Connection, tag_id: &str) -> AppResult<()> {
 
 /// 给客户挂标签。重复挂载视为成功（幂等），因为结果状态相同。
 pub fn link_tag(conn: &Connection, client_id: &str, tag_id: &str) -> AppResult<Vec<TagView>> {
-    let client: Option<String> = conn
-        .query_row("SELECT id FROM clients WHERE id = ?1", [client_id], |r| {
-            r.get(0)
-        })
-        .optional()?;
-    if client.is_none() {
-        return Err(AppError::not_found("客户不存在"));
-    }
+    visibility::require_visible_client(conn, client_id)?;
     let tag: Option<String> = conn
         .query_row("SELECT id FROM client_tags WHERE id = ?1", [tag_id], |r| {
             r.get(0)
@@ -254,6 +248,7 @@ pub fn link_tag(conn: &Connection, client_id: &str, tag_id: &str) -> AppResult<V
 
 /// 解除关联。不存在的关系视为已达成目标（幂等）。
 pub fn unlink_tag(conn: &Connection, client_id: &str, tag_id: &str) -> AppResult<Vec<TagView>> {
+    visibility::require_visible_client(conn, client_id)?;
     conn.execute(
         "DELETE FROM client_tag_link WHERE client_id = ?1 AND tag_id = ?2",
         params![client_id, tag_id],
@@ -271,6 +266,7 @@ pub fn list(conn: &Connection) -> AppResult<Vec<ClientView>> {
 }
 
 pub fn detail(conn: &Connection, id: &str) -> AppResult<ClientDetail> {
+    visibility::require_visible_client(conn, id)?;
     let client = read_one(conn, id)?;
     let mut stmt = conn.prepare(
         "SELECT o.id, o.code, o.title, o.status, o.current_stage_id, o.amount_cents, o.created_at
@@ -351,6 +347,7 @@ pub fn update(conn: &mut Connection, input: UpdateClientInput) -> AppResult<Clie
     let note = clean_optional(&input.note, 2000, "客户备注")?;
 
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_client(&tx, &input.client_id)?;
     let current = tx
         .query_row(
             "SELECT display_name, contact, note, revision FROM clients WHERE id = ?1",

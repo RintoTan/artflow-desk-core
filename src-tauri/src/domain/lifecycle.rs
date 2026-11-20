@@ -11,6 +11,7 @@ use crate::domain::orders::{self, OrderView};
 use crate::domain::queue;
 use crate::error::{AppError, AppResult};
 use crate::store::timezone;
+use crate::store::visibility;
 
 pub const STATUS_ACTIVE: &str = "active";
 pub const STATUS_COMPLETE: &str = "complete";
@@ -226,6 +227,7 @@ fn bump_queue_revision(tx: &Connection) -> AppResult<()> {
 pub fn start_work(conn: &mut Connection, input: LifecycleInput) -> AppResult<OrderView> {
     let request_id = clean_request_id(&input.request_id)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_order(&tx, &input.order_id)?;
     if already_applied(&tx, &input.order_id, &request_id)? {
         let view = orders::load(&tx, &input.order_id)?;
         tx.commit()?;
@@ -281,6 +283,7 @@ pub fn start_work(conn: &mut Connection, input: LifecycleInput) -> AppResult<Ord
 pub fn undo_start_work(conn: &mut Connection, input: LifecycleInput) -> AppResult<OrderView> {
     let request_id = clean_request_id(&input.request_id)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_order(&tx, &input.order_id)?;
     if already_applied(&tx, &input.order_id, &request_id)? {
         let view = orders::load(&tx, &input.order_id)?;
         tx.commit()?;
@@ -370,6 +373,7 @@ fn move_to_stage(
 pub fn advance_stage(conn: &mut Connection, input: LifecycleInput) -> AppResult<OrderView> {
     let request_id = clean_request_id(&input.request_id)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_order(&tx, &input.order_id)?;
     if already_applied(&tx, &input.order_id, &request_id)? {
         let view = orders::load(&tx, &input.order_id)?;
         tx.commit()?;
@@ -414,6 +418,7 @@ pub fn advance_stage(conn: &mut Connection, input: LifecycleInput) -> AppResult<
 pub fn rework_stage(conn: &mut Connection, input: ReworkInput) -> AppResult<OrderView> {
     let request_id = clean_request_id(&input.request_id)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_order(&tx, &input.order_id)?;
     if already_applied(&tx, &input.order_id, &request_id)? {
         let view = orders::load(&tx, &input.order_id)?;
         tx.commit()?;
@@ -509,6 +514,7 @@ pub fn skip_stage(conn: &mut Connection, input: SkipInput) -> AppResult<OrderVie
     let request_id = clean_request_id(&input.request_id)?;
     let reason = clean_skip_reason(&input.reason)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_order(&tx, &input.order_id)?;
     if already_applied(&tx, &input.order_id, &request_id)? {
         let view = orders::load(&tx, &input.order_id)?;
         tx.commit()?;
@@ -604,6 +610,7 @@ pub fn skip_stage(conn: &mut Connection, input: SkipInput) -> AppResult<OrderVie
 pub fn complete_order(conn: &mut Connection, input: LifecycleInput) -> AppResult<OrderView> {
     let request_id = clean_request_id(&input.request_id)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_order(&tx, &input.order_id)?;
     if already_applied(&tx, &input.order_id, &request_id)? {
         let view = orders::load(&tx, &input.order_id)?;
         tx.commit()?;
@@ -662,6 +669,7 @@ pub fn complete_order(conn: &mut Connection, input: LifecycleInput) -> AppResult
 pub fn cancel_order(conn: &mut Connection, input: LifecycleInput) -> AppResult<OrderView> {
     let request_id = clean_request_id(&input.request_id)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_order(&tx, &input.order_id)?;
     if already_applied(&tx, &input.order_id, &request_id)? {
         let view = orders::load(&tx, &input.order_id)?;
         tx.commit()?;
@@ -716,6 +724,7 @@ pub fn cancel_order(conn: &mut Connection, input: LifecycleInput) -> AppResult<O
 pub fn reopen_order(conn: &mut Connection, input: LifecycleInput) -> AppResult<OrderView> {
     let request_id = clean_request_id(&input.request_id)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_order(&tx, &input.order_id)?;
     if already_applied(&tx, &input.order_id, &request_id)? {
         let view = orders::load(&tx, &input.order_id)?;
         tx.commit()?;
