@@ -132,6 +132,11 @@ fn build_app() -> Result<tauri::App, String> {
             commands::trash::trash_delete_client,
             commands::trash::trash_restore_order,
             commands::trash::trash_restore_client,
+            commands::trash::trash_purge_order,
+            commands::trash::trash_purge_client,
+            commands::trash::trash_empty,
+            commands::trash::trash_cleanup_status,
+            commands::trash::trash_retry_cleanup,
             commands::templates::template_list,
             commands::templates::template_create,
             commands::templates::template_update,
@@ -271,6 +276,18 @@ fn setup_app(app: &mut tauri::App) -> AppResult<()> {
             Err(e) => {
                 eprintln!("[minidesk] attachment recovery failed: {}", e.message);
                 crate::infra::diag::log("startup", &format!("attachment recovery failed: {}", e.message));
+            }
+        }
+        // 启动时的有限自动重试：只碰 purge 任务，attempts < 3 才重新排队。
+        // 放在 run_cleanup 之前，本次启动就能把它们再试一遍。
+        match crate::domain::trash::reset_purge_failures(&conn, &generation, Some(3)) {
+            Ok(0) => {}
+            Ok(n) => crate::infra::diag::log(
+                "startup",
+                &format!("purge cleanup retry queued={n}"),
+            ),
+            Err(e) => {
+                eprintln!("[minidesk] purge cleanup reset failed: {}", e.message);
             }
         }
         match crate::domain::attachments::run_cleanup(&mut conn, &layout, &generation) {

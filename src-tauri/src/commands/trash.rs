@@ -5,7 +5,10 @@
 
 use tauri::State;
 
-use crate::domain::trash::{self, ClientDeleteImpact, DeletedClient, DeletedOrder, RestoredClient, RestoredOrder, TrashSnapshot};
+use crate::domain::trash::{
+    self, ClientDeleteImpact, DeletedClient, DeletedOrder, EmptyTrashResult, PurgeCleanupStatus,
+    PurgeGroupResult, PurgeResult, RestoredClient, RestoredOrder, TrashSnapshot,
+};
 use crate::error::AppResult;
 use crate::infra::state::AppState;
 
@@ -46,4 +49,48 @@ pub fn trash_restore_order(state: State<'_, AppState>, order_id: String) -> AppR
 pub fn trash_restore_client(state: State<'_, AppState>, client_id: String) -> AppResult<RestoredClient> {
     let mut conn = state.env.open_db()?;
     trash::restore_client(&mut conn, &client_id)
+}
+
+#[tauri::command]
+pub fn trash_purge_order(
+    state: State<'_, AppState>,
+    order_id: String,
+) -> AppResult<PurgeResult> {
+    let mut conn = state.env.open_db()?;
+    let layout = state.env.layout().clone();
+    let generation = state.env.active_generation().to_string();
+    trash::purge_order(&mut conn, &layout, &generation, &order_id)
+}
+
+#[tauri::command]
+pub fn trash_purge_client(
+    state: State<'_, AppState>,
+    client_id: String,
+) -> AppResult<PurgeGroupResult> {
+    let mut conn = state.env.open_db()?;
+    let layout = state.env.layout().clone();
+    let generation = state.env.active_generation().to_string();
+    trash::purge_client_group(&mut conn, &layout, &generation, &client_id)
+}
+
+#[tauri::command]
+pub fn trash_empty(state: State<'_, AppState>) -> AppResult<EmptyTrashResult> {
+    let mut conn = state.env.open_db()?;
+    let layout = state.env.layout().clone();
+    let generation = state.env.active_generation().to_string();
+    trash::empty_trash(&mut conn, &layout, &generation)
+}
+
+#[tauri::command]
+pub fn trash_cleanup_status(state: State<'_, AppState>) -> AppResult<PurgeCleanupStatus> {
+    let conn = state.env.open_db()?;
+    trash::purge_cleanup_status(&conn, &state.env.active_generation())
+}
+
+#[tauri::command]
+pub fn trash_retry_cleanup(state: State<'_, AppState>) -> AppResult<PurgeCleanupStatus> {
+    let mut conn = state.env.open_db()?;
+    let layout = state.env.layout().clone();
+    let generation = state.env.active_generation().to_string();
+    trash::retry_purge_cleanup(&mut conn, &layout, &generation)
 }

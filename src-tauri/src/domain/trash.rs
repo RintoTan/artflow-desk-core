@@ -476,3 +476,520 @@ fn assert_client_orders_in_batch(
         more
     )))
 }
+
+// ---------------------------------------------------------------- 永久删除
+
+/// 一次永久删除的附件清理结果。
+///
+/// 刻意分成「数据库里的附件记录」「登记的文件数」「实际清理结果」三个数字：
+/// 一条附件记录对应原图 + 缩略图两个文件，混成一个数字会让用户以为清理得不彻底。
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PurgeCleanup {
+    /// 本次登记的清理任务里已经完成的文件数。
+    pub cleaned: i64,
+    /// 仍未完成（失败 / 被拒绝 / 未轮询到）的文件数。
+    pub pending: i64,
+    /// 未完成文件的相对路径，用于界面提示具体是哪些。
+    pub pending_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PurgeResult {
+    pub orders_purged: i64,
+    /// 删除的附件**记录**数。
+    pub attachments_removed: i64,
+    /// 登记清理的**文件**数（原图 + 缩略图）。
+    pub files_registered: i64,
+    pub cleanup: PurgeCleanup,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PurgeGroupResult {
+    pub client_id: String,
+    pub clients_purged: i64,
+    pub orders_purged: i64,
+    pub attachments_removed: i64,
+    pub files_registered: i64,
+    pub cleanup: PurgeCleanup,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrashBatchOutcome {
+    /// 给用户看的批次名：`客户「Alice」+3 单` 或 `订单 AF-2026-0001`。
+    pub label: String,
+    pub ok: bool,
+    pub orders_purged: i64,
+    pub files_registered: i64,
+    pub cleanup_pending: i64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmptyTrashResult {
+    pub batches: Vec<TrashBatchOutcome>,
+    pub purged_batches: i64,
+    pub failed_batches: i64,
+    pub orders_purged: i64,
+    pub files_registered: i64,
+    pub cleanup_pending: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PurgeCleanupStatus {
+    /// 当前代际下 `reason='purge'` 的失败任务数。
+    pub failed: i64,
+    pub oldest_created_at: Option<String>,
+}
+
+/// 登记一条清理任务，并返回**真实存在**的任务 ID。
+///
+/// `INSERT OR IGNORE` 遇到「同代际同路径已有 pending 任务」时会静默不插入——
+/// 那个任务可能来自 `attachment_removed`，`id` 也不是我们生成的。
+/// 因此插入后必须回查真实行；若复用了既有任务，把它的 `reason` 提升为 `purge`，
+/// 否则它一旦失败就进不了 purge 专属重试，成为「无人知晓的残留文件」。
+fn register_cleanup_task(
+    tx: &Connection,
+    generation: &str,
+    order_id: &str,
+    rel_path: &str,
+    id_seed: &str,
+    now: &str,
+    ids: &mut Vec<String>,
+) -> AppResult<()> {
+    tx.execute(
+        "INSERT OR IGNORE INTO cleanup_tasks (id, generation, order_id, rel_path, reason, created_at)
+         VALUES (?1, ?2, ?3, ?4, 'purge', ?5)",
+        params![id_seed, generation, order_id, rel_path, now],
+    )?;
+
+    let actual: Option<String> = tx
+        .query_row(
+            "SELECT id FROM cleanup_tasks
+              WHERE generation = ?1 AND rel_path = ?2 AND state = 'pending'",
+            params![generation, rel_path],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let actual = actual.ok_or_else(|| integrity(format!("清理任务未能登记（{rel_path}）")))?;
+
+    tx.execute(
+        "UPDATE cleanup_tasks SET reason = 'purge', order_id = COALESCE(order_id, ?2)
+          WHERE id = ?1 AND state = 'pending'",
+        params![actual, order_id],
+    )?;
+    ids.push(actual);
+    Ok(())
+}
+
+/// 事务内的删除动作：读路径 → 登记任务 → 删记录。
+///
+/// 顺序不可换。`attachments` / `order_events` / `order_stages` 对 `orders` 都是
+/// `ON DELETE CASCADE`，先删订单就会把路径一起带走，文件从此无从清理。
+fn purge_order_rows(
+    tx: &Connection,
+    generation: &str,
+    order_id: &str,
+    now: &str,
+    group_batch: Option<&str>,
+) -> AppResult<(i64, i64, Vec<String>)> {
+    let row: Option<(Option<String>, Option<String>, Option<String>)> = tx
+        .query_row(
+            "SELECT deleted_at, client_id, deleted_batch FROM orders WHERE id = ?1",
+            [order_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    let (deleted_at, client_id, order_batch) =
+        row.ok_or_else(|| AppError::not_found(format!("订单 {order_id} 不存在")))?;
+
+    if deleted_at.is_none() {
+        return Err(AppError::conflict(format!(
+            "订单 {order_id} 仍在业务中，只能永久删除回收站里的订单"
+        )));
+    }
+
+    match group_batch {
+        Some(batch) => {
+            if order_batch.as_deref() != Some(batch) {
+                return Err(integrity(format!("订单 {order_id} 不属于本批次")));
+            }
+        }
+        None => {
+            // 单独永久删除：客户若也在回收站，必须走整批，否则会留下指向已删客户的孤儿。
+            if let Some(client_id) = client_id {
+                let client_deleted: Option<Option<String>> = tx
+                    .query_row(
+                        "SELECT deleted_at FROM clients WHERE id = ?1",
+                        [&client_id],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                if matches!(client_deleted, Some(Some(_))) {
+                    return Err(AppError::conflict(format!(
+                        "订单 {order_id} 属于回收站中的客户组，请在客户组上整批永久删除"
+                    )));
+                }
+            }
+        }
+    }
+
+    let attachment_rows: Vec<(String, Option<String>)> = {
+        let mut stmt =
+            tx.prepare("SELECT rel_path, thumb_rel_path FROM attachments WHERE order_id = ?1")?;
+        let rows = stmt
+            .query_map([order_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
+
+    let mut ids = Vec::new();
+    for (index, (original, thumb)) in attachment_rows.iter().enumerate() {
+        register_cleanup_task(
+            tx,
+            generation,
+            order_id,
+            original,
+            &format!("pg-{order_id}-{index}-o"),
+            now,
+            &mut ids,
+        )?;
+        if let Some(thumb) = thumb {
+            register_cleanup_task(
+                tx,
+                generation,
+                order_id,
+                thumb,
+                &format!("pg-{order_id}-{index}-t"),
+                now,
+                &mut ids,
+            )?;
+        }
+    }
+
+    // 显式删子表，不依赖 CASCADE：这里的行数要能对账。
+    tx.execute("DELETE FROM attachments WHERE order_id = ?1", [order_id])?;
+    tx.execute("DELETE FROM order_events WHERE order_id = ?1", [order_id])?;
+    tx.execute("DELETE FROM order_stages WHERE order_id = ?1", [order_id])?;
+    let removed = tx.execute("DELETE FROM orders WHERE id = ?1", [order_id])?;
+    if removed != 1 {
+        return Err(AppError::conflict("订单状态已变化，请刷新后重试"));
+    }
+
+    Ok((
+        attachment_rows.len() as i64,
+        ids.len() as i64,
+        ids,
+    ))
+}
+
+/// 只按本次登记的 ID 汇总，不用 `run_cleanup` 的全局报告。
+///
+/// 全局报告会顺带算上库里别人的 `<attachment_removed>` 任务，
+/// 用它的数字去写「本次删除成功清理了 N 个文件」会张冠李戴。
+fn summarize_cleanup(conn: &Connection, ids: &[String]) -> AppResult<PurgeCleanup> {
+    let mut out = PurgeCleanup::default();
+    for id in ids {
+        let row: Option<(String, String)> = conn
+            .query_row(
+                "SELECT state, rel_path FROM cleanup_tasks WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        match row {
+            Some((state, _)) if state == "done" => out.cleaned += 1,
+            Some((_, rel_path)) => {
+                out.pending += 1;
+                out.pending_paths.push(rel_path);
+            }
+            None => {
+                out.pending += 1;
+                out.pending_paths.push(format!("（任务 {id} 已不存在）"));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// 永久删除一张回收站订单。数据库事务提交后才动文件。
+pub fn purge_order(
+    conn: &mut Connection,
+    layout: &crate::store::paths::Layout,
+    generation: &str,
+    order_id: &str,
+) -> AppResult<PurgeResult> {
+    let now = timezone::now_timestamp();
+
+    let (attachments_removed, files_registered, ids) = {
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let result = purge_order_rows(&tx, generation, order_id, &now, None)?;
+        tx.commit()?;
+        result
+    };
+
+    // 事务已提交，文件才允许消失。失败会留下 failed 任务交给重试。
+    let _ = crate::domain::attachments::run_cleanup(conn, layout, generation)?;
+    let cleanup = summarize_cleanup(conn, &ids)?;
+
+    Ok(PurgeResult {
+        orders_purged: 1,
+        attachments_removed,
+        files_registered,
+        cleanup,
+    })
+}
+
+/// 永久删除一个客户组：客户 + 该批次全部订单。
+///
+/// 先按 `client_id + deleted_batch` 确认范围；任何订单未删除、缺批次或批次不符都中止。
+/// 删客户之前断言「已无订单引用它」，否则就是孤儿订单。
+pub fn purge_client_group(
+    conn: &mut Connection,
+    layout: &crate::store::paths::Layout,
+    generation: &str,
+    client_id: &str,
+) -> AppResult<PurgeGroupResult> {
+    let now = timezone::now_timestamp();
+
+    let (orders_purged, attachments_removed, files_registered, ids) = {
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+        let row: Option<(Option<String>, Option<String>)> = tx
+            .query_row(
+                "SELECT deleted_at, deleted_batch FROM clients WHERE id = ?1",
+                [client_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let (deleted_at, batch) =
+            row.ok_or_else(|| AppError::not_found(format!("客户 {client_id} 不存在")))?;
+        if deleted_at.is_none() {
+            return Err(AppError::conflict(format!(
+                "客户 {client_id} 仍在业务中，只能永久删除回收站里的客户"
+            )));
+        }
+        let batch = batch.ok_or_else(|| integrity("客户在回收站中但缺少删除批次"))?;
+
+        // 与恢复共用同一条完整性检查：批次外不允许夹带。
+        assert_client_orders_in_batch(&tx, client_id, &batch)?;
+
+        let order_ids: Vec<String> = {
+            let mut stmt = tx.prepare(
+                "SELECT id FROM orders WHERE client_id = ?1 AND deleted_batch = ?2 ORDER BY code",
+            )?;
+            let rows = stmt
+                .query_map(params![client_id, batch], |r| r.get(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            rows
+        };
+
+        let mut attachments_removed = 0i64;
+        let mut files_registered = 0i64;
+        let mut ids = Vec::new();
+        for order_id in &order_ids {
+            let (a, f, mut task_ids) =
+                purge_order_rows(&tx, generation, order_id, &now, Some(&batch))?;
+            attachments_removed += a;
+            files_registered += f;
+            ids.append(&mut task_ids);
+        }
+
+        // 标签关联随客户移除，标签本身不动。
+        tx.execute("DELETE FROM client_tag_link WHERE client_id = ?1", [client_id])?;
+        tx.execute("DELETE FROM clients WHERE id = ?1", [client_id])?;
+
+        let orphans: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM orders WHERE client_id = ?1",
+            [client_id],
+            |r| r.get(0),
+        )?;
+        if orphans != 0 {
+            return Err(integrity(format!(
+                "永久删除客户 {client_id} 后仍有 {orphans} 个订单引用该客户"
+            )));
+        }
+
+        tx.commit()?;
+        (order_ids.len() as i64, attachments_removed, files_registered, ids)
+    };
+
+    let _ = crate::domain::attachments::run_cleanup(conn, layout, generation)?;
+    let cleanup = summarize_cleanup(conn, &ids)?;
+
+    Ok(PurgeGroupResult {
+        client_id: client_id.to_string(),
+        clients_purged: 1,
+        orders_purged,
+        attachments_removed,
+        files_registered,
+        cleanup,
+    })
+}
+
+/// 清空回收站：每个客户组 / 独立订单各自一个事务，逐批提交。
+///
+/// 一批失败只回滚它自己，不影响已完成的批次，也不阻止后续批次。
+/// 这是唯一能让「部分成功」如实反映到界面的做法——把全部塞进一个事务，
+/// 一条失败就会把已删的数据「复活」，用户看到的结果与数据库不一致。
+pub fn empty_trash(
+    conn: &mut Connection,
+    layout: &crate::store::paths::Layout,
+    generation: &str,
+) -> AppResult<EmptyTrashResult> {
+    let groups: Vec<(String, String, i64)> = {
+        let mut stmt = conn.prepare(
+            "SELECT c.id, c.display_name,
+                    (SELECT COUNT(*) FROM orders o WHERE o.client_id = c.id AND o.deleted_at IS NOT NULL)
+               FROM clients c
+              WHERE c.deleted_at IS NOT NULL
+              ORDER BY c.deleted_at, c.display_name",
+        )?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
+    let loose: Vec<(String, String)> = {
+        let mut stmt = conn.prepare(
+            "SELECT o.id, o.code
+               FROM orders o
+               LEFT JOIN clients c ON c.id = o.client_id
+              WHERE o.deleted_at IS NOT NULL
+                AND (c.id IS NULL OR c.deleted_at IS NULL)
+              ORDER BY o.deleted_at, o.code",
+        )?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
+
+    let mut result = EmptyTrashResult {
+        batches: Vec::new(),
+        purged_batches: 0,
+        failed_batches: 0,
+        orders_purged: 0,
+        files_registered: 0,
+        cleanup_pending: 0,
+    };
+
+    for (client_id, name, count) in groups {
+        let label = format!("客户「{name}」+{count} 单");
+        match purge_client_group(conn, layout, generation, &client_id) {
+            Ok(done) => {
+                result.purged_batches += 1;
+                result.orders_purged += done.orders_purged;
+                result.files_registered += done.files_registered;
+                result.cleanup_pending += done.cleanup.pending;
+                result.batches.push(TrashBatchOutcome {
+                    label,
+                    ok: true,
+                    orders_purged: done.orders_purged,
+                    files_registered: done.files_registered,
+                    cleanup_pending: done.cleanup.pending,
+                    error: None,
+                });
+            }
+            Err(e) => {
+                result.failed_batches += 1;
+                result.batches.push(TrashBatchOutcome {
+                    label,
+                    ok: false,
+                    orders_purged: 0,
+                    files_registered: 0,
+                    cleanup_pending: 0,
+                    error: Some(e.message),
+                });
+            }
+        }
+    }
+
+    for (order_id, code) in loose {
+        match purge_order(conn, layout, generation, &order_id) {
+            Ok(done) => {
+                result.purged_batches += 1;
+                result.orders_purged += done.orders_purged;
+                result.files_registered += done.files_registered;
+                result.cleanup_pending += done.cleanup.pending;
+                result.batches.push(TrashBatchOutcome {
+                    label: format!("订单 {code}"),
+                    ok: true,
+                    orders_purged: done.orders_purged,
+                    files_registered: done.files_registered,
+                    cleanup_pending: done.cleanup.pending,
+                    error: None,
+                });
+            }
+            Err(e) => {
+                result.failed_batches += 1;
+                result.batches.push(TrashBatchOutcome {
+                    label: format!("订单 {code}"),
+                    ok: false,
+                    orders_purged: 0,
+                    files_registered: 0,
+                    cleanup_pending: 0,
+                    error: Some(e.message),
+                });
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+// ---------------------------------------------------------------- 清理重试
+
+/// 把失败的 purge 任务重新排队。
+///
+/// `max_attempts` 为 `Some(3)` 用于启动时的有限自动重试（三次是**总**尝试次数，
+/// 因为 `attempts` 只由执行器递增，重置时不动它）；
+/// 为 `None` 用于用户手动重试——手动不受上限约束，但也不清零计数。
+pub fn reset_purge_failures(
+    conn: &Connection,
+    generation: &str,
+    max_attempts: Option<i64>,
+) -> AppResult<usize> {
+    let changed = match max_attempts {
+        Some(limit) => conn.execute(
+            "UPDATE cleanup_tasks SET state = 'pending'
+              WHERE reason = 'purge' AND state = 'failed'
+                AND generation = ?1 AND attempts < ?2",
+            params![generation, limit],
+        )?,
+        None => conn.execute(
+            "UPDATE cleanup_tasks SET state = 'pending'
+              WHERE reason = 'purge' AND state = 'failed' AND generation = ?1",
+            [generation],
+        )?,
+    };
+    Ok(changed)
+}
+
+pub fn purge_cleanup_status(conn: &Connection, generation: &str) -> AppResult<PurgeCleanupStatus> {
+    let (failed, oldest): (i64, Option<String>) = conn.query_row(
+        "SELECT COUNT(*), MIN(created_at) FROM cleanup_tasks
+          WHERE reason = 'purge' AND state = 'failed' AND generation = ?1",
+        [generation],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    Ok(PurgeCleanupStatus {
+        failed,
+        oldest_created_at: oldest,
+    })
+}
+
+pub fn retry_purge_cleanup(
+    conn: &mut Connection,
+    layout: &crate::store::paths::Layout,
+    generation: &str,
+) -> AppResult<PurgeCleanupStatus> {
+    reset_purge_failures(conn, generation, None)?;
+    let _ = crate::domain::attachments::run_cleanup(conn, layout, generation)?;
+    purge_cleanup_status(conn, generation)
+}

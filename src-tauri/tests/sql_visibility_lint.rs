@@ -237,15 +237,15 @@ const EXEMPTIONS: &[Exemption] = &[
         kind: Kind::DisplayJoin,
         why: "队列列表同上",
     },
-    // ---- 回收站读模型（03B） ----
+    // ---- 回收站读模型（03B / 03C） ----
     // 这些查询按定义要读已删除的行；换成 *_visible 会得到空结果。
     // 下面的 trash_module_* 用例单独验证「确实带了 deleted_at 过滤」。
     Exemption {
         file: "domain/trash.rs",
         needle: "FROM clients c",
-        lines: 1,
+        lines: 2,
         kind: Kind::TrashRead,
-        why: "客户组主表必须包含已删除客户",
+        why: "客户组主表与清空列表都要包含已删除客户",
     },
     Exemption {
         file: "domain/trash.rs",
@@ -257,14 +257,14 @@ const EXEMPTIONS: &[Exemption] = &[
     Exemption {
         file: "domain/trash.rs",
         needle: "FROM orders o",
-        lines: 1,
+        lines: 3,
         kind: Kind::TrashRead,
-        why: "独立订单查询读基表",
+        why: "独立订单查询、清空列表、组内订单计数",
     },
     Exemption {
         file: "domain/trash.rs",
         needle: "LEFT JOIN clients c ON c.id = o.client_id",
-        lines: 1,
+        lines: 2,
         kind: Kind::TrashRead,
         why: "独立订单要显示原客户名（客户可能已删除）",
     },
@@ -278,9 +278,9 @@ const EXEMPTIONS: &[Exemption] = &[
     Exemption {
         file: "domain/trash.rs",
         needle: "\"SELECT COUNT(*) FROM orders WHERE client_id = ?1\",",
-        lines: 2,
+        lines: 3,
         kind: Kind::TrashRead,
-        why: "影响范围与删除结果都要数「全部订单」，含已在回收站的",
+        why: "影响范围、删除结果、清空批次文案都要数「全部订单」",
     },
     Exemption {
         file: "domain/trash.rs",
@@ -298,10 +298,24 @@ const EXEMPTIONS: &[Exemption] = &[
     },
     Exemption {
         file: "domain/trash.rs",
-        needle: "SELECT deleted_at, deleted_batch FROM clients WHERE id = ?1",
+        needle: "SELECT deleted_at, client_id, deleted_batch FROM orders WHERE id = ?1",
         lines: 1,
         kind: Kind::TrashRead,
-        why: "恢复客户要先取批次，才能限定恢复范围",
+        why: "永久删除前要读批次，确认它不归某个客户组",
+    },
+    Exemption {
+        file: "domain/trash.rs",
+        needle: "SELECT deleted_at, deleted_batch FROM clients WHERE id = ?1",
+        lines: 2,
+        kind: Kind::TrashRead,
+        why: "恢复与永久删除客户都要先取批次，才能限定范围",
+    },
+    Exemption {
+        file: "domain/trash.rs",
+        needle: "SELECT deleted_at FROM clients WHERE id = ?1",
+        lines: 1,
+        kind: Kind::TrashRead,
+        why: "单独永久删除订单前，判断它的客户是否也在回收站",
     },
     Exemption {
         file: "domain/trash.rs",
@@ -309,6 +323,27 @@ const EXEMPTIONS: &[Exemption] = &[
         lines: 1,
         kind: Kind::TrashRead,
         why: "批次完整性检查：找出不在本批次的订单",
+    },
+    Exemption {
+        file: "domain/trash.rs",
+        needle: "SELECT id FROM orders WHERE client_id = ?1 AND deleted_batch = ?2",
+        lines: 1,
+        kind: Kind::TrashRead,
+        why: "永久删除客户组：展开本批次全部订单",
+    },
+    Exemption {
+        file: "domain/trash.rs",
+        needle: "DELETE FROM orders WHERE id = ?1",
+        lines: 1,
+        kind: Kind::TrashRead,
+        why: "永久删除的落点，必须作用于回收站行",
+    },
+    Exemption {
+        file: "domain/trash.rs",
+        needle: "DELETE FROM clients WHERE id = ?1",
+        lines: 1,
+        kind: Kind::TrashRead,
+        why: "客户组永久删除的落点，前面已断言无订单引用",
     },
     // ---- QA 夹具 ----
     Exemption {
