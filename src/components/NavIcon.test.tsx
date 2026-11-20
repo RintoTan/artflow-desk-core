@@ -12,10 +12,11 @@ const NAMES = [
   "settings",
   "status",
   "calendar",
+  "trash",
 ] as const;
 
 describe("Arctic Line 导航图标", () => {
-  it("八个图标都在，且没有多余的名字", () => {
+  it("九个图标都在，且没有多余的名字", () => {
     expect(Object.keys(NAV_ICON_SHAPES).sort()).toEqual([...NAMES].sort());
   });
 

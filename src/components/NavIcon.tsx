@@ -20,7 +20,8 @@ export type NavIconName =
   | "stats"
   | "settings"
   | "status"
-  | "calendar";
+  | "calendar"
+  | "trash";
 
 type IconShape =
   /** 圆角矩形：x y w h r */
@@ -102,6 +103,16 @@ export const NAV_ICON_SHAPES: Record<NavIconName, IconShape[]> = {
     path("M4 10.2H20"),
     path("M8.6 3.6V7.2"),
     path("M15.4 3.6V7.2"),
+  ],
+
+  // 回收站：桶身 + 桶盖 + 提手 + 两道竖纹。
+  // 不用「垃圾桶翻倒」或「碎纸机」那类造型，避免在 20px 下变成一团。
+  trash: [
+    rect(6.6, 7.4, 10.8, 12, 1.8),
+    path("M4.8 7.4H19.2"),
+    path("M9.4 7.2V5.2H14.6V7.2"),
+    path("M10.4 10.8V16"),
+    path("M13.6 10.8V16"),
   ],
 };
 

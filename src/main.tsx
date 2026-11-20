@@ -9,6 +9,7 @@ import OrdersPage from "./pages/OrdersPage";
 import StatsPage from "./pages/StatsPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import SettingsPage from "./pages/SettingsPage";
+import TrashPage from "./pages/TrashPage";
 import AboutPage from "./pages/AboutPage";
 import "./styles.css";
 
@@ -25,6 +26,7 @@ const router = createHashRouter([
       { path: "orders", element: <OrdersPage /> },
       { path: "calendar", element: <CalendarPage /> },
       { path: "clients", element: <ClientsPage /> },
+      { path: "trash", element: <TrashPage /> },
       { path: "templates", element: <TemplatesPage /> },
       { path: "settings", element: <SettingsPage /> },
     ],

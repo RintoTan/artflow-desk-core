@@ -52,6 +52,7 @@ const NAV: NavItem[] = [
   { to: "/calendar", label: "日历", icon: "calendar" },
   { to: "/orders", label: "订单", icon: "orders" },
   { to: "/clients", label: "客户", icon: "clients" },
+  { to: "/trash", label: "回收站", icon: "trash" },
   { to: "/templates", label: "流程模板", icon: "templates" },
   { to: "/stats", label: "历史统计", icon: "stats" },
   { to: "/settings", label: "设置", icon: "settings" },
