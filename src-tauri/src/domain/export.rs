@@ -149,11 +149,14 @@ pub struct OrderExportRow {
     pub code: String,
     pub title: String,
     pub client_name: Option<String>,
+    /// 原始状态（`active` / `complete` / `cancelled`），不因进回收站而改写。
     pub status: String,
     pub created_at: String,
     pub planned_delivery_date: Option<String>,
     pub current_stage_title: Option<String>,
     pub amount_cents: Option<i64>,
+    /// 该行是否来自回收站。只有 `include_trashed` 时可能为真。
+    pub deleted: bool,
 }
 
 fn status_label(raw: &str) -> &'static str {
@@ -165,44 +168,76 @@ fn status_label(raw: &str) -> &'static str {
     }
 }
 
-/// 读取要导出的订单。`order_ids` 为空表示导出全部（由调用方决定 scope）。
-pub fn collect_orders(conn: &Connection, order_ids: &[String]) -> AppResult<Vec<OrderExportRow>> {
-    let rows: Vec<(String, String, Option<String>, String, String, Option<String>, Option<String>, Option<i64>)> = if order_ids.is_empty() {
-        let mut stmt = conn.prepare(
-            "SELECT o.code, o.title, c.display_name, o.status, o.created_at,
-                    o.planned_delivery_date,
-                    (SELECT s.title FROM order_stages s
-                      WHERE s.order_id = o.id AND s.stage_id = o.current_stage_id),
-                    o.amount_cents
-             FROM orders_visible o LEFT JOIN clients c ON c.id = o.client_id
-             ORDER BY o.created_at, o.code",
-        )?;
-        let rows: Vec<_> = stmt
-            .query_map([], |r| {
-                Ok((
-                    r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?,
-                ))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
+/// CSV 的状态文案。回收站行写作「已删除 · 原状态」，不改 `status` 列本身。
+fn csv_status(row: &OrderExportRow) -> String {
+    if row.deleted {
+        format!("已删除 · {}", status_label(&row.status))
+    } else {
+        status_label(&row.status).to_string()
+    }
+}
+
+/// 读取要导出的订单。
+///
+/// `order_ids` 为空表示全部；`include_trashed` 决定是否把回收站订单也纳入。
+/// 默认 `false`：业务导出只看有效订单，与列表口径一致。
+pub fn collect_orders(
+    conn: &Connection,
+    order_ids: &[String],
+    include_trashed: bool,
+) -> AppResult<Vec<OrderExportRow>> {
+    // 视图与基表列同名，只有 `deleted_at` 是基表独有；因此按需拼表名，
+    // 而不是写两份几乎相同的 SQL。
+    let table = if include_trashed {
+        "orders"
+    } else {
+        "orders_visible"
+    };
+
+    type RawRow = (
+        String,
+        String,
+        Option<String>,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+    );
+
+    let map_row = |r: &rusqlite::Row<'_>| -> rusqlite::Result<RawRow> {
+        Ok((
+            r.get(0)?,
+            r.get(1)?,
+            r.get(2)?,
+            r.get(3)?,
+            r.get(4)?,
+            r.get(5)?,
+            r.get(6)?,
+            r.get(7)?,
+            r.get(8)?,
+        ))
+    };
+
+    let sql_base = format!(
+        "SELECT o.code, o.title, c.display_name, o.status, o.created_at,
+                o.planned_delivery_date,
+                (SELECT s.title FROM order_stages s
+                  WHERE s.order_id = o.id AND s.stage_id = o.current_stage_id),
+                o.amount_cents, o.deleted_at
+         FROM {table} o LEFT JOIN clients c ON c.id = o.client_id"
+    );
+
+    let rows: Vec<RawRow> = if order_ids.is_empty() {
+        let mut stmt = conn.prepare(&format!("{sql_base} ORDER BY o.created_at, o.code"))?;
+        let rows: Vec<_> = stmt.query_map([], map_row)?.collect::<Result<Vec<_>, _>>()?;
         rows
     } else {
-        let mut stmt = conn.prepare(
-            "SELECT o.code, o.title, c.display_name, o.status, o.created_at,
-                    o.planned_delivery_date,
-                    (SELECT s.title FROM order_stages s
-                      WHERE s.order_id = o.id AND s.stage_id = o.current_stage_id),
-                    o.amount_cents
-             FROM orders_visible o LEFT JOIN clients c ON c.id = o.client_id
-             WHERE o.id = ?1",
-        )?;
+        let mut stmt = conn.prepare(&format!("{sql_base} WHERE o.id = ?1"))?;
         let mut out = Vec::new();
         for id in order_ids {
-            let row = stmt.query_row([id], |r| {
-                Ok((
-                    r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?,
-                ))
-            })?;
-            out.push(row);
+            out.push(stmt.query_row([id], map_row)?);
         }
         out
     };
@@ -210,15 +245,18 @@ pub fn collect_orders(conn: &Connection, order_ids: &[String]) -> AppResult<Vec<
     Ok(rows
         .into_iter()
         .map(
-            |(code, title, client_name, status, created_at, delivery, stage, amount)| OrderExportRow {
-                code,
-                title,
-                client_name,
-                status,
-                created_at,
-                planned_delivery_date: delivery,
-                current_stage_title: stage,
-                amount_cents: amount,
+            |(code, title, client_name, status, created_at, delivery, stage, amount, deleted_at)| {
+                OrderExportRow {
+                    code,
+                    title,
+                    client_name,
+                    status,
+                    created_at,
+                    planned_delivery_date: delivery,
+                    current_stage_title: stage,
+                    amount_cents: amount,
+                    deleted: deleted_at.is_some(),
+                }
             },
         )
         .collect())
@@ -278,7 +316,7 @@ pub fn orders_csv(
                 Some(name) => text(name.clone()),
                 None => Cell::Empty,
             },
-            text(status_label(&row.status)),
+            text(csv_status(row)),
             text(timezone::to_local_string(&row.created_at, tz)),
             match &row.planned_delivery_date {
                 Some(date) => text(date.clone()),

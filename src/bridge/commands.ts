@@ -184,14 +184,20 @@ export type BackupStatus = {
 };
 
 export type BackupSummary = {
+  /** 总数，含回收站 */
   orders: number;
   activeOrders: number;
+  /** 总数，含回收站 */
   clients: number;
   templates: number;
   events: number;
   attachments: number;
   stageSkips: number;
   reschedules: number;
+  /** `orders` 中在回收站的部分；旧后端可能缺省 */
+  trashedOrders?: number;
+  /** `clients` 中在回收站的部分；旧后端可能缺省 */
+  trashedClients?: number;
 };
 
 export type BackupCreated = {
@@ -656,8 +662,13 @@ export const statsApi = {
   report: (range: StatsRangeKey) => invoke<StatsReport>("stats_report", { range }),
   exportSummary: (input: { path: string; range: StatsRangeKey }) =>
     invoke<ExportResult>("export_summary_csv", { input }),
-  exportOrders: (input: { path: string; scope: "all" | "filtered"; orderIds?: string[] }) =>
-    invoke<ExportResult>("export_orders_csv", { input }),
+  exportOrders: (input: {
+    path: string;
+    scope: "all" | "filtered";
+    orderIds?: string[];
+    /** 是否包含回收站订单；默认 false */
+    includeTrashed?: boolean;
+  }) => invoke<ExportResult>("export_orders_csv", { input }),
 };
 
 export type UpdateAttachmentMetaInput = {

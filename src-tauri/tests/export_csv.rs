@@ -59,7 +59,7 @@ fn commas_quotes_and_newlines_are_escaped() {
     make_order(&ctx, "含\n换行", None, None);
 
     let conn = ctx.conn();
-    let rows = export::collect_orders(&conn, &[]).unwrap();
+    let rows = export::collect_orders(&conn, &[], false).unwrap();
     let body = text_of(&export::orders_csv(&conn, &rows, "全部订单").unwrap());
 
     assert!(body.contains("\"含,逗号\""), "逗号单元格必须加引号");
@@ -103,7 +103,7 @@ fn order_details_never_include_private_fields() {
     let ctx = Ctx::new();
     make_order(&ctx, "隐私检查", Some(5000), Some("客户甲"));
     let conn = ctx.conn();
-    let rows = export::collect_orders(&conn, &[]).unwrap();
+    let rows = export::collect_orders(&conn, &[], false).unwrap();
     let body = text_of(&export::orders_csv(&conn, &rows, "全部订单").unwrap());
 
     assert!(body.contains("客户甲"), "客户展示名可以导出");
@@ -134,10 +134,10 @@ fn filtered_and_all_scopes_differ() {
     make_order(&ctx, "乙", None, None);
     let conn = ctx.conn();
 
-    let all = export::collect_orders(&conn, &[]).unwrap();
+    let all = export::collect_orders(&conn, &[], false).unwrap();
     assert_eq!(all.len(), 2);
 
-    let only_a = export::collect_orders(&conn, &[a]).unwrap();
+    let only_a = export::collect_orders(&conn, &[a], false).unwrap();
     assert_eq!(only_a.len(), 1);
     assert_eq!(only_a[0].title, "甲");
 }
@@ -190,7 +190,7 @@ fn export_does_not_touch_the_database() {
         let conn = ctx.conn();
         let summary = export::summary_csv(&conn, StatsRange::All).unwrap();
         export::write_file(&dir.path().join("s.csv"), &summary, 0).unwrap();
-        let rows = export::collect_orders(&conn, &[]).unwrap();
+        let rows = export::collect_orders(&conn, &[], false).unwrap();
         let details = export::orders_csv(&conn, &rows, "全部订单").unwrap();
         export::write_file(&dir.path().join("o.csv"), &details, rows.len() as i64).unwrap();
     }
@@ -209,7 +209,7 @@ fn unknown_amount_is_marked_not_zeroed() {
     let ctx = Ctx::new();
     make_order(&ctx, "未知金额", None, None);
     let conn = ctx.conn();
-    let rows = export::collect_orders(&conn, &[]).unwrap();
+    let rows = export::collect_orders(&conn, &[], false).unwrap();
     let body = text_of(&export::orders_csv(&conn, &rows, "全部订单").unwrap());
 
     // 金额列为空、未知列为「是」

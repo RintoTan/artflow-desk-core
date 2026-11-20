@@ -59,6 +59,9 @@ pub struct OrdersExportInput {
     /// scope = filtered 时由前端传入它所看到的订单 ID
     #[serde(default)]
     pub order_ids: Vec<String>,
+    /// 是否把回收站订单也写进 CSV。默认关闭；开启时已删除行状态为「已删除 · 原状态」。
+    #[serde(default)]
+    pub include_trashed: bool,
 }
 
 #[tauri::command]
@@ -69,14 +72,19 @@ pub fn export_orders_csv(
     let conn = state.env.open_db()?;
     let (rows, label) = match input.scope.as_str() {
         "all" => {
-            let rows = export::collect_orders(&conn, &[])?;
-            (rows, "全部订单".to_string())
+            let rows = export::collect_orders(&conn, &[], input.include_trashed)?;
+            let label = if input.include_trashed {
+                "全部订单（含回收站）".to_string()
+            } else {
+                "全部订单".to_string()
+            };
+            (rows, label)
         }
         "filtered" => {
             if input.order_ids.is_empty() {
                 return Err(crate::error::AppError::invalid("当前筛选结果为空，没有可导出的订单"));
             }
-            let rows = export::collect_orders(&conn, &input.order_ids)?;
+            let rows = export::collect_orders(&conn, &input.order_ids, input.include_trashed)?;
             let label = format!("当前筛选结果（{} 条）", rows.len());
             (rows, label)
         }

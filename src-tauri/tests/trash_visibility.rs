@@ -150,7 +150,7 @@ fn csv_export_and_queue_exclude_trashed() {
     let mut conn = env.open_db().unwrap();
     seed(&mut conn);
 
-    let rows = export::collect_orders(&conn, &[]).unwrap();
+    let rows = export::collect_orders(&conn, &[], false).unwrap();
     assert_eq!(rows.len(), 2, "CSV 默认导出排除已删除");
     assert!(!rows.iter().any(|r| r.code == "AF-2026-0303"));
 
