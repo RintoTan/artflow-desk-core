@@ -41,6 +41,8 @@ enum Kind {
     /// 列表里取客户显示名。订单可见 ⇒ 按删除协议其客户也可见，
     /// 这里的基表 join 只为避免显示名变空白。
     DisplayJoin,
+    /// 回收站自己：它的任务就是读「被隐藏的那些行」，用视图会一行都读不到。
+    TrashRead,
 }
 
 impl Kind {
@@ -56,6 +58,7 @@ impl Kind {
             Kind::QaFixture => "QA_FIXTURE",
             Kind::ExportDynamic => "EXPORT_DYNAMIC",
             Kind::DisplayJoin => "DISPLAY_JOIN",
+            Kind::TrashRead => "TRASH_READ",
         }
     }
 }
@@ -233,6 +236,79 @@ const EXEMPTIONS: &[Exemption] = &[
         lines: 1,
         kind: Kind::DisplayJoin,
         why: "队列列表同上",
+    },
+    // ---- 回收站读模型（03B） ----
+    // 这些查询按定义要读已删除的行；换成 *_visible 会得到空结果。
+    // 下面的 trash_module_* 用例单独验证「确实带了 deleted_at 过滤」。
+    Exemption {
+        file: "domain/trash.rs",
+        needle: "FROM clients c",
+        lines: 1,
+        kind: Kind::TrashRead,
+        why: "客户组主表必须包含已删除客户",
+    },
+    Exemption {
+        file: "domain/trash.rs",
+        needle: "LEFT JOIN orders o ON o.client_id = c.id AND o.deleted_at IS NOT NULL",
+        lines: 1,
+        kind: Kind::TrashRead,
+        why: "组内订单只要已删除的那些",
+    },
+    Exemption {
+        file: "domain/trash.rs",
+        needle: "FROM orders o",
+        lines: 1,
+        kind: Kind::TrashRead,
+        why: "独立订单查询读基表",
+    },
+    Exemption {
+        file: "domain/trash.rs",
+        needle: "LEFT JOIN clients c ON c.id = o.client_id",
+        lines: 1,
+        kind: Kind::TrashRead,
+        why: "独立订单要显示原客户名（客户可能已删除）",
+    },
+    Exemption {
+        file: "domain/trash.rs",
+        needle: "SELECT display_name FROM clients WHERE id = ?1",
+        lines: 1,
+        kind: Kind::TrashRead,
+        why: "删除确认框需要客户名，客户此刻仍有效",
+    },
+    Exemption {
+        file: "domain/trash.rs",
+        needle: "\"SELECT COUNT(*) FROM orders WHERE client_id = ?1\",",
+        lines: 2,
+        kind: Kind::TrashRead,
+        why: "影响范围与删除结果都要数「全部订单」，含已在回收站的",
+    },
+    Exemption {
+        file: "domain/trash.rs",
+        needle: "\"SELECT COUNT(*) FROM orders WHERE client_id = ?1 AND deleted_at IS NOT NULL\",",
+        lines: 2,
+        kind: Kind::TrashRead,
+        why: "统计其中已在回收站的订单数",
+    },
+    Exemption {
+        file: "domain/trash.rs",
+        needle: "SELECT deleted_at, client_id FROM orders WHERE id = ?1",
+        lines: 1,
+        kind: Kind::TrashRead,
+        why: "恢复单张订单要先判断它是否已删除、客户是否已删除",
+    },
+    Exemption {
+        file: "domain/trash.rs",
+        needle: "SELECT deleted_at, deleted_batch FROM clients WHERE id = ?1",
+        lines: 1,
+        kind: Kind::TrashRead,
+        why: "恢复客户要先取批次，才能限定恢复范围",
+    },
+    Exemption {
+        file: "domain/trash.rs",
+        needle: "\"SELECT code, deleted_batch FROM orders",
+        lines: 1,
+        kind: Kind::TrashRead,
+        why: "批次完整性检查：找出不在本批次的订单",
     },
     // ---- QA 夹具 ----
     Exemption {
@@ -448,6 +524,7 @@ fn exemptions_only_appear_in_files_allowed_for_that_kind() {
                             | Kind::GuardedRead
                             | Kind::ExportDynamic
                             | Kind::DisplayJoin
+                            | Kind::TrashRead
                     ),
                     "{file} 不该出现 {:?} 类豁免",
                     kind
@@ -523,6 +600,29 @@ fn business_list_modules_reference_visible_views() {
             "{file} 里找不到 {view}：业务列表可能被改回基表"
         );
     }
+}
+
+#[test]
+fn trash_module_reads_hidden_rows_and_says_so() {
+    // TRASH_READ 豁免的针对性验证：豁免的前提是「确实在读已删除的行」。
+    // 如果哪天有人把它改成视图，回收站会静默变空——这里先红。
+    let source = fs::read_to_string(src_root().join("domain/trash.rs")).unwrap();
+
+    assert!(
+        !source.contains("orders_visible") && !source.contains("clients_visible"),
+        "回收站不得读可见性视图：那会把要恢复的数据过滤掉"
+    );
+
+    // 每条读取都必须显式涉及 deleted_at，否则等于把整库当回收站读。
+    let with_filter = source.matches("deleted_at IS NOT NULL").count();
+    assert!(with_filter >= 4, "回收站查询应带 deleted_at 过滤，实际 {with_filter} 处");
+
+    // 恢复必须同时清掉两列，只清一列会留下「有效但带批次」的脏标记。
+    assert_eq!(
+        source.matches("SET deleted_at = NULL, deleted_batch = NULL").count(),
+        3,
+        "恢复订单 1 处 + 恢复客户时订单与客户各 1 处，都要清空两列"
+    );
 }
 
 #[test]

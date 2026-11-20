@@ -43,6 +43,13 @@ const APPROVED: &[&str] = &[
     "client_tag_delete",
     "client_tag_link",
     "client_tag_unlink",
+    // 回收站（03B）：删除/恢复只改可见性，永久删除留在 03C。
+    "trash_snapshot",
+    "trash_client_delete_impact",
+    "trash_delete_order",
+    "trash_delete_client",
+    "trash_restore_order",
+    "trash_restore_client",
     "template_list",
     "template_create",
     "template_update",

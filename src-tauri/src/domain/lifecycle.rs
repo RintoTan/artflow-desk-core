@@ -60,10 +60,19 @@ pub struct Facts {
 }
 
 pub fn work_state(facts: &Facts) -> WorkState {
-    match facts.status.as_str() {
+    work_state_from(&facts.status, facts.started_at.as_deref())
+}
+
+/// 只依赖两个字段的同一份判定。
+///
+/// 抽出来是给回收站列表用的：它一次性查出很多行，不能每行都去 `load_facts`
+/// （那会变成 N+1）。规则仍然只有这里一处——若将来制作状态需要更多事实，
+/// 改这里会强制调用方同步，而不是让回收站悄悄算出另一个结果。
+pub fn work_state_from(status: &str, started_at: Option<&str>) -> WorkState {
+    match status {
         STATUS_COMPLETE => WorkState::Completed,
         STATUS_CANCELLED => WorkState::Cancelled,
-        _ if facts.started_at.is_some() => WorkState::InProgress,
+        _ if started_at.is_some() => WorkState::InProgress,
         _ => WorkState::Queued,
     }
 }

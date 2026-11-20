@@ -9,6 +9,7 @@ pub mod numbering;
 pub mod orders;
 pub mod queue;
 pub mod templates;
+pub mod trash;
 pub mod workflow;
 pub mod export;
 pub mod fixture;

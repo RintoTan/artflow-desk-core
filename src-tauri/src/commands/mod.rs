@@ -9,5 +9,6 @@ pub mod preferences;
 pub mod queue;
 pub mod stats;
 pub mod theme;
+pub mod trash;
 pub mod status;
 pub mod templates;
