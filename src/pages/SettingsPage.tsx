@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, describeError, type TimezoneInfo } from "../bridge/commands";
 import { AppIconImage } from "../components/AppIconImage";
 import AttachmentMaintenancePanel from "../components/AttachmentMaintenancePanel";
@@ -54,6 +55,16 @@ const MODE_LABEL: Record<ThemeMode, string> = {
   dark: "深色",
   system: "跟随系统",
 };
+
+/**
+ * 从设置页跳去回收站之前记下的滚动位置。
+ * 放在模块作用域：组件卸载后仍然有效，返回时才能滚回「数据维护」那一块。
+ */
+let rememberedScrollTop: number | null = null;
+
+function mainScroller(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("main.main");
+}
 
 export default function SettingsPage() {
   const [info, setInfo] = useState<TimezoneInfo | null>(null);
@@ -195,6 +206,21 @@ export default function SettingsPage() {
       if (dirty && !busy) void apply();
     },
   });
+
+  const rememberScroll = useCallback(() => {
+    rememberedScrollTop = mainScroller()?.scrollTop ?? null;
+  }, []);
+
+  // 回到设置页时恢复位置；info 到达后内容才定型，所以它也作为依赖再试一次。
+  useEffect(() => {
+    if (rememberedScrollTop === null) return;
+    const el = mainScroller();
+    if (!el) return;
+    const frame = requestAnimationFrame(() => {
+      el.scrollTop = rememberedScrollTop ?? 0;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [info]);
 
   const resolved = resolveTheme(themeDraft.mode, systemPrefersDark());
   const accent = normalizeAccent(themeDraft.accent);
@@ -507,6 +533,26 @@ export default function SettingsPage() {
       <BackupPanel onError={setError} />
 
       <AttachmentMaintenancePanel onError={setError} />
+
+      <section className="panel settings-module settings-module-full">
+        <h2>数据维护</h2>
+        {/* 低频功能：放在设置里，占一级导航会把工作台、订单这类日常入口挤下去。 */}
+        <Link
+          className="settings-entry"
+          to="/trash"
+          state={{ from: "settings" }}
+          onClick={rememberScroll}
+        >
+          <NavIcon name="trash" className="settings-entry-icon" />
+          <span className="settings-entry-copy">
+            <span className="settings-entry-title">回收站</span>
+            <span className="muted">管理已删除的订单与客户，可以恢复或永久删除</span>
+          </span>
+          <span className="settings-entry-go" aria-hidden="true">
+            ›
+          </span>
+        </Link>
+      </section>
 
       <section className="panel panel-quiet settings-module settings-module-full">
         <h2>本阶段尚未提供的设置</h2>

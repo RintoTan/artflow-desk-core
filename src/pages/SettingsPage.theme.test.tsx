@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -39,7 +40,12 @@ vi.mock("../bridge/commands", async () => {
 
 async function renderSettings() {
   const { default: SettingsPage } = await import("./SettingsPage");
-  render(<SettingsPage />);
+  // 设置页里有指向回收站的 Link，需要路由上下文。
+  render(
+    <MemoryRouter>
+      <SettingsPage />
+    </MemoryRouter>,
+  );
   await screen.findByText("外观");
   // "Arctic Blue（默认浅色）" 同时出现在按钮和状态行里，按角色确认按钮存在即可
   await screen.findByRole("button", { name: "Arctic Blue（默认浅色）" });
@@ -97,7 +103,11 @@ describe("设置页主题编辑", () => {
     resetThemeForTests();
     await loadTheme(); // 模拟 App 启动时把已保存主题读进来
     const { default: SettingsPage } = await import("./SettingsPage");
-    render(<SettingsPage />);
+    render(
+      <MemoryRouter>
+        <SettingsPage />
+      </MemoryRouter>,
+    );
     await screen.findByText("外观");
 
     await userEvent.click(screen.getByRole("button", { name: "恢复默认主题" }));
@@ -134,7 +144,11 @@ describe("设置页主题编辑", () => {
     resetThemeForTests();
     await loadTheme();
     const { default: SettingsPage } = await import("./SettingsPage");
-    render(<SettingsPage />);
+    render(
+      <MemoryRouter>
+        <SettingsPage />
+      </MemoryRouter>,
+    );
     await screen.findByText("外观");
 
     await userEvent.click(screen.getByRole("button", { name: "恢复默认主题" }));

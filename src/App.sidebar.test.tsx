@@ -60,11 +60,11 @@ describe("侧边栏折叠", () => {
     const orders = screen.getByRole("link", { name: "订单" });
     expect(orders).toHaveAttribute("title", "订单");
     expect(orders).toHaveAccessibleName("订单");
-    // 九个导航项都还在（新增「回收站」，位置在「客户」之后）
-    expect(screen.getAllByRole("link")).toHaveLength(9);
+    // 八个导航项；回收站不在侧边栏，入口在设置页的「数据维护」里
+    expect(screen.getAllByRole("link")).toHaveLength(8);
   });
 
-  it("导航顺序固定：回收站在客户之后、流程模板之前", async () => {
+  it("导航顺序固定，回收站没有一级入口", async () => {
     await renderShell();
     const labels = screen.getAllByRole("link").map((link) => link.textContent?.trim());
     expect(labels).toEqual([
@@ -72,19 +72,19 @@ describe("侧边栏折叠", () => {
       "日历",
       "订单",
       "客户",
-      "回收站",
       "流程模板",
       "历史统计",
       "设置",
       "关于软件",
     ]);
+    expect(labels).not.toContain("回收站");
   });
 
   it("每个导航项都有统一的线性图标，描边与尺寸一致", async () => {
     await renderShell();
     const icons = document.querySelectorAll("svg.nav-icon");
-    // 9 个导航 + 折叠按钮上的箭头
-    expect(icons.length).toBe(10);
+    // 8 个导航 + 折叠按钮上的箭头
+    expect(icons.length).toBe(9);
     for (const icon of Array.from(icons)) {
       const path = icon.querySelector("path");
       expect(path?.getAttribute("stroke-width") ?? icon.getAttribute("stroke-width")).toBe("1.8");
