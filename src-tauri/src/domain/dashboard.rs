@@ -52,15 +52,15 @@ pub fn metrics(conn: &Connection) -> AppResult<DashboardMetrics> {
     let today: NaiveDate = deadline::today_in(tz);
     let month = today.format("%Y-%m").to_string();
 
-    let active_total = count(conn, "SELECT COUNT(*) FROM orders WHERE status = 'active'", &[])?;
+    let active_total = count(conn, "SELECT COUNT(*) FROM orders_visible WHERE status = 'active'", &[])?;
     let queued = count(
         conn,
-        "SELECT COUNT(*) FROM orders WHERE status = 'active' AND started_at IS NULL",
+        "SELECT COUNT(*) FROM orders_visible WHERE status = 'active' AND started_at IS NULL",
         &[],
     )?;
     let in_progress = count(
         conn,
-        "SELECT COUNT(*) FROM orders WHERE status = 'active' AND started_at IS NOT NULL",
+        "SELECT COUNT(*) FROM orders_visible WHERE status = 'active' AND started_at IS NOT NULL",
         &[],
     )?;
 
@@ -71,7 +71,7 @@ pub fn metrics(conn: &Connection) -> AppResult<DashboardMetrics> {
     let mut unscheduled = 0i64;
     {
         let mut stmt = conn.prepare(
-            "SELECT planned_delivery_date FROM orders WHERE status = 'active'",
+            "SELECT planned_delivery_date FROM orders_visible WHERE status = 'active'",
         )?;
         let mut rows = stmt.query([])?;
         while let Some(row) = rows.next()? {
@@ -89,7 +89,7 @@ pub fn metrics(conn: &Connection) -> AppResult<DashboardMetrics> {
     // 事件次数必须按 occurred_at 落在本月的真实事件统计。
     let (from, to) = timezone::month_bounds_utc(tz, &month)?;
     let completed_stmt = "SELECT COUNT(*) FROM order_events e
-                          JOIN orders o ON o.id = e.order_id
+                          JOIN orders_visible o ON o.id = e.order_id
                           WHERE e.kind = ?1 AND e.occurred_at >= ?2 AND e.occurred_at < ?3";
     let completed_this_month = count(conn, completed_stmt, &[&"completed", &from, &to])?;
     let cancelled_this_month = count(conn, completed_stmt, &[&"cancelled", &from, &to])?;
@@ -136,7 +136,7 @@ pub fn completed_events_in_month(
     let mut stmt = conn.prepare(
         "SELECT e.id, e.order_id, o.code, o.title, e.occurred_at, e.from_stage_title
          FROM order_events e
-         JOIN orders o ON o.id = e.order_id
+         JOIN orders_visible o ON o.id = e.order_id
          WHERE e.kind = 'completed' AND e.occurred_at >= ?1 AND e.occurred_at < ?2
          ORDER BY e.occurred_at DESC, e.id DESC",
     )?;

@@ -91,14 +91,14 @@ fn clean_optional(raw: &Option<String>, max: usize, field: &str) -> AppResult<Op
 fn read_one(conn: &Connection, id: &str) -> AppResult<ClientView> {
     let mut view = conn.query_row(
         "SELECT c.id, c.display_name, c.contact, c.note, c.revision,
-                (SELECT COUNT(*) FROM orders o WHERE o.client_id = c.id),
-                (SELECT COUNT(*) FROM orders o WHERE o.client_id = c.id AND o.status = 'active'),
-                (SELECT COUNT(*) FROM orders o WHERE o.client_id = c.id AND o.status = 'complete'),
-                (SELECT COALESCE(SUM(o.amount_cents), 0) FROM orders o
+                (SELECT COUNT(*) FROM orders_visible o WHERE o.client_id = c.id),
+                (SELECT COUNT(*) FROM orders_visible o WHERE o.client_id = c.id AND o.status = 'active'),
+                (SELECT COUNT(*) FROM orders_visible o WHERE o.client_id = c.id AND o.status = 'complete'),
+                (SELECT COALESCE(SUM(o.amount_cents), 0) FROM orders_visible o
                    WHERE o.client_id = c.id AND o.amount_cents IS NOT NULL),
-                (SELECT MAX(o.created_at) FROM orders o WHERE o.client_id = c.id),
+                (SELECT MAX(o.created_at) FROM orders_visible o WHERE o.client_id = c.id),
                 c.created_at, c.updated_at
-         FROM clients c WHERE c.id = ?1",
+         FROM clients_visible c WHERE c.id = ?1",
         [id],
         |r| {
             Ok(ClientView {
@@ -262,7 +262,7 @@ pub fn unlink_tag(conn: &Connection, client_id: &str, tag_id: &str) -> AppResult
 }
 
 pub fn list(conn: &Connection) -> AppResult<Vec<ClientView>> {
-    let mut stmt = conn.prepare("SELECT id FROM clients ORDER BY display_name, id")?;
+    let mut stmt = conn.prepare("SELECT id FROM clients_visible ORDER BY display_name, id")?;
     let ids: Vec<String> = stmt
         .query_map([], |r| r.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
@@ -274,7 +274,7 @@ pub fn detail(conn: &Connection, id: &str) -> AppResult<ClientDetail> {
     let client = read_one(conn, id)?;
     let mut stmt = conn.prepare(
         "SELECT o.id, o.code, o.title, o.status, o.current_stage_id, o.amount_cents, o.created_at
-         FROM orders o WHERE o.client_id = ?1
+         FROM orders_visible o WHERE o.client_id = ?1
          ORDER BY o.created_at DESC, o.code DESC",
     )?;
     let orders = stmt
@@ -296,7 +296,7 @@ pub fn detail(conn: &Connection, id: &str) -> AppResult<ClientDetail> {
     for mut brief in orders {
         let title: Option<String> = conn
             .query_row(
-                "SELECT s.title FROM orders o
+                "SELECT s.title FROM orders_visible o
                  JOIN order_stages s ON s.order_id = o.id AND s.stage_id = o.current_stage_id
                  WHERE o.id = ?1",
                 [&brief.id],

@@ -174,7 +174,7 @@ pub fn collect_orders(conn: &Connection, order_ids: &[String]) -> AppResult<Vec<
                     (SELECT s.title FROM order_stages s
                       WHERE s.order_id = o.id AND s.stage_id = o.current_stage_id),
                     o.amount_cents
-             FROM orders o LEFT JOIN clients c ON c.id = o.client_id
+             FROM orders_visible o LEFT JOIN clients c ON c.id = o.client_id
              ORDER BY o.created_at, o.code",
         )?;
         let rows: Vec<_> = stmt
@@ -192,7 +192,7 @@ pub fn collect_orders(conn: &Connection, order_ids: &[String]) -> AppResult<Vec<
                     (SELECT s.title FROM order_stages s
                       WHERE s.order_id = o.id AND s.stage_id = o.current_stage_id),
                     o.amount_cents
-             FROM orders o LEFT JOIN clients c ON c.id = o.client_id
+             FROM orders_visible o LEFT JOIN clients c ON c.id = o.client_id
              WHERE o.id = ?1",
         )?;
         let mut out = Vec::new();

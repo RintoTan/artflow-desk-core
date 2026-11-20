@@ -37,7 +37,7 @@ pub fn revision(conn: &Connection) -> AppResult<i64> {
 
 pub fn list(conn: &Connection) -> AppResult<Vec<QueueEntry>> {
     let mut stmt = conn.prepare(
-        "SELECT id FROM orders WHERE status = 'active' ORDER BY queue_position, code",
+        "SELECT id FROM orders_visible WHERE status = 'active' ORDER BY queue_position, code",
     )?;
     let ids: Vec<String> = stmt
         .query_map([], |r| r.get::<_, String>(0))?
@@ -49,7 +49,7 @@ pub fn list(conn: &Connection) -> AppResult<Vec<QueueEntry>> {
         let facts = lifecycle::load_facts(conn, &id)?;
         let (code, title, position, client_name) = conn.query_row(
             "SELECT o.code, o.title, o.queue_position, c.display_name
-             FROM orders o LEFT JOIN clients c ON c.id = o.client_id
+             FROM orders_visible o LEFT JOIN clients c ON c.id = o.client_id
              WHERE o.id = ?1",
             [&id],
             |r| {
@@ -99,7 +99,7 @@ pub fn renumber(tx: &Connection, ids: &[String]) -> AppResult<()> {
 /// 活动订单 ID 列表（按当前位置）。
 pub fn active_ids(conn: &Connection) -> AppResult<Vec<String>> {
     let mut stmt = conn.prepare(
-        "SELECT id FROM orders WHERE status = 'active' ORDER BY queue_position, code",
+        "SELECT id FROM orders_visible WHERE status = 'active' ORDER BY queue_position, code",
     )?;
     let ids = stmt
         .query_map([], |r| r.get::<_, String>(0))?
@@ -187,7 +187,7 @@ pub fn shift(conn: &mut Connection, order_id: &str, expected_revision: i64, delt
 /// 由 `orders::create_order` 在同一个事务里调用。
 pub fn insert_new(tx: &Connection, order_id: &str, position: Option<i64>) -> AppResult<()> {
     let mut stmt = tx.prepare(
-        "SELECT id FROM orders WHERE status = 'active' AND id <> ?1
+        "SELECT id FROM orders_visible WHERE status = 'active' AND id <> ?1
          ORDER BY queue_position, code",
     )?;
     let mut ids: Vec<String> = stmt
@@ -208,7 +208,7 @@ pub fn insert_new(tx: &Connection, order_id: &str, position: Option<i64>) -> App
 pub fn position_of(conn: &Connection, order_id: &str) -> AppResult<Option<i64>> {
     Ok(conn
         .query_row(
-            "SELECT queue_position FROM orders WHERE id = ?1 AND status = 'active'",
+            "SELECT queue_position FROM orders_visible WHERE id = ?1 AND status = 'active'",
             [order_id],
             |r| r.get::<_, i64>(0),
         )

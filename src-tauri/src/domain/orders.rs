@@ -166,7 +166,7 @@ pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
                 o.planned_start_date, o.planned_delivery_date,
                 o.started_at, o.completed_at, o.cancelled_at,
                 o.revision, o.created_at, o.updated_at, o.source, o.stage_template_id
-         FROM orders o
+         FROM orders_visible o
          LEFT JOIN clients c ON c.id = o.client_id
          WHERE o.id = ?1",
         [order_id],
@@ -258,7 +258,7 @@ pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
 /// 活动订单按队列顺序在前，终态订单按更新时间在后。
 pub fn list(conn: &Connection) -> AppResult<Vec<OrderView>> {
     let mut stmt = conn.prepare(
-        "SELECT id FROM orders
+        "SELECT id FROM orders_visible
          ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END,
                   CASE WHEN status = 'active' THEN queue_position ELSE 0 END,
                   updated_at DESC,
@@ -272,7 +272,7 @@ pub fn list(conn: &Connection) -> AppResult<Vec<OrderView>> {
 }
 
 pub fn count_orders(conn: &Connection) -> AppResult<i64> {
-    Ok(conn.query_row("SELECT COUNT(*) FROM orders", [], |r| r.get(0))?)
+    Ok(conn.query_row("SELECT COUNT(*) FROM orders_visible", [], |r| r.get(0))?)
 }
 
 // ---------------------------------------------------------------- 创建
@@ -440,7 +440,7 @@ pub fn create_order(
 
     // 先落一个临时位置，随后由 queue::insert_new 统一重排为连续位置。
     let queue_position: i64 = tx.query_row(
-        "SELECT COALESCE(MAX(queue_position), -1) + 1 FROM orders WHERE status = 'active'",
+        "SELECT COALESCE(MAX(queue_position), -1) + 1 FROM orders_visible WHERE status = 'active'",
         [],
         |r| r.get(0),
     )?;

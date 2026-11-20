@@ -114,13 +114,13 @@ pub fn report(conn: &Connection, range: StatsRange) -> AppResult<StatsReport> {
 
     // 最早数据月份（仅用于 All）
     let earliest_order: Option<String> = conn
-        .query_row("SELECT MIN(created_at) FROM orders", [], |r| {
+        .query_row("SELECT MIN(created_at) FROM orders_visible", [], |r| {
             r.get::<_, Option<String>>(0)
         })
         .unwrap_or(None);
     let earliest_event: Option<String> = conn
         .query_row(
-            "SELECT MIN(e.occurred_at) FROM order_events e JOIN orders o ON o.id = e.order_id",
+            "SELECT MIN(e.occurred_at) FROM order_events e JOIN orders_visible o ON o.id = e.order_id",
             [],
             |r| r.get::<_, Option<String>>(0),
         )
@@ -160,12 +160,12 @@ pub fn report(conn: &Connection, range: StatsRange) -> AppResult<StatsReport> {
         })
         .collect();
 
-    // ---- 事件次数：只统计仍然存在的订单（JOIN orders）
+    // ---- 事件次数：只统计仍然有效的订单（JOIN orders_visible）
     {
         let mut stmt = conn.prepare(
             "SELECT e.kind, e.occurred_at
              FROM order_events e
-             JOIN orders o ON o.id = e.order_id
+             JOIN orders_visible o ON o.id = e.order_id
              WHERE e.kind IN ('created', 'completed', 'cancelled')",
         )?;
         let rows = stmt
@@ -189,7 +189,7 @@ pub fn report(conn: &Connection, range: StatsRange) -> AppResult<StatsReport> {
 
     // ---- 金额：按订单创建月份归属，计入其**当前**金额
     {
-        let mut stmt = conn.prepare("SELECT created_at, amount_cents FROM orders")?;
+        let mut stmt = conn.prepare("SELECT created_at, amount_cents FROM orders_visible")?;
         let rows = stmt
             .query_map([], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?))
