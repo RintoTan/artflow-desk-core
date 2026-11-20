@@ -68,7 +68,7 @@ ArtFlow Desk Core 是一款为独立画师设计的桌面委托管理工具，�
 ## 安装与首次启动
 
 完整手册：[docs/user-guide/USER-MANUAL.md](docs/user-guide/USER-MANUAL.md)
-（分册：[macOS](docs/user-guide/USER-MANUAL-macOS.md) · [Windows](docs/user-guide/USER-MANUAL-Windows.md)）
+（macOS 首次打开需「右键 → 打开」；Windows 有 SmartScreen 提示，均为未配置签名所致。）
 
 ## 数据与隐私
 
@@ -76,25 +76,21 @@ ArtFlow Desk Core 是一款为独立画师设计的桌面委托管理工具，�
 - 不联网、不上传、不集成任何第三方分析或云服务。
 - 备份包**未加密**，内含客户与订单信息，请妥善保存。
 
-详见 [SECURITY-AND-PRIVACY.md](docs/architecture/SECURITY-AND-PRIVACY.md)。
+数据存储、代际、备份格式、恢复流程与故障恢复：见 [DATA-SAFETY.md](docs/architecture/DATA-SAFETY.md)。
 
 ## 项目文档
 
 | 入口 | 内容 |
 | --- | --- |
-| [docs/README.md](docs/README.md) | 文档总索引 |
-| [产品概览](docs/product/PRODUCT-OVERVIEW.md) | 定位、用户、边界 |
-| [功能地图](docs/product/FEATURE-MAP.md) | 每个功能模块的实际能力 |
-| [路线图](docs/product/ROADMAP.md) | 已完成 / 进行中 / 暂缓 |
-| [产品决策](docs/product/PRODUCT-DECISIONS.md) | 关键取舍与理由 |
-| [系统架构](docs/architecture/SYSTEM-ARCHITECTURE.md) | 技术栈与模块划分 |
-| [数据架构](docs/architecture/DATABASE-ARCHITECTURE.md) | 代际、迁移、备份格式 |
-| [需求清单](docs/product/PRODUCT-REQUIREMENTS.md) | 已实现 / 部分 / 未实现 |
-| [开发指南](docs/development/DEVELOPMENT-GUIDE.md) | 环境、启动、测试 |
-| [构建指南](docs/development/BUILD-GUIDE.md) | macOS 与 Windows 构建 |
-| [发布指南](docs/development/RELEASE-GUIDE.md) | 版本与 Release 流程 |
-| [v0.1.0 发布说明](docs/releases/v0.1.0.md) | 本版下载与验证状态 |
-| [已知限制](docs/releases/KNOWN-LIMITATIONS.md) | 当前版本的边界 |
+| [产品概览](docs/product/PRODUCT-OVERVIEW.md) | 定位、用户、业务流程、功能体系、范围 |
+| [产品决策](docs/product/PRODUCT-DECISIONS.md) | 已确认的取舍与不可擅自改变的业务规则 |
+| [路线图](docs/product/ROADMAP.md) | 已完成 / 当前 / 未来规划与优先级 |
+| [技术架构](docs/architecture/ARCHITECTURE.md) | 技术栈、模块边界、数据模型、关键约束 |
+| [数据安全](docs/architecture/DATA-SAFETY.md) | 存储、迁移、备份、恢复、故障处理 |
+| [开发与构建](docs/development/DEVELOPMENT.md) | 环境、启动、测试、构建、发布 |
+| [项目状态](docs/releases/PROJECT-STATUS.md) | 版本、平台状态、已知问题、未关闭事项 |
+| [用户手册](docs/user-guide/USER-MANUAL.md) | 安装、使用、备份、排错 |
+| [变更记录](CHANGELOG.md) | 正式版本变更 |
 
 ## 开发
 
@@ -105,9 +101,10 @@ npm run tauri build          # 本机构建
 npx tauri build --config src-tauri/tauri.qa.conf.json  # QA 版
 ```
 
-测试：`cargo test --manifest-path src-tauri/Cargo.toml`、`npx vitest run`、`npx tsc --noEmit`。
+测试：`cargo test --manifest-path src-tauri/Cargo.toml`、`npm test`、`npm run typecheck`。
+开发时请用 QA 配置启动（`npm run qa:seeded`），不要用正式 identifier。
 
-Windows 构建见 [.github/workflows/windows-build.yml](.github/workflows/windows-build.yml)（GitHub Actions 手动触发）。
+完整说明见 [DEVELOPMENT.md](docs/development/DEVELOPMENT.md)；Windows 构建走 [.github/workflows/windows-build.yml](.github/workflows/windows-build.yml)（GitHub Actions 手动触发）。
 
 ## 开发者与版权
 
