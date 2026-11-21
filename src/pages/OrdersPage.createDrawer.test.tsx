@@ -208,6 +208,33 @@ describe("看板/表格下新建订单的抽屉行为（D-06）", () => {
     expect(paneVisible()).toBe(false);
   });
 
+  it("新建前抽屉已打开：Esc 退出新建后恢复原订单详情", async () => {
+    const user = userEvent.setup();
+    await renderInView("board");
+
+    // 先打开订单详情，记录当前详情内容，用于 Esc 之后逐项比对。
+    await user.click(screen.getByRole("button", { name: "打开 AF-2026-0001 双人插画" }));
+    await screen.findByText("订单详情");
+    const titleBefore = (await screen.findByLabelText(/委托标题/)) as HTMLInputElement;
+    expect(titleBefore.value).toBe("双人插画");
+
+    await user.click(screen.getByRole("button", { name: "新建" }));
+    await screen.findByText("新建订单");
+    // 新建态：抽屉仍然打开，但标题栏让位给新建表单自己的标题。
+    expect(paneVisible()).toBe(true);
+    expect(screen.queryByText("订单详情")).toBeNull();
+
+    await user.keyboard("{Escape}");
+
+    // 退出新建：抽屉保持打开，标题栏与原先那张订单的详情都要回来。
+    await waitFor(() => expect(screen.queryByText("新建订单")).toBeNull());
+    expect(paneVisible()).toBe(true);
+    expect(screen.getByText("订单详情")).toBeTruthy();
+    const titleAfter = screen.getByLabelText(/委托标题/) as HTMLInputElement;
+    expect(titleAfter.value).toBe("双人插画");
+    expect(screen.getByRole("button", { name: "保存资料" })).toBeTruthy();
+  });
+
   it("有未保存修改时仍先弹守卫对话框，不直接进入新建", async () => {
     const user = userEvent.setup();
     await renderInView("board");
