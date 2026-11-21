@@ -209,6 +209,18 @@ export default function OrdersPage() {
   const [viewPersistError, setViewPersistError] = useState<string | null>(null);
   /** 看板/表格模式下详情以右侧抽屉呈现；卡片模式永远并排显示。 */
   const [drawerOpen, setDrawerOpen] = useState(false);
+  /**
+   * 新建前的抽屉与详情快照。看板/表格下新建表单就开在抽屉里，
+   * 取消时要回到进入新建之前的状态（抽屉开合、原来的订单详情），
+   * 而不是留在"新建"或落到空面板。卡片视图不记录，保持原行为。
+   */
+  const createReturn = useRef<{
+    drawerOpen: boolean;
+    selectedId: string | null;
+    detail: OrderView | null;
+    draft: Draft | null;
+    events: OrderEvent[];
+  } | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   /** 详情里唯一的制作进度入口：打开后一次选择 + 一次确认，不再叠第二层对话框。 */
   const [stagePanel, setStagePanel] = useState<{
@@ -291,11 +303,30 @@ export default function OrdersPage() {
   });
   const formatTime = useTimeFormatter(timezone);
 
+  /** 退出新建：看板/表格回到新建前的抽屉与详情，卡片视图只是关掉表单。 */
+  const cancelCreate = useCallback(() => {
+    setCreating(false);
+    const back = createReturn.current;
+    createReturn.current = null;
+    if (!back) return;
+    setDrawerOpen(back.drawerOpen);
+    setSelectedId(back.selectedId);
+    setDetail(back.detail);
+    setDraft(back.draft);
+    setEvents(back.events);
+  }, []);
+
   // Esc 关闭看板/表格的详情抽屉。卡片视图是并排布局，不需要这个手势。
   useEffect(() => {
     if (!drawerOpen || viewMode === "cards") return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      // 新建态没有抽屉标题栏（也就没有关闭按钮），Esc 必须能退出新建，
+      // 否则面板被隐藏、creating 却仍为 true，界面卡在半截。
+      if (creating) {
+        cancelCreate();
+        return;
+      }
       if (!dirty) {
         setDrawerOpen(false);
         return;
@@ -304,7 +335,7 @@ export default function OrdersPage() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [drawerOpen, viewMode, dirty]);
+  }, [drawerOpen, viewMode, dirty, creating, cancelCreate]);
 
   // 光标移动才滚动一次；数据刷新导致的重新渲染不会滚动，避免"滚到错误订单"。
   // block: "nearest" 表示"已可见就不动"，所以不会每按一下就居中。
@@ -788,7 +819,12 @@ export default function OrdersPage() {
   }
 
   function openCreate() {
+    // 看板/表格下新建表单就在右侧抽屉里：先把抽屉打开，否则表单虽已渲染，
+    // 却被 `.orders-detail.is-hidden` 的 display:none 挡住，点了像没反应。
+    createReturn.current =
+      viewMode === "cards" ? null : { drawerOpen, selectedId, detail, draft, events };
     setCreating(true);
+    if (viewMode !== "cards") setDrawerOpen(true);
     setSelectedId(null);
     setDetail(null);
     setDraft(null);
@@ -1213,10 +1249,14 @@ export default function OrdersPage() {
         className={`orders-detail${viewMode === "cards" ? "" : " orders-detail-drawer"}${
           detailVisible ? "" : " is-hidden"
         }`}
-        aria-label={viewMode === "cards" ? undefined : "订单详情面板"}
+        aria-label={
+          viewMode === "cards" ? undefined : creating ? "新建订单面板" : "订单详情面板"
+        }
         aria-hidden={!detailVisible}
       >
-        {viewMode !== "cards" && (
+        {/* 新建态由 CreateOrderPanel 自己的「新建订单」标题与「取消」入口负责，
+            这里不再显示「订单详情」标题栏（含关闭按钮），避免标题与内容不符。 */}
+        {viewMode !== "cards" && !creating && (
           <div className="drawer-bar">
             <span className="drawer-bar-title">订单详情</span>
             <button
@@ -1267,8 +1307,10 @@ export default function OrdersPage() {
             clients={clients}
             templates={templates}
             busy={busy}
-            onCancel={() => setCreating(false)}
+            onCancel={cancelCreate}
             onCreated={async (order) => {
+              // 创建成功后直接看新订单：沿用已打开的抽屉，不再还原新建前的状态。
+              createReturn.current = null;
               setCreating(false);
               await loadList();
               await selectOrder(order.id);
