@@ -80,7 +80,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 ### 软删除与可见性（v8）
 
 - `orders` 与 `clients` 各增 `deleted_at`、`deleted_batch`；删除是**可见性**，不改 `status`，也不新增状态值。
-- 新增三个视图：`orders_visible`、`orders_trashed`、`clients_visible`。业务查询读视图，备份、诊断、幂等与模板守卫读基表。
+- 新增三个视图：`orders_visible`、`orders_trashed`、`clients_visible`。业务查询读视图；备份、诊断、幂等与模板使用数统计读基表。
 - 按 id 的业务读写另经 `store::visibility` 守卫（不存在 → `NOT_FOUND`，在回收站 → `CONFLICT`），列表与聚合由视图承担。
 - **SQLite 视图在建表时展开 `SELECT *`**：此后给 `orders` / `clients` 加列，必须先 `DROP VIEW` 再重建，否则视图列会滞后于基表。
 
