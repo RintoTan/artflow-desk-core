@@ -107,6 +107,11 @@ export default function TrashPage() {
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<TrashGroup | null>(null);
   const [restoreBusy, setRestoreBusy] = useState(false);
+  /**
+   * 全局恢复锁：独立订单恢复与客户组整批恢复共用一把锁，两者不得并行。
+   * 任意一项进行中时，所有恢复入口一律禁用，避免"点得动但被静默忽略"。
+   */
+  const restoring = busyOrderId !== null || restoreBusy;
 
   const [purgeTarget, setPurgeTarget] = useState<PurgeTarget | null>(null);
   const [purgeBusy, setPurgeBusy] = useState(false);
@@ -218,7 +223,7 @@ export default function TrashPage() {
   /** 独立订单恢复：可逆操作，不弹确认。 */
   const restoreOrder = useCallback(
     async (order: TrashOrder) => {
-      if (busyOrderId) return;
+      if (busyOrderId || restoreBusy) return;
       setBusyOrderId(order.id);
       setActionError(null);
       setNotice(null);
@@ -233,12 +238,12 @@ export default function TrashPage() {
         setBusyOrderId(null);
       }
     },
-    [busyOrderId, refreshQa, reload],
+    [busyOrderId, restoreBusy, refreshQa, reload],
   );
 
   /** 客户组整批恢复：先确认，服务端按批次带回全部订单。 */
   const restoreGroup = useCallback(async () => {
-    if (!restoreTarget || restoreBusy) return;
+    if (!restoreTarget || restoreBusy || busyOrderId !== null) return;
     const target = restoreTarget;
     setRestoreBusy(true);
     setActionError(null);
@@ -259,7 +264,7 @@ export default function TrashPage() {
     } finally {
       setRestoreBusy(false);
     }
-  }, [restoreTarget, restoreBusy, refreshQa, reload]);
+  }, [restoreTarget, restoreBusy, busyOrderId, refreshQa, reload]);
 
   const purgeTargetLabel = purgeTarget
     ? purgeTarget.kind === "order"
@@ -509,9 +514,12 @@ export default function TrashPage() {
                         <button
                           type="button"
                           className="btn btn-sm"
+                          disabled={restoring}
                           onClick={() => setRestoreTarget(group)}
                         >
-                          整批恢复
+                          {restoreBusy && restoreTarget?.clientId === group.clientId
+                            ? "正在恢复…"
+                            : "整批恢复"}
                         </button>
                         <button
                           type="button"
@@ -562,7 +570,7 @@ export default function TrashPage() {
                         <button
                           type="button"
                           className="btn btn-sm"
-                          disabled={busyOrderId === order.id}
+                          disabled={restoring}
                           onClick={() => void restoreOrder(order)}
                         >
                           {busyOrderId === order.id ? "正在恢复…" : "恢复订单"}

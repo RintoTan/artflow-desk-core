@@ -740,3 +740,294 @@ describe("刷新期间的清空入口保护", () => {
     expect(result.firstElementChild).toBe(copy);
   });
 });
+
+/** 挂起的 Promise：用来把「恢复进行中」这一瞬间固定住，再观察按钮状态。 */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/** 两张独立订单的快照：用于验证 A 恢复期间 B 也被锁住。 */
+function twoLooseSnapshot() {
+  return snapshot({
+    looseOrders: [
+      order({ id: "o3", code: "AF-2026-0003", title: "独立订单", originalClientName: "陈叙" }),
+      order({ id: "o4", code: "AF-2026-0004", title: "另一张独立订单" }),
+    ],
+    looseOrderCount: 2,
+    totalOrderCount: 4,
+  });
+}
+
+describe("恢复的全局锁（O1）", () => {
+  it("独立订单 A 恢复挂起时，独立订单 B 的按钮禁用", async () => {
+    const user = userEvent.setup();
+    arrange(twoLooseSnapshot());
+    const gate = deferred<{ orderId: string; ordersRestored: number }>();
+    mocks.restoreOrder.mockReturnValueOnce(gate.promise);
+    renderPage();
+
+    const buttons = await screen.findAllByRole("button", { name: "恢复订单" });
+    expect(buttons).toHaveLength(2);
+    await user.click(buttons[0]!);
+
+    await waitFor(() => expect(buttons[1]).toBeDisabled());
+    gate.resolve({ orderId: "o3", ordersRestored: 1 });
+    await screen.findByText("已恢复订单 AF-2026-0003");
+  });
+
+  it("独立订单恢复挂起时，客户组整批恢复按钮禁用", async () => {
+    const user = userEvent.setup();
+    arrange(twoLooseSnapshot());
+    const gate = deferred<{ orderId: string; ordersRestored: number }>();
+    mocks.restoreOrder.mockReturnValueOnce(gate.promise);
+    renderPage();
+
+    await user.click((await screen.findAllByRole("button", { name: "恢复订单" }))[0]!);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "整批恢复" })).toBeDisabled(),
+    );
+    gate.resolve({ orderId: "o3", ordersRestored: 1 });
+    await screen.findByText("已恢复订单 AF-2026-0003");
+  });
+
+  it("客户组整批恢复挂起时，其他恢复入口全部禁用，执行中那组显示「正在恢复…」", async () => {
+    const user = userEvent.setup();
+    arrange(twoLooseSnapshot());
+    const gate = deferred<{ clientId: string; ordersRestored: number; clientsRestored: number }>();
+    mocks.restoreClient.mockReturnValueOnce(gate.promise);
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "整批恢复" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "整批恢复" }));
+
+    // 执行中的客户组那一行换成进行中文案，其余入口保持原文案但禁用。
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "正在恢复…" })).toBeInTheDocument(),
+    );
+    for (const button of screen.getAllByRole("button", { name: "恢复订单" })) {
+      expect(button).toBeDisabled();
+    }
+
+    gate.resolve({ clientId: "c1", ordersRestored: 2, clientsRestored: 1 });
+    expect(await screen.findByText(/已恢复客户「林小满」及其 2 个订单/)).toBeInTheDocument();
+  });
+
+  it("执行中的那一行显示「正在恢复…」，其他行保留「恢复订单」", async () => {
+    const user = userEvent.setup();
+    arrange(twoLooseSnapshot());
+    const gate = deferred<{ orderId: string; ordersRestored: number }>();
+    mocks.restoreOrder.mockReturnValueOnce(gate.promise);
+    renderPage();
+
+    const buttons = await screen.findAllByRole("button", { name: "恢复订单" });
+    await user.click(buttons[0]!);
+
+    const running = await screen.findByRole("button", { name: "正在恢复…" });
+    expect(running).toBeDisabled();
+    expect(screen.getByRole("button", { name: "恢复订单" })).toBeDisabled();
+
+    gate.resolve({ orderId: "o3", ordersRestored: 1 });
+    await screen.findByText("已恢复订单 AF-2026-0003");
+  });
+
+  it("恢复成功后所有恢复入口恢复可用", async () => {
+    const user = userEvent.setup();
+    arrange(twoLooseSnapshot());
+    const gate = deferred<{ orderId: string; ordersRestored: number }>();
+    mocks.restoreOrder.mockReturnValueOnce(gate.promise);
+    renderPage();
+
+    await user.click((await screen.findAllByRole("button", { name: "恢复订单" }))[0]!);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "整批恢复" })).toBeDisabled(),
+    );
+
+    gate.resolve({ orderId: "o3", ordersRestored: 1 });
+    await screen.findByText("已恢复订单 AF-2026-0003");
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "整批恢复" })).toBeEnabled();
+      // 恢复成功会重新读取快照；剩下的订单仍可再次恢复。
+      const remaining = screen.queryAllByRole("button", { name: "恢复订单" });
+      for (const button of remaining) expect(button).toBeEnabled();
+      expect(screen.queryByRole("button", { name: "正在恢复…" })).toBeNull();
+    });
+  });
+
+  it("恢复失败后所有恢复入口恢复可用，错误照旧可见", async () => {
+    const user = userEvent.setup();
+    arrange(twoLooseSnapshot());
+    const gate = deferred<{ orderId: string; ordersRestored: number }>();
+    mocks.restoreOrder.mockReturnValueOnce(gate.promise);
+    renderPage();
+
+    await user.click((await screen.findAllByRole("button", { name: "恢复订单" }))[0]!);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "整批恢复" })).toBeDisabled(),
+    );
+
+    gate.reject(new Error("无法恢复：订单已被永久删除"));
+    await screen.findByText(/无法恢复：订单已被永久删除/);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "整批恢复" })).toBeEnabled();
+      const remaining = screen.queryAllByRole("button", { name: "恢复订单" });
+      for (const button of remaining) expect(button).toBeEnabled();
+    });
+  });
+
+  it("禁用状态下重复点击不会再次触发恢复接口", async () => {
+    const user = userEvent.setup();
+    arrange(twoLooseSnapshot());
+    const gate = deferred<{ orderId: string; ordersRestored: number }>();
+    mocks.restoreOrder.mockReturnValueOnce(gate.promise);
+    renderPage();
+
+    const buttons = await screen.findAllByRole("button", { name: "恢复订单" });
+    await user.click(buttons[0]!);
+    await waitFor(() => expect(buttons[1]).toBeDisabled());
+
+    // 直接对禁用按钮派发点击：即使绕过 userEvent 的禁用判断，也不得发出第二个请求。
+    fireEvent.click(buttons[1]!);
+    fireEvent.click(buttons[0]!);
+    await waitFor(() => expect(mocks.restoreOrder).toHaveBeenCalledTimes(1));
+
+    gate.resolve({ orderId: "o3", ordersRestored: 1 });
+    await screen.findByText("已恢复订单 AF-2026-0003");
+    expect(mocks.restoreOrder).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** 两个客户组 + 一张独立订单：验证客户组之间的互斥，以及组恢复结束后的解锁。 */
+function twoGroupsSnapshot() {
+  return snapshot({
+    groups: [
+      {
+        clientId: "c1",
+        clientName: "林小满",
+        deletedAt: "2026-11-20T10:00:00+08:00",
+        orders: [order({ id: "o1", code: "AF-2026-0001" })],
+      },
+      {
+        clientId: "c2",
+        clientName: "陈叙",
+        deletedAt: "2026-11-19T10:00:00+08:00",
+        orders: [order({ id: "o2", code: "AF-2026-0002" })],
+      },
+    ],
+    looseOrders: [
+      order({
+        id: "o3",
+        code: "AF-2026-0003",
+        title: "独立订单",
+        originalClientName: "周迟",
+        workState: "completed",
+      }),
+    ],
+    groupCount: 2,
+    looseOrderCount: 1,
+    totalOrderCount: 3,
+  });
+}
+
+/** 取某个客户组所在的行，避免把对话框里的同名按钮算进来。 */
+function groupRow(clientName: string): HTMLElement {
+  const toggle = screen.getByTitle(clientName);
+  const row = toggle.closest("li");
+  if (!(row instanceof HTMLElement)) throw new Error(`找不到客户组 ${clientName} 所在行`);
+  return row;
+}
+
+async function confirmGroupRestore(user: ReturnType<typeof userEvent.setup>, clientName: string) {
+  // 快照是异步读取的：等这一组渲染出来再动手，否则会在"正在读取回收站…"阶段点空。
+  await screen.findByTitle(clientName);
+  const row = groupRow(clientName);
+  await user.click(within(row).getByRole("button", { name: "整批恢复" }));
+  const dialog = await screen.findByRole("alertdialog");
+  await user.click(within(dialog).getByRole("button", { name: "整批恢复" }));
+}
+
+describe("客户组恢复的互斥与解锁（O1 补充）", () => {
+  it("客户组 A 恢复挂起时，客户组 B 与独立订单的恢复入口都禁用", async () => {
+    const user = userEvent.setup();
+    arrange(twoGroupsSnapshot());
+    const gate = deferred<{ clientId: string; ordersRestored: number; clientsRestored: number }>();
+    mocks.restoreClient.mockReturnValueOnce(gate.promise);
+    renderPage();
+
+    await confirmGroupRestore(user, "林小满");
+
+    // A 是执行中的那一组：文案换成进行中，并且同样禁用。
+    await waitFor(() =>
+      expect(within(groupRow("林小满")).getByRole("button", { name: "正在恢复…" })).toBeDisabled(),
+    );
+    // B 保持原文案，但不可点击——这才是"部分按钮可点、部分被静默忽略"被消除的证据。
+    expect(within(groupRow("陈叙")).getByRole("button", { name: "整批恢复" })).toBeDisabled();
+    for (const button of screen.getAllByRole("button", { name: "恢复订单" })) {
+      expect(button).toBeDisabled();
+    }
+
+    gate.resolve({ clientId: "c1", ordersRestored: 1, clientsRestored: 1 });
+    expect(await screen.findByText(/已恢复客户「林小满」/)).toBeInTheDocument();
+  });
+
+  it("客户组整批恢复成功后，所有恢复入口重新可用", async () => {
+    const user = userEvent.setup();
+    arrange(twoGroupsSnapshot());
+    const gate = deferred<{ clientId: string; ordersRestored: number; clientsRestored: number }>();
+    mocks.restoreClient.mockReturnValueOnce(gate.promise);
+    renderPage();
+
+    await confirmGroupRestore(user, "林小满");
+    await waitFor(() =>
+      expect(within(groupRow("陈叙")).getByRole("button", { name: "整批恢复" })).toBeDisabled(),
+    );
+
+    gate.resolve({ clientId: "c1", ordersRestored: 1, clientsRestored: 1 });
+    await screen.findByText(/已恢复客户「林小满」/);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "正在恢复…" })).toBeNull();
+      expect(within(groupRow("林小满")).getByRole("button", { name: "整批恢复" })).toBeEnabled();
+      expect(within(groupRow("陈叙")).getByRole("button", { name: "整批恢复" })).toBeEnabled();
+      for (const button of screen.getAllByRole("button", { name: "恢复订单" })) {
+        expect(button).toBeEnabled();
+      }
+    });
+  });
+
+  it("客户组整批恢复失败后，所有恢复入口重新可用，错误仍然可见", async () => {
+    const user = userEvent.setup();
+    arrange(twoGroupsSnapshot());
+    const gate = deferred<{ clientId: string; ordersRestored: number; clientsRestored: number }>();
+    mocks.restoreClient.mockReturnValueOnce(gate.promise);
+    renderPage();
+
+    await confirmGroupRestore(user, "林小满");
+    await waitFor(() =>
+      expect(within(groupRow("陈叙")).getByRole("button", { name: "整批恢复" })).toBeDisabled(),
+    );
+
+    gate.reject(new Error("数据完整性检查未通过，操作已中止。"));
+    expect(await screen.findByText(/数据完整性检查未通过，操作已中止。/)).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "正在恢复…" })).toBeNull();
+      expect(within(groupRow("林小满")).getByRole("button", { name: "整批恢复" })).toBeEnabled();
+      expect(within(groupRow("陈叙")).getByRole("button", { name: "整批恢复" })).toBeEnabled();
+      for (const button of screen.getAllByRole("button", { name: "恢复订单" })) {
+        expect(button).toBeEnabled();
+      }
+    });
+    // 解锁不等于清掉错误：失败原因必须还在界面上。
+    expect(screen.getByText(/数据完整性检查未通过，操作已中止。/)).toBeInTheDocument();
+  });
+});
