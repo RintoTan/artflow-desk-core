@@ -404,3 +404,133 @@ export function visibleRange(
   const rawTo = win.from + Math.ceil((scrollLeft + viewportWidth) / px) - 1;
   return { from, to: Math.min(win.to, Math.max(from, rawTo)) };
 }
+
+// ---------------------------------------------------------------- 跨度（WB-01）
+
+/**
+ * 每个视图的可选跨度。`−` / `+` 只在同一视图内改变跨度，
+ * 绝不跨视图切换——否则按两下就会从「日」跳到「年」，无法预期。
+ */
+export const VIEW_SPANS: Record<TimelineScale, number[]> = {
+  day: [14, 30, 60],
+  week: [4, 8, 12],
+  month: [6, 12, 24],
+  year: [3, 5, 10],
+};
+
+export const DEFAULT_SPAN: Record<TimelineScale, number> = {
+  day: 30,
+  week: 8,
+  month: 12,
+  year: 3,
+};
+
+/** 今天落在视口左侧的比例（点「今天」时使用）。 */
+export const TODAY_ANCHOR_RATIO = 0.2;
+
+export function spanDays(scale: TimelineScale, span: number): number {
+  return scale === "week" ? span * 7 : span;
+}
+
+export function clampSpanIndex(scale: TimelineScale, index: number): number {
+  const list = VIEW_SPANS[scale];
+  return Math.max(0, Math.min(list.length - 1, index));
+}
+
+export function spanAt(scale: TimelineScale, index: number): number {
+  return VIEW_SPANS[scale][clampSpanIndex(scale, index)]!;
+}
+
+export function indexOfSpan(scale: TimelineScale, span: number): number {
+  const list = VIEW_SPANS[scale];
+  const hit = list.indexOf(span);
+  if (hit >= 0) return hit;
+  // 旧偏好里可能是任意值：取最接近的一档
+  let best = 0;
+  for (let i = 1; i < list.length; i += 1) {
+    if (Math.abs(list[i]! - span) < Math.abs(list[best]! - span)) best = i;
+  }
+  return best;
+}
+
+export function hasSmallerSpan(scale: TimelineScale, span: number): boolean {
+  return indexOfSpan(scale, span) > 0;
+}
+
+export function hasLargerSpan(scale: TimelineScale, span: number): boolean {
+  return indexOfSpan(scale, span) < VIEW_SPANS[scale].length - 1;
+}
+
+export function stepSpan(scale: TimelineScale, span: number, direction: -1 | 1): number {
+  const next = clampSpanIndex(scale, indexOfSpan(scale, span) + direction);
+  return spanAt(scale, next);
+}
+
+type WindowOptions = {
+  /** 让今天落在视口该比例处；不传则以锚点为中心 */
+  todayRatio?: number;
+};
+
+/**
+ * 以锚点为中心的窗口：切换视图与缩放时锚点保持在视口中心，
+ * 因此这里不做任何「自动跳回今天」的修正——没有真实边界就不引入跳转规则。
+ */
+export function spanWindow(
+  scale: TimelineScale,
+  anchor: DayIndex,
+  span: number,
+  options: WindowOptions = {},
+): TimelineWindow {
+  const ratio = options.todayRatio;
+
+  if (scale === "day" || scale === "week") {
+    const total = spanDays(scale, span);
+    const lead = ratio === undefined ? Math.floor(total / 2) : Math.round(total * ratio);
+    const rawFrom = anchor - lead;
+    const rawTo = rawFrom + total - 1;
+    if (scale === "day") return { from: rawFrom, to: rawTo };
+    return {
+      from: rawFrom - weekdayIndex(rawFrom),
+      to: rawTo + (6 - weekdayIndex(rawTo)),
+    };
+  }
+
+  if (scale === "month") {
+    const start = monthStart(anchor);
+    const half = Math.floor(span / 2);
+    const from = monthStart(addMonthsClamped(start, -half));
+    const to = monthEnd(addMonthsClamped(start, span - 1 - half));
+    return { from, to };
+  }
+
+  const year = civilFromDays(anchor).year;
+  const half = Math.floor(span / 2);
+  const fromYear = year - half;
+  return {
+    from: daysFromCivil(fromYear, 1, 1),
+    to: daysFromCivil(fromYear + span - 1, 12, 31),
+  };
+}
+
+/** 视口中心对应的日期：用于「切换视图 / 缩放时保持锚点」。 */
+export function anchorFromViewport(
+  scale: TimelineScale,
+  win: TimelineWindow,
+  scrollLeft: number,
+  viewportWidth: number,
+): DayIndex {
+  const centerPx = scrollLeft + viewportWidth / 2;
+  const day = win.from + Math.round(centerPx / SCALE_CONFIG[scale].pxPerDay);
+  return Math.max(win.from, Math.min(win.to, day));
+}
+
+/** 点「今天」时的滚动位置：把今天放在左侧 20% 处。 */
+export function scrollForToday(
+  scale: TimelineScale,
+  win: TimelineWindow,
+  today: DayIndex,
+  viewportWidth: number,
+): number {
+  const x = (today - win.from) * SCALE_CONFIG[scale].pxPerDay;
+  return Math.max(0, Math.round(x - viewportWidth * TODAY_ANCHOR_RATIO));
+}
