@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 import ConfirmDialog from "../components/ConfirmDialog";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
+import { filterAndSortClients } from "../lib/clientsView";
 import { orderStatusLabel } from "../lib/orderStatus";
 import { usePageShortcuts } from "../lib/shortcuts";
 import { useUnsavedGuard } from "../lib/unsavedRegistry";
@@ -286,23 +287,10 @@ export default function ClientsPage() {
     [refreshTags, runTag, tagFilter],
   );
 
-  const visibleClients = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    const filtered = clients.filter((client) => {
-      const byTag = tagFilter === "all" || client.tags.some((tag) => tag.id === tagFilter);
-      const byName = keyword === "" || client.displayName.toLowerCase().includes(keyword);
-      return byTag && byName;
-    });
-    if (sort === "default") return filtered;
-    return [...filtered].sort((a, b) => {
-      if (sort === "orders") return b.orderCount - a.orderCount || a.displayName.localeCompare(b.displayName);
-      // 最近委托：没有委托时间的排在后面，再按名称稳定排序
-      const at = a.lastOrderAt ?? "";
-      const bt = b.lastOrderAt ?? "";
-      if (at === bt) return a.displayName.localeCompare(b.displayName);
-      return bt.localeCompare(at);
-    });
-  }, [clients, tagFilter, query, sort]);
+  const visibleClients = useMemo(
+    () => filterAndSortClients(clients, { query, tagId: tagFilter, sort }),
+    [clients, tagFilter, query, sort],
+  );
 
   /**
    * 详情里的订单分组。
