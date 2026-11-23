@@ -72,6 +72,7 @@ export default function CalendarPage() {
   const [dialogError, setDialogError] = useState<string | null>(null);
   const requested = useRef(0);
   const dragRef = useRef<DragState | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   dragRef.current = drag;
   /** 按下时的坐标，用于区分点击与拖动。 */
   const pressRef = useRef<{ x: number; y: number } | null>(null);
@@ -390,6 +391,12 @@ export default function CalendarPage() {
       document.removeEventListener("keydown", onKey);
     };
   }, [drag]);
+
+  /** 单击只选中；拖动刚结束时吞掉这一次点击。 */
+  const selectOrder = useCallback((orderId: string) => {
+    if (suppressClickRef.current) return;
+    setSelectedOrderId((prev) => (prev === orderId ? null : orderId));
+  }, []);
 
   const startDrag = useCallback(({ order, mode, event }: ChipDragStart) => {
     const span = orderSpan(order);
@@ -798,6 +805,7 @@ export default function CalendarPage() {
           flashOrderId={railFlash}
           showTerminal={showTerminal}
           onOpenOrder={(order) => openOrder(order.id)}
+          onSelectOrder={(order) => selectOrder(order.id)}
           onReschedule={openKeyboardDialog}
           onLocate={locateOrder}
           onDragStart={(order, event) => startDrag({ order, mode: orderSpan(order) === null ? "unscheduled" : "move", event })}
@@ -851,6 +859,8 @@ export default function CalendarPage() {
             topMore={topMore}
             focusedOrderId={focusOrderId}
             onOpenOrder={openOrder}
+            selectedOrderId={selectedOrderId}
+            onSelectOrder={selectOrder}
             onReschedule={openKeyboardDialog}
             onChipPointerDown={startDrag}
             onPickDay={pickDay}

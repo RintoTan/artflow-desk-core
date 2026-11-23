@@ -5450,6 +5450,8 @@ dl.stat-row {
 /* +N 浮层 */
 .cal-popover {
   position: fixed;
+  /* 浮窗内部滚动不穿透到底层日历：否则滚一下就触发日历滚动、浮窗被判为失焦关闭 */
+  overscroll-behavior: contain;
   z-index: 70;
   width: min(300px, calc(100vw - 16px));
   max-height: min(320px, calc(100dvh - 16px));
@@ -8144,5 +8146,41 @@ dl.stat-row {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+}
+
+/* 日历订单条：单击选中用中性灰底 + 深一档描边，和拖拽/预览态区分开。 */
+.cal-chip.is-selected {
+  background: color-mix(in srgb, var(--text) 10%, var(--surface));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 25%, transparent);
+}
+
+/* 定位到被折叠的订单：用 1px 淡蓝轮廓说明「这是你定位的那一条」。
+   不铺底色、不画左侧竖条，文字与按钮保持原样；
+   轮廓用伪元素绘制，不参与布局，行高与滚动位置都不变；2.6s 淡出。 */
+.cal-popover li.is-target {
+  position: relative;
+  border-radius: 6px;
+}
+
+.cal-popover li.is-target::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 6px;
+  pointer-events: none;
+  animation: cal-locate-outline 2.6s ease-out both;
+}
+
+@keyframes cal-locate-outline {
+  0% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
   }
 }

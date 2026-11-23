@@ -293,3 +293,10 @@ describe("时间线工具栏不被压变形", () => {
     expect(rule(".timeline-controls .filter-chip")).toMatch(/white-space:\s*nowrap/);
   });
 });
+
+describe("日历 +N 浮窗滚动隔离", () => {
+  it("浮窗用 overscroll-behavior 挡住滚动穿透", () => {
+    expect(rule(".cal-popover")).toMatch(/overscroll-behavior:\s*contain/);
+    expect(rule(".cal-popover")).toMatch(/overflow:\s*auto/);
+  });
+});

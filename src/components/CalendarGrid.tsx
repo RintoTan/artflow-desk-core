@@ -36,6 +36,9 @@ type Props = {
   topMore: boolean;
   /** 图钉定位聚焦的订单：A 高亮、B 弱化其它条。 */
   focusedOrderId: string | null;
+  /** 单击选中的订单（与键盘焦点分开：焦点决定 Tab 落点，选中决定灰底） */
+  selectedOrderId?: string | null;
+  onSelectOrder?: (id: string) => void;
   onOpenOrder: (id: string) => void;
   onReschedule: (order: OrderView) => void;
   onChipPointerDown: (payload: ChipDragStart) => void;
@@ -55,10 +58,14 @@ function Chip({
   onOpenOrder,
   onReschedule,
   onChipPointerDown,
+  selected,
+  onSelect,
 }: {
   segment: Segment;
   previewed: boolean;
   focusedOrderId: string | null;
+  selected: boolean;
+  onSelect: (id: string) => void;
   onOpenOrder: (id: string) => void;
   onReschedule: (order: OrderView) => void;
   onChipPointerDown: (payload: ChipDragStart) => void;
@@ -79,15 +86,20 @@ function Chip({
         terminal ? " is-terminal" : ""
       }${clippedLeft ? " is-clipped-left" : ""}${clippedRight ? " is-clipped-right" : ""}${
         previewed ? " is-ghost" : ""
-      }`}
+      }${selected ? " is-selected" : ""}`}
+      aria-selected={selected}
       data-order-id={order.id}
       data-kind={kind}
       data-mode={terminal ? "none" : mode}
       title={`${order.code} · ${order.title}（拖两端调整日期，拖中间整体移动）`}
       aria-label={`${order.code} ${order.title}`}
       onClick={(event) => {
-        // 拖动过就不当成点击；单纯点击进入详情
+        // 拖动过就不当成点击；单击只选中，双击才进详情
         if (event.detail === 0) return; // 键盘 Enter 由 onKeyDown 处理
+        onSelect(order.id);
+      }}
+      onDoubleClick={(event) => {
+        if (event.detail < 2) return;
         onOpenOrder(order.id);
       }}
       onKeyDown={(event) => {
@@ -161,6 +173,8 @@ export default function CalendarGrid({
   focused,
   topMore,
   focusedOrderId,
+  selectedOrderId = null,
+  onSelectOrder,
   onOpenOrder,
   onReschedule,
   onChipPointerDown,
@@ -177,6 +191,36 @@ export default function CalendarGrid({
   );
 
   const closeMore = useCallback(() => setMore(null), []);
+
+  /**
+   * 定位到被折叠在 +N 里的订单：自动点开那一天的 +N。
+   * 目标日可能还在渲染（滚动/展开是异步的），所以轮询到出现为止，最多约 1.2s。
+   */
+  useEffect(() => {
+    if (focusedOrderId === null) return;
+    let tries = 0;
+    let timeout: number | undefined;
+    const attempt = () => {
+      const btn = document.querySelector<HTMLElement>(
+        `button[data-more-orders~="${focusedOrderId}"]`,
+      );
+      if (btn !== null) {
+        btn.click();
+        window.setTimeout(() => {
+          document
+            .querySelector<HTMLElement>(".cal-popover .is-target")
+            ?.scrollIntoView({ block: "nearest" });
+        }, 40);
+        return;
+      }
+      tries += 1;
+      if (tries < 16) timeout = window.setTimeout(attempt, 80);
+    };
+    timeout = window.setTimeout(attempt, 40);
+    return () => {
+      if (timeout !== undefined) window.clearTimeout(timeout);
+    };
+  }, [focusedOrderId]);
 
   useEffect(() => {
     if (more === null) return;
@@ -195,8 +239,13 @@ export default function CalendarGrid({
         closeMore();
       }
     };
-    // 浮层是 position: fixed 的，跟随滚动会脱离锚点，所以滚动即关闭
-    const onScroll = () => closeMore();
+    // 浮层是 position: fixed 的，跟随滚动会脱离锚点，所以滚动即关闭；
+    // 但浮层内部自己的滚动不能算——否则一滚内容就消失（macOS 触控板尤其明显）。
+    const onScroll = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".cal-popover") !== null) return;
+      closeMore();
+    };
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("scroll", onScroll, true);
@@ -295,6 +344,8 @@ export default function CalendarGrid({
                 segment={segment}
                 previewed={preview?.orderId === segment.order.id}
                 focusedOrderId={focusedOrderId}
+                selected={selectedOrderId === segment.order.id}
+                onSelect={onSelectOrder ?? (() => {})}
                 onOpenOrder={onOpenOrder}
                 onReschedule={onReschedule}
                 onChipPointerDown={onChipPointerDown}
@@ -352,6 +403,8 @@ export default function CalendarGrid({
                   aria-label={`${formatDayKey(day)} 还有 ${hidden.length} 笔订单`}
                   // 按下不抢焦点：聚焦会触发 WebKit 把按钮滚进视口，
                   // 滚动事件会立刻把刚开的浮层关掉（原生窗口里表现为"点了没反应"）。
+                  data-more-day={day}
+                  data-more-orders={hidden.map((o) => o.id).join(" ")}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={(event) => {
                     if (open) {
@@ -383,6 +436,7 @@ export default function CalendarGrid({
         createPortal(
           <div
             className="cal-popover"
+            onWheel={(event) => event.stopPropagation()}
             role="dialog"
             aria-label={`${formatDayKey(more.day)} 的订单`}
             style={{ left: more.x, top: more.y }}
@@ -395,7 +449,10 @@ export default function CalendarGrid({
             </header>
             <ul>
               {more.orders.map((order) => (
-                <li key={order.id}>
+                <li
+                  key={order.id}
+                  className={focusedOrderId === order.id ? "is-target" : undefined}
+                >
                   <div className="cal-popover-order">
                     <span className="mono">{order.code}</span>
                     <strong>{order.title}</strong>

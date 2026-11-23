@@ -250,10 +250,16 @@ describe("订单显示", () => {
     expect(screen.getByText("已结束未排期")).toBeInTheDocument();
   });
 
-  it("点击订单进入现有详情路由", async () => {
+  it("单击订单条只选中，双击才进入现有详情路由", async () => {
     const user = userEvent.setup();
     await ready([order({ id: "click-me" })]);
-    await user.click(document.querySelector<HTMLElement>(".cal-chip")!);
+    const chip = document.querySelector<HTMLElement>(".cal-chip")!;
+
+    await user.click(chip);
+    expect(chip).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByTestId("order-probe")).toBeNull();
+
+    await user.dblClick(chip);
     await waitFor(() => expect(screen.getByTestId("order-probe")).toHaveTextContent("click-me"));
   });
 });

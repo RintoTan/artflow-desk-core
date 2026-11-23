@@ -14,6 +14,8 @@ type Props = {
   /** 顶部「显示已结束」打开时，完成分区跟着展开。 */
   showTerminal: boolean;
   onOpenOrder: (order: OrderView) => void;
+  /** 单击只选中；双击或键盘 Enter 才进详情。 */
+  onSelectOrder?: (order: OrderView) => void;
   onReschedule: (order: OrderView) => void;
   onLocate: (order: OrderView) => void;
   onDragStart: (order: OrderView, event: React.PointerEvent<HTMLElement>) => void;
@@ -60,6 +62,7 @@ export default function OrderRail({
   flashOrderId,
   showTerminal,
   onOpenOrder,
+  onSelectOrder,
   onReschedule,
   onLocate,
   onDragStart,
@@ -210,9 +213,15 @@ export default function OrderRail({
                           type="button"
                           className="cal-rail-body"
                           onClick={(event) => {
-                            if (event.detail === 0) return;
-                            onOpenOrder(order);
+                            // 键盘 Enter 产生的 click 没有 detail：仍然进详情；
+                            // 鼠标单击只选中，双击才进详情。
+                            if (event.detail === 0) {
+                              onOpenOrder(order);
+                              return;
+                            }
+                            onSelectOrder?.(order);
                           }}
+                          onDoubleClick={() => onOpenOrder(order)}
                         >
                           <span className="mono cal-rail-code">{order.code}</span>
                           <strong className="cal-rail-name">{order.title}</strong>
