@@ -50,11 +50,34 @@ fn restores_a_real_legacy_zip_end_to_end() {
     let env = open(&dir.path().join("restored"));
     let hw = HighWater::open(&env.layout().highwater_db()).unwrap();
 
-    let restored = restore::restore(&env, &hw, zip, &migrations::production()).expect("恢复失败");
-    println!(
-        "恢复完成：orders={} clients={} templates={} attachments={}",
-        restored.summary.orders, restored.summary.clients, restored.summary.templates, restored.summary.attachments
-    );
+    // 两条合法结局，除此之外都算失败：
+    //  A. 同一血统的旧备份 → 迁移成功；
+    //  B. 血统不匹配（如 tv03 原型沙箱）→ 必须给出「结构不兼容」的明确结论，
+    //     而不是一句没上下文的 "no such table"。
+    let outcome = restore::restore(&env, &hw, zip, &migrations::production());
+    let restored = match outcome {
+        Ok(restored) => {
+            println!(
+                "恢复完成：orders={} clients={} templates={} attachments={}",
+                restored.summary.orders,
+                restored.summary.clients,
+                restored.summary.templates,
+                restored.summary.attachments
+            );
+            println!("warnings: {:#?}", restored.warnings);
+            restored
+        }
+        Err(e) => {
+            println!("不可自动恢复：code={} message={}", e.code, e.message);
+            assert_eq!(e.code, "SCHEMA", "结构不兼容必须报 SCHEMA，而不是 DB/ZIP");
+            assert!(
+                e.message.contains("不兼容") && e.message.contains("基础表"),
+                "错误信息必须说清原因与处理方式：{}",
+                e.message
+            );
+            return;
+        }
+    };
 
     let conn = env.open_db().unwrap();
     let version: i64 = conn

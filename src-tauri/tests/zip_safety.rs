@@ -26,7 +26,7 @@ fn manifest_for(files: &[(&str, &[u8])]) -> Manifest {
         app_version: "0.1.0".into(),
         schema_version: 1,
         created_at: "2026-11-16T00:00:00.000Z".into(),
-        working_timezone: "Asia/Shanghai".into(),
+        working_timezone: Some("Asia/Shanghai".into()),
         number_high_water: vec![zip_read::YearWatermark { year: 2026, last_allocated: 7 }],
         total_files: entries.len(),
         total_bytes: entries.iter().map(|e| e.bytes).sum(),
@@ -80,7 +80,7 @@ fn valid_backup_passes_inspection() {
     assert_eq!(report.entries, 3);
     assert_eq!(report.attachment_files, 1);
     assert_eq!(report.manifest.number_high_water[0].last_allocated, 7);
-    assert_eq!(report.manifest.working_timezone, "Asia/Shanghai");
+    assert_eq!(report.manifest.working_timezone.as_deref(), Some("Asia/Shanghai"));
     assert!(report.database_bytes > 0);
 }
 
@@ -143,16 +143,31 @@ fn newer_format_version_is_refused() {
 }
 
 #[test]
-fn missing_working_timezone_is_refused() {
+fn missing_working_timezone_is_accepted_with_a_warning() {
+    // 规则已变更：旧备份没有工作时区时不再拒绝，而是接受并在预览里明示
+    // 「恢复后按当前设备时区解释本地日期」。拒绝会让旧备份彻底不可用。
     let dir = tempfile::tempdir().unwrap();
-    let db = b"db".to_vec();
-    let mut manifest = manifest_for(&[("database.sqlite", &db)]);
-    manifest.working_timezone = "  ".into();
-    let raw = serde_json::to_vec(&manifest).unwrap();
-    let path = dir.path().join("no-tz.zip");
-    write_zip(&path, &[("manifest.json", raw), ("database.sqlite", db)]);
-    let err = zip_read::inspect(&path).err().expect("必须拒绝");
-    assert!(err.message.contains("工作时区"), "{}", err.message);
+    for (idx, tz) in [None, Some("  ".to_string())].into_iter().enumerate() {
+        let db = b"db".to_vec();
+        let mut manifest = manifest_for(&[("database.sqlite", &db)]);
+        manifest.working_timezone = tz;
+        manifest.number_high_water = Vec::new();
+        let raw = serde_json::to_vec(&manifest).unwrap();
+        let path = dir.path().join(format!("no-tz-{idx}.zip"));
+        write_zip(&path, &[("manifest.json", raw), ("database.sqlite", db)]);
+
+        let report = zip_read::inspect(&path).expect("缺时区不应再被拒绝");
+        assert!(
+            report.warnings.iter().any(|w| w.contains("工作时区")),
+            "必须给出时区警告：{:?}",
+            report.warnings
+        );
+        assert!(
+            report.warnings.iter().any(|w| w.contains("编号高水位")),
+            "缺高水位同样要说明：{:?}",
+            report.warnings
+        );
+    }
 }
 
 #[test]
@@ -331,4 +346,59 @@ fn inspection_does_not_modify_the_archive() {
     let _ = zip_read::inspect(&zip).unwrap();
     let after = std::fs::read(&zip).unwrap();
     assert_eq!(sha_hex(&before), sha_hex(&after), "校验必须只读");
+}
+
+/// 旧版备份用 snake_case 写 manifest，且没有时区/高水位/总计字段。
+/// 这类文件必须能读，总计按实际清单重算，并给出兼容性提示。
+#[test]
+fn legacy_snake_case_manifest_is_accepted_and_totals_are_recomputed() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = b"legacy-db".to_vec();
+    let attach = b"legacy-png".to_vec();
+    let raw = format!(
+        r#"{{
+  "format": "{}",
+  "format_version": 1,
+  "app_version": "0.0.9",
+  "schema_version": 2,
+  "created_at": "2026-11-16T08:11:21Z",
+  "files": [
+    {{ "path": "database.sqlite", "bytes": {}, "sha256": "{}" }},
+    {{ "path": "attachments/originals/a.png", "bytes": {}, "sha256": "{}" }}
+  ]
+}}"#,
+        zip_read::FORMAT_NAME,
+        db.len(),
+        sha_hex(&db),
+        attach.len(),
+        sha_hex(&attach)
+    );
+    let path = dir.path().join("legacy.zip");
+    write_zip(
+        &path,
+        &[
+            ("manifest.json", raw.into_bytes()),
+            ("database.sqlite", db),
+            ("attachments/originals/a.png", attach),
+        ],
+    );
+
+    let report = zip_read::inspect(&path).expect("旧 manifest 必须能读");
+    assert_eq!(report.manifest.schema_version, 2);
+    assert_eq!(report.manifest.total_files, 2, "总计必须按清单重算");
+    assert!(report.manifest.total_bytes > 0);
+    assert!(report.manifest.working_timezone.is_none());
+    assert!(report.manifest.number_high_water.is_empty());
+}
+
+/// 必需字段仍然要拒绝：没有 format 就不是本程序的包。
+#[test]
+fn legacy_manifest_without_format_is_still_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = b"db".to_vec();
+    let raw = br#"{"format_version":1,"app_version":"0.0.9","schema_version":2,"created_at":"x","files":[]}"#;
+    let path = dir.path().join("no-format.zip");
+    write_zip(&path, &[("manifest.json", raw.to_vec()), ("database.sqlite", db)]);
+    let err = zip_read::inspect(&path).err().expect("必须拒绝");
+    assert!(err.message.contains("manifest"), "{}", err.message);
 }

@@ -107,7 +107,7 @@ pub fn build(
         app_version: app_version.to_string(),
         schema_version,
         created_at: created_at.to_string(),
-        working_timezone: working_timezone.to_string(),
+        working_timezone: Some(working_timezone.to_string()),
         number_high_water: watermarks.to_vec(),
         files,
         total_files,

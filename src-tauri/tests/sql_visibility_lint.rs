@@ -106,6 +106,13 @@ const EXEMPTIONS: &[Exemption] = &[
         why: "v9 重建回收站视图，同上",
     },
     Exemption {
+        file: "backup/restore.rs",
+        needle: "SELECT code FROM orders\"",
+        lines: 1,
+        kind: Kind::BackupSnapshot,
+        why: "重建编号高水位：回收站里的订单仍占着编号，必须读基表",
+    },
+    Exemption {
         file: "store/migrations/v8.rs",
         needle: "CREATE VIEW clients_visible AS SELECT * FROM clients WHERE deleted_at IS NULL;",
         lines: 1,

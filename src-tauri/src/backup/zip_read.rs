@@ -31,6 +31,7 @@ pub struct ManifestFile {
 #[serde(rename_all = "camelCase")]
 pub struct YearWatermark {
     pub year: i32,
+    #[serde(alias = "last_allocated")]
     pub last_allocated: i64,
 }
 
@@ -38,16 +39,29 @@ pub struct YearWatermark {
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
     pub format: String,
+    // 旧版本备份用 snake_case 写键名。文件名和格式版本不变，只是键名不同：
+    // 这里用 alias 兼容，而不是升 FORMAT_VERSION——升级版本号会让旧版本
+    // 反过来拒绝读新文件，兼容窗口白白变窄。
+    #[serde(alias = "format_version")]
     pub format_version: u32,
+    #[serde(alias = "app_version")]
     pub app_version: String,
+    #[serde(alias = "schema_version")]
     pub schema_version: i64,
+    #[serde(alias = "created_at")]
     pub created_at: String,
     /// 工作时区随备份走，恢复后语义一致（FIX-08 / FIX-10）。
-    pub working_timezone: String,
+    /// `None` = 旧备份没有记录这项，恢复时改用当前设备时区（并在界面上明示）。
+    #[serde(default, alias = "working_timezone")]
+    pub working_timezone: Option<String>,
     /// 编号高水位随备份走，恢复时逐年取较大值（FIX-01）。
+    /// 旧备份没有这项：恢复时按库里的订单编号重建，不能当成 0。
+    #[serde(default, alias = "number_high_water")]
     pub number_high_water: Vec<YearWatermark>,
     pub files: Vec<ManifestFile>,
+    #[serde(default, alias = "total_files")]
     pub total_files: usize,
+    #[serde(default, alias = "total_bytes")]
     pub total_bytes: u64,
 }
 
@@ -58,6 +72,8 @@ pub struct Inspection {
     pub entries: usize,
     pub database_bytes: u64,
     pub attachment_files: usize,
+    /// 兼容性提示：旧备份缺字段时在这里说明，界面必须原样展示。
+    pub warnings: Vec<String>,
 }
 
 /// 备份包内允许出现的路径形状。附件只允许 ASCII 相对路径。
@@ -190,7 +206,7 @@ pub fn inspect(path: &Path) -> AppResult<Inspection> {
         ));
     }
 
-    let manifest: Manifest = {
+    let mut manifest: Manifest = {
         let mut entry = archive
             .by_name(MANIFEST_NAME)
             .map_err(|_| AppError::zip("备份包缺少 manifest.json"))?;
@@ -215,8 +231,26 @@ pub fn inspect(path: &Path) -> AppResult<Inspection> {
     if manifest.schema_version < 1 {
         return Err(AppError::zip("manifest 缺少有效的结构版本"));
     }
-    if manifest.working_timezone.trim().is_empty() {
-        return Err(AppError::zip("manifest 缺少工作时区"));
+    // 旧备份没有 working_timezone：不拒绝，改为在预览与恢复结果里明示
+    // 「恢复后按当前设备时区解释本地日期」。历史日期与时间戳一律不改。
+    let mut warnings: Vec<String> = Vec::new();
+    if manifest
+        .working_timezone
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .is_empty()
+    {
+        warnings.push(
+            "此备份未记录工作时区。恢复后将使用当前设备的系统时区解释本地日期。历史日期归属可能与原设备存在差异。"
+                .to_string(),
+        );
+    }
+    if manifest.number_high_water.is_empty() {
+        warnings.push(
+            "此备份未记录编号高水位，恢复时将按库内已有订单编号重建；历史上已永久删除的编号无法还原，可能出现编号跳号复用的缺口记录。"
+                .to_string(),
+        );
     }
 
     let mut actual: Vec<String> = names
@@ -266,10 +300,19 @@ pub fn inspect(path: &Path) -> AppResult<Inspection> {
         }
     }
 
+    // 总计缺失（旧备份）时按实际清单重算，而不是相信一个 0。
+    if manifest.total_files == 0 {
+        manifest.total_files = manifest.files.len();
+    }
+    if manifest.total_bytes == 0 {
+        manifest.total_bytes = manifest.files.iter().map(|f| f.bytes).sum();
+    }
+
     Ok(Inspection {
         entries: names.len(),
         database_bytes,
         attachment_files,
+        warnings,
         manifest,
     })
 }
