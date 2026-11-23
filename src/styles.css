@@ -5036,6 +5036,10 @@ dl.stat-row {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  /* 日历自己的宽度容器：左池宽窄与工具栏收缩都按「日历还剩多宽」判断，
+     不按窗口宽。侧栏折叠后内容区变宽、窗口没变，媒体查询会判断错。 */
+  container-type: inline-size;
+  container-name: calpage;
 }
 
 .cal-head {
@@ -5612,7 +5616,8 @@ dl.stat-row {
 }
 
 /* 窄窗：左侧池子收窄，日历区域自己横向滚动，页面不横向溢出 */
-@media (max-width: 1000px) {
+/* 阈值按内容宽换算：窗口 1000 时日历本身约 700px，取 760 保持默认窗口观感不变 */
+@container calpage (max-width: 760px) {
   .cal-body {
     grid-template-columns: 190px minmax(0, 1fr);
   }
@@ -5987,18 +5992,10 @@ dl.stat-row {
   color: var(--text);
 }
 
-/* 窄窗：工具栏不折行成两条，允许按钮换行但保持间距 */
-@media (max-width: 1100px) {
-  .cal-toolbar {
-    flex-wrap: wrap;
-    row-gap: 8px;
-  }
+/* 工具栏窄窗规则统一放在 .main-fixed 区块（日历是唯一使用方）。
+   原来这里还有一条 flex-wrap: wrap，与下方 nowrap 互相覆盖、
+   注释也写成「不折行」，实际从未生效。 */
 
-  .cal-title {
-    min-width: 132px;
-    font-size: 13px;
-  }
-}
 
 /* CAL-UI-03：条内三段操作区的手柄提示（不改变条本身尺寸与定位） */
 .cal-chip {
@@ -6586,7 +6583,7 @@ dl.stat-row {
   flex-wrap: nowrap;
 }
 
-@media (max-width: 1100px) {
+@container calpage (max-width: 860px) {
   .main-fixed .cal-toolbar {
     flex-wrap: nowrap;
     row-gap: 0;
