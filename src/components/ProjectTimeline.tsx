@@ -30,7 +30,7 @@ import {
   type TimelineScale,
 } from "../lib/timeline";
 
-const SCALES: TimelineScale[] = ["day", "month", "year"];
+const SCALES: TimelineScale[] = ["day", "week", "month", "year"];
 
 const LEGEND = [
   { key: "scheduled", label: "按排期" },
@@ -107,6 +107,11 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
+  /** 单击只负责选中；双击或 Enter 才进详情。 */
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  /** 拖动平移：只改观察窗口，不改订单排期。 */
+  const [panning, setPanning] = useState(false);
+
   const [viewport, setViewport] = useState(0);
   const [centerOn, setCenterOn] = useState<DayIndex | null>(null);
   const [tip, setTip] = useState<DateTip | null>(null);
@@ -226,10 +231,47 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
     const node = scrollerRef.current;
     const left = node?.scrollLeft ?? scrollLeft;
     const width = viewport || node?.clientWidth || 0;
-    // 视口还没量出来时不要移动锚点：0 宽会把中心算成窗口起点，造成跳变。
-    if (width === 0) return effectiveAnchor;
-    return anchorFromViewport(scale, win, left, width);
+    // 视口还没量出来（jsdom / 首帧）时，可见范围就是整个窗口：
+    // 取窗口中点，与 Fit-to-Window 下的真实中心一致。
+    if (width === 0) return Math.round((win.from + win.to) / 2);
+    return anchorFromViewport(scale, win, left, width, fitPx);
   }, [win, scale, scrollLeft, viewport, effectiveAnchor]);
+
+  const DRAG_THRESHOLD = 7;
+  const dragRef = useRef<{ startX: number; startAnchor: DayIndex; moved: boolean } | null>(null);
+  /** 拖动结束后紧跟的 click 必须吞掉，避免松手就选中/跳转。 */
+  const suppressClickRef = useRef(false);
+
+  const panStart = (event: React.MouseEvent) => {
+    if (event.button !== 0 || effectiveAnchor === null) return;
+    dragRef.current = { startX: event.clientX, startAnchor: effectiveAnchor, moved: false };
+  };
+
+  const panMove = (event: React.MouseEvent) => {
+    const drag = dragRef.current;
+    if (drag === null) return;
+    const dx = event.clientX - drag.startX;
+    if (!drag.moved) {
+      if (Math.abs(dx) < DRAG_THRESHOLD) return;
+      drag.moved = true;
+      suppressClickRef.current = true;
+      setPanning(true);
+      setTip(null);
+    }
+    // 向左拖（dx<0）看更晚的日期：锚点前移。
+    const days = Math.round(dx / perDayPx(scale, fitPx));
+    setAnchor(drag.startAnchor - days);
+  };
+
+  const panEnd = () => {
+    if (dragRef.current?.moved) {
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
+    }
+    dragRef.current = null;
+    setPanning(false);
+  };
 
   const goToday = () => {
     setAnchor(today);
@@ -436,32 +478,49 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
                 .filter(Boolean)
                 .join(" · ");
               return (
-                <a
+                <div
                   key={order.id}
-                  className="timeline-info"
-                  href={`/orders?orderId=${encodeURIComponent(order.id)}`}
+                  className={`timeline-info${
+                    selectedOrderId === order.id ? " is-selected" : ""
+                  }`}
+                  role="button"
+                  tabIndex={0}
+                  aria-selected={selectedOrderId === order.id}
                   data-order-id={order.id}
                   data-tone={tone}
                   title={order.title}
                   onClick={(event) => {
-                    event.preventDefault();
+                    event.stopPropagation();
+                    if (suppressClickRef.current) return;
+                    setSelectedOrderId(order.id);
+                  }}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation();
                     gotoOrder(order.id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") gotoOrder(order.id);
                   }}
                 >
                   <span className="timeline-code">{order.code}</span>
                   <span className="timeline-title">{order.title}</span>
                   <span className="timeline-sub">{sub}</span>
-                </a>
+                </div>
               );
             })}
           </div>
 
           <div
-            className="timeline-scroll"
+            className={`timeline-scroll${panning ? " is-panning" : ""}`}
             ref={scrollerRef}
             tabIndex={0}
             role="group"
-            aria-label="时间轨道，可横向滚动"
+            aria-label="时间轨道，按住拖动可平移日期窗口"
+            onMouseDown={panStart}
+            onMouseMove={panMove}
+            onMouseUp={panEnd}
+            onMouseLeave={panEnd}
+
             onScroll={(event) => {
               setScrollLeft(event.currentTarget.scrollLeft);
               setTip(null);
@@ -526,10 +585,20 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
                   return (
                     <div
                       key={order.id}
-                      className={`timeline-row${geo.terminal ? " is-terminal" : ""}`}
+                      className={`timeline-row${geo.terminal ? " is-terminal" : ""}${
+                        selectedOrderId === order.id ? " is-selected" : ""
+                      }`}
                       data-order-id={order.id}
                       data-tone={tone}
-                      onClick={() => gotoOrder(order.id)}
+                      aria-selected={selectedOrderId === order.id}
+                      onClick={() => {
+                        if (suppressClickRef.current) return;
+                        setSelectedOrderId(order.id);
+                      }}
+                      onDoubleClick={() => gotoOrder(order.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") gotoOrder(order.id);
+                      }}
                     >
                       {/* 年视图 3 年跨度下单日只有 1.8px：短到画不出比例的条改成圆点，
                           宽度不再表达时长，但位置仍然准确、仍然可点。 */}

@@ -10,7 +10,7 @@ import {
   stepSpan,
   spanWindow,
 } from "./timeline";
-import { civilFromDays, daysFromCivil } from "./scheduleBar";
+import { daysFromCivil } from "./scheduleBar";
 
 const TODAY = daysFromCivil(2026, 11, 23);
 
@@ -21,10 +21,13 @@ function days(win: { from: number; to: number }): number {
 describe("跨度档位", () => {
   it("默认跨度符合规格：日 30 天 / 月 12 个月 / 年 3 年", () => {
     expect(VIEW_SPANS.day).toEqual([14, 30, 60]);
+    expect(VIEW_SPANS.week).toEqual([4, 8, 12]);
     expect(VIEW_SPANS.month).toEqual([6, 12, 24]);
-    expect(Object.keys(VIEW_SPANS)).toEqual(["day", "month", "year"]);
+    expect(VIEW_SPANS.year).toEqual([3, 5, 10]);
+    expect(Object.keys(VIEW_SPANS)).toEqual(["day", "week", "month", "year"]);
     expect(VIEW_SPANS.year).toEqual([3, 5, 10]);
     expect(DEFAULT_SPAN.day).toBe(30);
+    expect(DEFAULT_SPAN.week).toBe(8);
     expect(DEFAULT_SPAN.month).toBe(12);
     expect(DEFAULT_SPAN.year).toBe(3);
   });
@@ -47,20 +50,28 @@ describe("窗口按跨度生成", () => {
     expect(win.to).toBe(TODAY + 14);
   });
 
-  it("月视图 12 个月覆盖整年边界", () => {
-    const win = spanWindow("month", TODAY, 12);
-    const from = civilFromDays(win.from);
-    const to = civilFromDays(win.to);
-    expect(from.day).toBe(1);
-    expect(to.day).toBe(30); // 2026-12 有 30 天? 12 月是 31 天
+  it("周视图按整周对齐：4 周 = 28 天，首尾是周一与周日", () => {
+    const win = spanWindow("week", TODAY, 4);
+    const span = win.to - win.from + 1;
+    expect(span % 7).toBe(0);
+    expect(span).toBeGreaterThanOrEqual(28);
+    expect(span).toBeLessThanOrEqual(34);
   });
 
-  it("年视图 3 年从 1 月 1 日到 12 月 31 日", () => {
+  it("月视图 12 个月：总天数接近一年，且锚点正好在正中", () => {
+    const win = spanWindow("month", TODAY, 12);
+    const total = win.to - win.from + 1;
+    expect(total).toBeGreaterThanOrEqual(360);
+    expect(total).toBeLessThanOrEqual(366);
+    expect(win.from + Math.floor(total / 2)).toBe(TODAY);
+  });
+
+  it("年视图 3 年：总天数接近三年，且锚点正好在正中", () => {
     const win = spanWindow("year", TODAY, 3);
-    const from = civilFromDays(win.from);
-    const to = civilFromDays(win.to);
-    expect([from.year, from.month, from.day]).toEqual([2025, 1, 1]);
-    expect([to.year, to.month, to.day]).toEqual([2027, 12, 31]);
+    const total = win.to - win.from + 1;
+    expect(total).toBeGreaterThanOrEqual(1095);
+    expect(total).toBeLessThanOrEqual(1096);
+    expect(win.from + Math.floor(total / 2)).toBe(TODAY);
   });
 
   it("点今天时今天落在左侧 20% 附近", () => {

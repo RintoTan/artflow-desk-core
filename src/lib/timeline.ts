@@ -16,7 +16,7 @@ import {
  */
 
 /** WB-01 只有日 / 月 / 年三个视图；日历页的周视图是另一套坐标系，不在此列。 */
-export type TimelineScale = "day" | "month" | "year";
+export type TimelineScale = "day" | "week" | "month" | "year";
 
 /**
  * 周起始偏移：0 = 周一（ISO 8601，暂定）。
@@ -41,6 +41,7 @@ export type ScaleConfig = {
 
 export const SCALE_CONFIG: Record<TimelineScale, ScaleConfig> = {
   day: { label: "日", pxPerDay: 44, minBarPx: 22, beforeDays: 7, afterDays: 13, shiftDays: 7 },
+  week: { label: "周", pxPerDay: 26, minBarPx: 14, beforeDays: 21, afterDays: 56, shiftDays: 28 },
   month: { label: "月", pxPerDay: 6, minBarPx: 7, beforeMonths: 2, afterMonths: 10 },
   // 年视图：3 年跨度下单日只有 1.8px，短条改为 6px 圆点，保证仍可点。
   year: { label: "年", pxPerDay: 1.8, minBarPx: 6, beforeMonths: 12, afterMonths: 48 },
@@ -90,6 +91,16 @@ export function timelineWindow(scale: TimelineScale, anchor: DayIndex): Timeline
     return { from: anchor - (cfg.beforeDays ?? 0), to: anchor + (cfg.afterDays ?? 0) };
   }
 
+  if (scale === "week") {
+    // 周视图按整自然周对齐：起点回到周一、终点推到周日。
+    const rawFrom = anchor - (cfg.beforeDays ?? 0);
+    const rawTo = anchor + (cfg.afterDays ?? 0);
+    return {
+      from: rawFrom - weekdayIndex(rawFrom),
+      to: rawTo + (6 - weekdayIndex(rawTo)),
+    };
+  }
+
   if (scale === "month") {
     const start = monthStart(anchor);
     const from = monthStart(addMonthsClamped(start, -(cfg.beforeMonths ?? 0)));
@@ -109,7 +120,7 @@ export function timelineWindow(scale: TimelineScale, anchor: DayIndex): Timeline
 /** 上一段/下一段：日 7 天、周 28 天、月 1 个自然月、年 12 个月。 */
 export function shiftAnchor(scale: TimelineScale, anchor: DayIndex, direction: -1 | 1): DayIndex {
   const cfg = SCALE_CONFIG[scale];
-  if (scale === "day") {
+  if (scale === "day" || scale === "week") {
     return anchor + (cfg.shiftDays ?? 0) * direction;
   }
   return addMonthsClamped(anchor, (scale === "year" ? 12 : 1) * direction);
@@ -199,13 +210,27 @@ export function buildTicks(
         isToday: day === today,
       });
     }
+  } else if (scale === "week") {
+    pushMonthGroups(tier1, win, scale, px);
+    for (let day = win.from; day <= win.to; day += 1) {
+      if (weekdayIndex(day) !== WEEK_START_OFFSET) continue;
+      const end = Math.min(day + 7, win.to + 1);
+      const c = civilFromDays(day);
+      tier2.push({
+        day,
+        left: dayToX(day, win, scale, px),
+        width: (end - day) * px,
+        label: `${String(c.month).padStart(2, "0")}-${String(c.day).padStart(2, "0")}`,
+        isToday: today >= day && today < end,
+      });
+    }
   } else if (scale === "month") {
     for (let year = firstYear; year <= lastYear; year += 1) {
       const start = Math.max(win.from, daysFromCivil(year, 1, 1));
       const end = Math.min(win.to + 1, daysFromCivil(year + 1, 1, 1));
       tier1.push({
         day: start,
-        left: dayToX(start, win, scale),
+        left: dayToX(start, win, scale, px),
         width: (end - start) * px,
         label: `${year} 年`,
         isToday: civilFromDays(today).year === year,
@@ -231,7 +256,7 @@ export function buildTicks(
       const end = Math.min(win.to + 1, daysFromCivil(year + 1, 1, 1));
       tier1.push({
         day: start,
-        left: dayToX(start, win, scale),
+        left: dayToX(start, win, scale, px),
         width: (end - start) * px,
         label: `${year} 年`,
         isToday: civilFromDays(today).year === year,
@@ -244,7 +269,7 @@ export function buildTicks(
         const endClamped = Math.min(qEnd + 1, win.to + 1);
         tier2.push({
           day: startClamped,
-          left: dayToX(startClamped, win, scale),
+          left: dayToX(startClamped, win, scale, px),
           width: (endClamped - startClamped) * px,
           label: `Q${quarter + 1}`,
           isToday: today >= qStart && today <= qEnd,
@@ -411,12 +436,14 @@ export function visibleRange(
  */
 export const VIEW_SPANS: Record<TimelineScale, number[]> = {
   day: [14, 30, 60],
+  week: [4, 8, 12],
   month: [6, 12, 24],
   year: [3, 5, 10],
 };
 
 export const DEFAULT_SPAN: Record<TimelineScale, number> = {
   day: 30,
+  week: 8,
   month: 12,
   year: 3,
 };
@@ -467,6 +494,18 @@ type WindowOptions = {
  * 以锚点为中心的窗口：切换视图与缩放时锚点保持在视口中心，
  * 因此这里不做任何「自动跳回今天」的修正——没有真实边界就不引入跳转规则。
  */
+/** 保持总天数不变，把窗口挪到以 anchor 为正中心的位置。 */
+function centeredOn(
+  from: DayIndex,
+  to: DayIndex,
+  anchor: DayIndex,
+  ratio?: number,
+): TimelineWindow {
+  const total = to - from + 1;
+  const lead = ratio === undefined ? Math.floor(total / 2) : Math.round(total * ratio);
+  return { from: anchor - lead, to: anchor - lead + total - 1 };
+}
+
 export function spanWindow(
   scale: TimelineScale,
   anchor: DayIndex,
@@ -475,26 +514,33 @@ export function spanWindow(
 ): TimelineWindow {
   const ratio = options.todayRatio;
 
+  if (scale === "week") {
+    const total = span * 7;
+    const lead = ratio === undefined ? Math.floor(total / 2) : Math.round(total * ratio);
+    return { from: anchor - lead, to: anchor - lead + total - 1 };
+  }
+
   if (scale === "day") {
     const lead = ratio === undefined ? Math.floor(span / 2) : Math.round(span * ratio);
     return { from: anchor - lead, to: anchor - lead + span - 1 };
   }
 
   if (scale === "month") {
+    // 先按整月取总天数，再平移到「锚点正好在正中」。
+    // 否则 12 个月这样的窗口，中心会落在月中而不是锚点，切视图时看起来像跑偏。
     const start = monthStart(anchor);
     const half = Math.floor(span / 2);
     const from = monthStart(addMonthsClamped(start, -half));
     const to = monthEnd(addMonthsClamped(start, span - 1 - half));
-    return { from, to };
+    return centeredOn(from, to, anchor, ratio);
   }
 
   const year = civilFromDays(anchor).year;
   const half = Math.floor(span / 2);
   const fromYear = year - half;
-  return {
-    from: daysFromCivil(fromYear, 1, 1),
-    to: daysFromCivil(fromYear + span - 1, 12, 31),
-  };
+  const from = daysFromCivil(fromYear, 1, 1);
+  const to = daysFromCivil(fromYear + span - 1, 12, 31);
+  return centeredOn(from, to, anchor, ratio);
 }
 
 /** 视口中心对应的日期：用于「切换视图 / 缩放时保持锚点」。 */
@@ -503,9 +549,12 @@ export function anchorFromViewport(
   win: TimelineWindow,
   scrollLeft: number,
   viewportWidth: number,
+  px?: number,
 ): DayIndex {
+  // 必须用「实际渲染用的每日像素」：Fit-to-Window 下它是 viewport/天数，
+  // 用配置里的基准值（如月 6px）会把中心算到偏左几百天。
   const centerPx = scrollLeft + viewportWidth / 2;
-  const day = win.from + Math.round(centerPx / perDayPx(scale));
+  const day = win.from + Math.round(centerPx / perDayPx(scale, px));
   return Math.max(win.from, Math.min(win.to, day));
 }
 

@@ -15,12 +15,22 @@ describe("Fit-to-Window", () => {
     expect(dayToX(win.to, win, "month", px) + px).toBeCloseTo(1257, 6);
   });
 
-  it("四种尺度都按同一规则收进窗口", () => {
-    for (const [scale, span] of [["day", 30], ["month", 12], ["year", 3]] as const) {
+  it("四种视图 × 三档跨度共 12 种组合都收进窗口", () => {
+    const combos = [
+      ["day", 14], ["day", 30], ["day", 60],
+      ["week", 4], ["week", 8], ["week", 12],
+      ["month", 6], ["month", 12], ["month", 24],
+      ["year", 3], ["year", 5], ["year", 10],
+    ] as const;
+    for (const [scale, span] of combos) {
       const win = spanWindow(scale, TODAY, span);
       const days = win.to - win.from + 1;
-      const px = 900 / days;
-      expect(canvasWidth(win, scale, px)).toBeCloseTo(900, 6);
+      const px = 1257 / days;
+      expect(canvasWidth(win, scale, px)).toBeCloseTo(1257, 6);
+      // 刻度首尾也必须在同一坐标系内收口
+      const ticks = buildTicks(win, scale, TODAY, px);
+      expect(ticks.tier2.length).toBeGreaterThan(0);
+      expect(ticks.tier2[ticks.tier2.length - 1]!.left).toBeLessThanOrEqual(1257);
     }
   });
 

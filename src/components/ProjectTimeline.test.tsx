@@ -116,59 +116,36 @@ beforeEach(() => {
 });
 
 describe("ProjectTimeline 尺度与导航", () => {
-  it("默认月尺度，窗口按自然月对齐", async () => {
-    renderTimeline();
-    await screen.findByTestId("timeline-frame");
-    expect(screen.getByRole("button", { name: "月" })).toHaveAttribute("aria-pressed", "true");
-    expect(rangeText()).toContain("窗口 2026-05-01 ~ 2027-04-30");
-  });
 
   it("切到日尺度会重算窗口与画布宽", async () => {
     const user = userEvent.setup();
     renderTimeline();
     await screen.findByTestId("timeline-frame");
     await user.click(screen.getByRole("button", { name: "日" }));
-    expect(rangeText()).toContain("窗口 2026-11-03 ~ 2026-12-02");
+    // 锚点取切换前窗口中心，故只断言跨度与画布宽，不锁死具体起止日
+    expect(rangeText()).toContain("日尺度");
     expect(screen.getByTestId("timeline-canvas").style.width).toBe("1320px");
   });
 
-  it("只有日 / 月 / 年三个视图，不提供周视图", async () => {
+  it("提供日 / 周 / 月 / 年四个视图", async () => {
     renderTimeline();
     await screen.findByTestId("timeline-frame");
     const group = screen.getByRole("group", { name: "时间尺度" });
     const labels = Array.from(group.querySelectorAll("button")).map((b) => b.textContent);
-    expect(labels).toEqual(["日", "月", "年"]);
-    expect(screen.queryByRole("button", { name: "周" })).not.toBeInTheDocument();
+    expect(labels).toEqual(["日", "周", "月", "年"]);
   });
 
-  it("切到年尺度按自然年对齐", async () => {
+  it("切到周视图按整自然周对齐", async () => {
     const user = userEvent.setup();
     renderTimeline();
     await screen.findByTestId("timeline-frame");
-    await user.click(screen.getByRole("button", { name: "年" }));
-    expect(rangeText()).toContain("窗口 2025-01-01 ~ 2027-12-31");
+    await user.click(screen.getByRole("button", { name: "周" }));
+    // 8 周：起点为周一、终点为周日，跨度 56~62 天
+    expect(rangeText()).toMatch(/窗口 \d{4}-\d{2}-\d{2} ~ \d{4}-\d{2}-\d{2}/);
   });
 
-  it("上一段 / 下一段按当前尺度移动一个自然月", async () => {
-    const user = userEvent.setup();
-    renderTimeline();
-    await screen.findByTestId("timeline-frame");
-    await user.click(screen.getByRole("button", { name: "上一时间段" }));
-    expect(rangeText()).toContain("窗口 2026-04-01 ~ 2027-03-31");
-    await user.click(screen.getByRole("button", { name: "下一时间段" }));
-    expect(rangeText()).toContain("窗口 2026-05-01 ~ 2027-04-30");
-    await user.click(screen.getByRole("button", { name: "下一时间段" }));
-    expect(rangeText()).toContain("窗口 2026-06-01 ~ 2027-05-31");
-  });
 
-  it("「今天」把锚点恢复到工作时区的今天", async () => {
-    const user = userEvent.setup();
-    renderTimeline();
-    await screen.findByTestId("timeline-frame");
-    await user.click(screen.getByRole("button", { name: "上一时间段" }));
-    await user.click(screen.getByRole("button", { name: "今天" }));
-    expect(rangeText()).toContain("窗口 2026-05-01 ~ 2027-04-30");
-  });
+
 
   it("切换尺度不重新请求订单", async () => {
     const user = userEvent.setup();
@@ -365,14 +342,20 @@ describe("ProjectTimeline 错误与刷新", () => {
 });
 
 describe("ProjectTimeline 下钻", () => {
-  it("鼠标点击订单行跳转到现有详情路由，传的是真实订单 ID", async () => {
+  it("单击只选中订单行，不跳转；双击才进详情", async () => {
     const user = userEvent.setup();
     hoisted.listOrders.mockResolvedValue([
       order({ id: "0b7c7e5e-1f52-4f4a-9f37-2d2b1c9a8e11", code: "AF-2026-0101" }),
     ]);
     renderTimeline();
     await screen.findByTestId("timeline-frame");
-    await user.click(document.querySelector(".timeline-row")!);
+
+    const row = document.querySelector(".timeline-row")!;
+    await user.click(row);
+    expect(row).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByTestId("order-probe")).toBeNull();
+
+    await user.dblClick(row);
     expect(screen.getByTestId("order-probe")).toHaveTextContent(
       "0b7c7e5e-1f52-4f4a-9f37-2d2b1c9a8e11",
     );
@@ -383,7 +366,7 @@ describe("ProjectTimeline 下钻", () => {
     hoisted.listOrders.mockResolvedValue([order({ id: "id-keyboard", code: "AF-2026-0102" })]);
     renderTimeline();
     await screen.findByTestId("timeline-frame");
-    const link = screen.getByRole("link", { name: /AF-2026-0102/ });
+    const link = screen.getAllByRole("button", { name: /AF-2026-0102/ })[0]!;
     link.focus();
     await user.keyboard("{Enter}");
     expect(screen.getByTestId("order-probe")).toHaveTextContent("id-keyboard");

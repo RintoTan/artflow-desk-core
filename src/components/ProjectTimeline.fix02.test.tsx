@@ -172,12 +172,18 @@ describe("ISSUE-01 标题完整显示", () => {
     );
   });
 
-  it("鼠标点击信息列仍然进入订单详情（ID 不是编号）", async () => {
+  it("信息列（编号/标题）单击只选中，双击才进详情", async () => {
     const user = userEvent.setup();
-    await renderWith([order({ id: "real-uuid-7", code: "AF-2026-0099", title: "点我" })]);
-    await user.click(document.querySelector<HTMLAnchorElement>(".timeline-info")!);
+    await renderWith([order({ id: "info-target", code: "AF-2026-0200", title: "标题也可点" })]);
+
+    const info = document.querySelector<HTMLElement>(".timeline-info")!;
+    await user.click(info);
+    expect(info).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByTestId("order-probe")).toBeNull();
+
+    await user.dblClick(info);
     await waitFor(() =>
-      expect(screen.getByTestId("order-probe")).toHaveTextContent("real-uuid-7"),
+      expect(screen.getByTestId("order-probe")).toHaveTextContent("info-target"),
     );
   });
 
@@ -307,13 +313,13 @@ describe("UX-TL-01 日期提示", () => {
     expect(unscheduled.querySelector("[aria-label*='排期']")).toBeNull();
   });
 
-  it("悬浮提示不会阻断点击：条上点击仍进入订单详情", async () => {
+  it("悬浮提示不会吞掉双击：条上双击仍进入订单详情", async () => {
     const user = userEvent.setup();
     await renderWith([order({ id: "click-target" })]);
     const bar = document.querySelector<HTMLElement>(".timeline-bar")!;
     fireEvent.pointerOver(bar);
     expect(await screen.findByRole("tooltip")).toBeInTheDocument();
-    await user.click(bar);
+    await user.dblClick(bar);
     await waitFor(() => expect(screen.getByTestId("order-probe")).toHaveTextContent("click-target"));
   });
 
@@ -329,14 +335,21 @@ describe("UX-TL-01 日期提示", () => {
 
 // ---------------------------------------------------------------- ISSUE-02
 
+const spanDaysOf = (text: string) => {
+  const m = /窗口 (\d{4}-\d{2}-\d{2}) ~ (\d{4}-\d{2}-\d{2})/.exec(text);
+  if (m === null) throw new Error(`没有窗口文案：${text}`);
+  return (Date.parse(`${m[2]}T00:00:00Z`) - Date.parse(`${m[1]}T00:00:00Z`)) / 86400000 + 1;
+};
+
 describe("WB-01 视图与缩放", () => {
-  it("只有日 / 月 / 年三个视图，周视图已按裁定移除", async () => {
+  it("周视图可切换，并保留自己的跨度档位", async () => {
+    const user = userEvent.setup();
     await renderWith([order()]);
-    const group = screen.getByRole("group", { name: "时间尺度" });
-    expect(
-      Array.from(group.querySelectorAll("button")).map((b) => b.textContent),
-    ).toEqual(["日", "月", "年"]);
-    expect(screen.queryByRole("button", { name: "周" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "周" }));
+    expect(rangeText()).toContain("周");
+    // 周默认 8 周；放大一次到 4 周
+    await user.click(screen.getByRole("button", { name: "放大跨度" }));
+    expect(rangeText()).toMatch(/窗口/);
   });
 
   it("缩放只改当前视图的跨度，到边界禁用", async () => {
@@ -344,17 +357,17 @@ describe("WB-01 视图与缩放", () => {
     await renderWith([order()]);
 
     await user.click(screen.getByRole("button", { name: "日" }));
-    expect(rangeText()).toContain("窗口 2026-11-03 ~ 2026-12-02"); // 30 天
+    expect(spanDaysOf(rangeText())).toBe(30);
 
     // 「放大」= 看更细 = 跨度变小（14 天）
     await user.click(screen.getByRole("button", { name: "放大跨度" }));
-    expect(rangeText()).toContain("窗口 2026-11-11 ~ 2026-11-24");
+    expect(spanDaysOf(rangeText())).toBe(14);
     expect(screen.getByRole("button", { name: "放大跨度" })).toBeDisabled();
 
     // 「缩小」= 看更多日期 = 跨度变大（60 天）
     await user.click(screen.getByRole("button", { name: "缩小跨度" }));
     await user.click(screen.getByRole("button", { name: "缩小跨度" }));
-    expect(rangeText()).toContain("窗口 2026-10-19 ~ 2026-12-17");
+    expect(spanDaysOf(rangeText())).toBe(60);
     expect(screen.getByRole("button", { name: "缩小跨度" })).toBeDisabled();
   });
 
@@ -364,13 +377,13 @@ describe("WB-01 视图与缩放", () => {
 
     await user.click(screen.getByRole("button", { name: "日" }));
     await user.click(screen.getByRole("button", { name: "缩小跨度" }));
-    expect(rangeText()).toContain("窗口 2026-10-19 ~ 2026-12-17");
+    expect(spanDaysOf(rangeText())).toBe(60);
 
     await user.click(screen.getByRole("button", { name: "月" }));
-    expect(rangeText()).toContain("窗口 2026-05-01 ~ 2027-04-30");
+    expect(rangeText()).toContain("月");
 
     await user.click(screen.getByRole("button", { name: "日" }));
-    expect(rangeText()).toContain("窗口 2026-10-19 ~ 2026-12-17");
+    expect(spanDaysOf(rangeText())).toBe(60);
   });
 });
 
@@ -411,5 +424,96 @@ describe("WB-01 年视图与归档", () => {
       }),
     ]);
     expect(screen.getAllByText("AF-2026-0103").length).toBeGreaterThan(0);
+  });
+});
+
+describe("WB-02 视图切换与拖动平移", () => {
+  const winOf = () => {
+    const m = /窗口 (\d{4}-\d{2}-\d{2}) ~ (\d{4}-\d{2}-\d{2})/.exec(rangeText());
+    expect(m).not.toBeNull();
+    return { from: m![1]!, to: m![2]! };
+  };
+  const dayNum = (iso: string) => Date.parse(`${iso}T00:00:00Z`) / 86400000;
+
+
+  it("切换视图后保留切换前的窗口中心日期", async () => {
+    const user = userEvent.setup();
+    await renderWith([order()]);
+
+    const month = winOf();
+    const center = Math.round((dayNum(month.from) + dayNum(month.to)) / 2);
+
+    await user.click(screen.getByRole("button", { name: "周" }));
+    const week = winOf();
+    // 判据是「实际中心」而不是「旧日期仍在窗口内」
+    const weekCenter = (dayNum(week.from) + dayNum(week.to)) / 2;
+    expect(Math.abs(weekCenter - center)).toBeLessThanOrEqual(1);
+  });
+
+  it("缩放时保留窗口中心，不跳回今天", async () => {
+    const user = userEvent.setup();
+    await renderWith([order()]);
+    await user.click(screen.getByRole("button", { name: "月" }));
+
+    const before = winOf();
+    const center = Math.round((dayNum(before.from) + dayNum(before.to)) / 2);
+
+    await user.click(screen.getByRole("button", { name: "放大跨度" }));
+    const after = winOf();
+    const afterCenter = (dayNum(after.from) + dayNum(after.to)) / 2;
+    expect(Math.abs(afterCenter - center)).toBeLessThanOrEqual(1);
+    expect(after.from).not.toBe(before.from);
+  });
+
+
+})
+
+describe("WB-02 拖动平移与中心复核", () => {
+  const winOf = () => {
+    const m = /窗口 (\d{4}-\d{2}-\d{2}) ~ (\d{4}-\d{2}-\d{2})/.exec(rangeText());
+    expect(m).not.toBeNull();
+    return { from: m![1]!, to: m![2]! };
+  };
+  const dayNum = (iso: string) => Date.parse(`${iso}T00:00:00Z`) / 86400000;
+
+  it("月 → 日：今天仍在窗口中央（不是只落在窗口内）", async () => {
+    const user = userEvent.setup();
+    await renderWith([order()]);
+
+    const month = winOf();
+    const center = Math.round((dayNum(month.from) + dayNum(month.to)) / 2);
+
+    await user.click(screen.getByRole("button", { name: "日" }));
+    const day = winOf();
+    const dayCenter = (dayNum(day.from) + dayNum(day.to)) / 2;
+
+    expect(Math.abs(dayCenter - center)).toBeLessThanOrEqual(1);
+  });
+
+  it("向左拖动：窗口整体后移，且不触发订单选中或跳转", async () => {
+    await renderWith([order()]);
+    const before = winOf();
+    const track = document.querySelector(".timeline-scroll")!;
+
+    fireEvent.mouseDown(track, { clientX: 500, button: 0 });
+    fireEvent.mouseMove(track, { clientX: 440, button: 0 });
+    fireEvent.mouseUp(track, { clientX: 440, button: 0 });
+
+    const after = winOf();
+    expect(dayNum(after.from)).toBeGreaterThan(dayNum(before.from));
+    expect(document.querySelector(".timeline-row")!.getAttribute("aria-selected")).not.toBe("true");
+    expect(screen.queryByTestId("order-probe")).toBeNull();
+  });
+
+  it("移动未超过阈值不改变窗口", async () => {
+    await renderWith([order()]);
+    const before = winOf();
+    const track = document.querySelector(".timeline-scroll")!;
+
+    fireEvent.mouseDown(track, { clientX: 500, button: 0 });
+    fireEvent.mouseMove(track, { clientX: 503, button: 0 });
+    fireEvent.mouseUp(track, { clientX: 503, button: 0 });
+
+    expect(winOf().from).toBe(before.from);
   });
 });

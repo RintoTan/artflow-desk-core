@@ -7967,3 +7967,19 @@ dl.stat-row {
 .client-orders .actions {
   margin-top: 12px;
 }
+
+/* 单击选中：中性浅灰底，和蓝色描边、状态色都拉开距离，不抢信息。 */
+.timeline-row.is-selected,
+.timeline-info.is-selected {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+/* 拖动平移：整段轨道可抓；拖动时不给文字选中，光标提示可拖。 */
+.timeline-scroll {
+  cursor: grab;
+  user-select: none;
+}
+
+.timeline-scroll.is-panning {
+  cursor: grabbing;
+}
