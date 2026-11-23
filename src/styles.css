@@ -551,7 +551,9 @@ code.mono {
   color: var(--text-muted);
 }
 
-.field input {
+/* 复选框不是文本控件：不能继承 .field input 的满宽、内边距与外框，
+   否则它会撑满一整行，把旁边的文字顶到最右边。 */
+.field input:not([type="checkbox"]):not([type="radio"]) {
   width: 100%;
   min-width: 0;
   min-height: var(--control-h);
@@ -564,7 +566,7 @@ code.mono {
   color: var(--text);
 }
 
-.field input:focus {
+.field input:not([type="checkbox"]):not([type="radio"]):focus {
   outline: 2px solid var(--accent-soft);
   border-color: var(--accent);
 }
@@ -8239,19 +8241,44 @@ dl.stat-row {
   }
 }
 
-/* 复制订单：勾选项与详情页头部的次要动作。
-   勾选项只压一行，说明文字在下面，避免复选框被段落挤到中间。 */
-.check-line {
-  display: inline-flex;
+/* 复制订单：附件选项整块自成一列，内部只有「选项行 + 说明」两段，
+   复选框与文字始终相邻；没有附件时退化成一行中性提示，不留空占位。 */
+.copy-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.copy-attachment-option {
+  display: flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
   cursor: pointer;
 }
 
-.check-line input {
-  accent-color: var(--accent);
+.copy-attachment-option input {
+  flex: none;
+  width: auto;
+  min-height: 0;
   margin: 0;
+  accent-color: var(--accent);
+}
+
+.copy-attachment-text {
+  color: var(--text);
+}
+
+.copy-attachment-tag {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.copy-attachment-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .detail-head-actions {

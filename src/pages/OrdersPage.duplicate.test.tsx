@@ -104,11 +104,32 @@ const COPY = order({
   queuePosition: 1,
 });
 
-const listOrders = vi.fn(async () => [SOURCE]);
-const getOrder = vi.fn(async (id: string) => (id === COPY.id ? COPY : SOURCE));
+/** 与 QA 里的 AF-2025-0502 同形：委托类型与备注为空、有排期、没有附件。 */
+const BARE = order({
+  id: "o3",
+  code: "AF-2025-0502",
+  title: "封面 03-1",
+  clientId: "c1",
+  clientName: "林小满",
+  commissionType: null,
+  source: "米画师",
+  amountCents: 60000,
+  note: null,
+  plannedStartDate: "2026-09-26",
+  plannedDeliveryDate: "2026-11-30",
+});
+
+let orders: OrderView[] = [SOURCE];
+const listOrders = vi.fn(async () => orders);
+const getOrder = vi.fn(
+  async (id: string) => orders.find((o) => o.id === id) ?? (id === COPY.id ? COPY : SOURCE),
+);
 const createOrder = vi.fn();
 const duplicateOrder = vi.fn(async (_input: Record<string, unknown>) => COPY);
-const listAttachments = vi.fn(async () => [attachment("a1"), attachment("a2")]);
+let attachmentCount = 2;
+const listAttachments = vi.fn(async () =>
+  Array.from({ length: attachmentCount }, (_, i) => attachment(`a${i + 1}`)),
+);
 const updateOrderDetails = vi.fn();
 
 vi.mock("../bridge/commands", async () => {
@@ -206,6 +227,8 @@ async function setup() {
 }
 
 beforeEach(() => {
+  orders = [SOURCE];
+  attachmentCount = 2;
   duplicateOrder.mockClear();
   createOrder.mockClear();
   getOrder.mockClear();
@@ -236,8 +259,12 @@ describe("ORDER-01 复制订单", () => {
     await user.click(detail.getByRole("button", { name: "复制订单" }));
 
     await screen.findByRole("heading", { name: "复制订单" });
-    expect(screen.getByLabelText("预计开始日期")).toHaveValue("");
-    expect(screen.getByLabelText("预计交付日期")).toHaveValue("");
+    const start = screen.getByLabelText("预计开始日期") as HTMLInputElement;
+    const end = screen.getByLabelText("预计交付日期") as HTMLInputElement;
+    expect(start.value).toBe("");
+    expect(end.value).toBe("");
+    // 原生日期控件的占位格式不能当成"已填值"，用一句话说清
+    expect(screen.getByTestId("copy-dates-note").textContent).toContain("都是空的");
     expect(screen.getByTestId("copy-flow-note").textContent).toContain("5 个阶段");
     // 复制模式不再提供模板下拉
     expect(document.querySelector("#create-order-template")).toBeNull();
@@ -248,11 +275,23 @@ describe("ORDER-01 复制订单", () => {
     const { detail } = await setup();
     await user.click(detail.getByRole("button", { name: "复制订单" }));
 
-    const checkbox = (await screen.findByLabelText(/同时复制附件/)) as HTMLInputElement;
+    const block = (await screen.findByTestId("copy-attachments")) as HTMLElement;
+    const checkbox = within(block).getByRole("checkbox") as HTMLInputElement;
     expect(checkbox.checked).toBe(true);
-    expect(screen.getByText(/2 张/)).toBeTruthy();
+    expect(block.textContent).toContain("同时复制 2 张附件");
+    // 复选框与文字必须在同一个选项行里，不能各占一列
+    // 整块是表单里的一行，但**不是** .field——.field 的 input 规则会把复选框撑满一行
+    expect(block.classList.contains("field-wide")).toBe(true);
+    expect(block.classList.contains("field")).toBe(false);
+    expect(block.parentElement?.classList.contains("form-grid")).toBe(true);
+    const option = block.querySelector(".copy-attachment-option") as HTMLElement;
+    expect(option.contains(checkbox)).toBe(true);
+    expect(option.textContent).toContain("同时复制 2 张附件");
+    // 说明文字与选项行是兄弟，都在同一个块里
+    expect(block.querySelectorAll(":scope > .copy-attachment-option").length).toBe(1);
+    expect(block.querySelectorAll(":scope > .hint").length).toBe(1);
 
-    await user.click(screen.getByRole("button", { name: "创建订单" }));
+    await user.click(screen.getByRole("button", { name: "创建副本" }));
 
     await waitFor(() => expect(duplicateOrder).toHaveBeenCalledTimes(1));
     const payload = duplicateOrder.mock.calls[0]![0] as {
@@ -275,11 +314,11 @@ describe("ORDER-01 复制订单", () => {
     const { detail } = await setup();
     await user.click(detail.getByRole("button", { name: "复制订单" }));
 
-    const checkbox = (await screen.findByLabelText(/同时复制附件/)) as HTMLInputElement;
+    const checkbox = (await screen.findByRole("checkbox")) as HTMLInputElement;
     await user.click(checkbox);
     expect(checkbox.checked).toBe(false);
 
-    await user.click(screen.getByRole("button", { name: "创建订单" }));
+    await user.click(screen.getByRole("button", { name: "创建副本" }));
     await waitFor(() => expect(duplicateOrder).toHaveBeenCalledTimes(1));
     expect(duplicateOrder.mock.calls[0]![0].copyAttachments).toBe(false);
   });
@@ -288,7 +327,7 @@ describe("ORDER-01 复制订单", () => {
     const user = userEvent.setup();
     const { detail } = await setup();
     await user.click(detail.getByRole("button", { name: "复制订单" }));
-    await user.click(await screen.findByRole("button", { name: "创建订单" }));
+    await user.click(await screen.findByRole("button", { name: "创建副本" }));
 
     await waitFor(() => expect(getOrder).toHaveBeenCalledWith("o2"));
     expect(await detail.findByText("AF-2026-0002")).toBeTruthy();
@@ -308,5 +347,71 @@ describe("ORDER-01 复制订单", () => {
     expect(await screen.findByRole("alertdialog")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "复制订单" })).toBeNull();
     expect(duplicateOrder).not.toHaveBeenCalled();
+  });
+
+  it("来源没有附件：不显示复选框，只留一行中性提示", async () => {
+    orders = [BARE];
+    attachmentCount = 0;
+    const user = userEvent.setup();
+    const { detail } = await setup();
+
+    await user.click(detail.getByRole("button", { name: "复制订单" }));
+    const block = (await screen.findByTestId("copy-attachments")) as HTMLElement;
+
+    expect(within(block).queryByRole("checkbox")).toBeNull();
+    expect(block.querySelector(".copy-attachment-option")).toBeNull();
+    expect(block.querySelector(".copy-attachment-empty")?.textContent).toContain(
+      "来源订单没有附件",
+    );
+    // 没有附件就不该再留一条说明，避免占位空白
+    expect(block.querySelector(".hint")).toBeNull();
+    expect(block.textContent?.trim()).toBe("来源订单没有附件，无需复制");
+  });
+
+  it("来源字段为空就保持为空，不擅自补值", async () => {
+    orders = [BARE];
+    attachmentCount = 0;
+    const user = userEvent.setup();
+    const { detail } = await setup();
+
+    await user.click(detail.getByRole("button", { name: "复制订单" }));
+    await screen.findByRole("heading", { name: "复制订单" });
+
+    expect(screen.getByLabelText(/委托类型/)).toHaveValue("");
+    expect(screen.getByLabelText(/委托说明/)).toHaveValue("");
+    expect(screen.getByLabelText(/^来源/)).toHaveValue("米画师");
+    expect(screen.getByLabelText(/委托金额/)).toHaveValue("600");
+    expect((screen.getByLabelText("已有客户") as HTMLSelectElement).value).toBe("c1");
+
+    await user.click(screen.getByRole("button", { name: "创建副本" }));
+    await waitFor(() => expect(duplicateOrder).toHaveBeenCalledTimes(1));
+    const payload = duplicateOrder.mock.calls[0]![0] as {
+      commissionType?: string | null;
+      note?: string | null;
+      source?: string | null;
+      amountCents?: number | null;
+      copyAttachments?: boolean;
+    };
+    expect(payload.commissionType).toBeNull();
+    expect(payload.note).toBeNull();
+    expect(payload.source).toBe("米画师");
+    expect(payload.amountCents).toBe(60000);
+    // 来源没有附件，勾选不成立
+    expect(payload.copyAttachments).toBe(false);
+  });
+
+  it("普通新建面板不受复制模式影响", async () => {
+    const user = userEvent.setup();
+    await setup();
+
+    await user.click(screen.getByRole("button", { name: "新建" }));
+
+    expect(await screen.findByRole("heading", { name: "新建订单" })).toBeTruthy();
+    expect(screen.queryByTestId("copy-attachments")).toBeNull();
+    expect(screen.queryByTestId("copy-dates-note")).toBeNull();
+    expect(screen.getByRole("button", { name: "创建订单" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "创建副本" })).toBeNull();
+    // 普通新建仍然可以选模板
+    expect(document.querySelector("#create-order-template")).not.toBeNull();
   });
 });

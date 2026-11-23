@@ -2770,6 +2770,7 @@ function CreateOrderPanel({
   copyFrom?: CopySource | null;
 }) {
   const source = copyFrom?.order ?? null;
+  const attachmentCount = copyFrom?.attachmentCount ?? 0;
   const [title, setTitle] = useState(source?.title ?? "");
   const [clientMode, setClientMode] = useState<"none" | "existing" | "new">(
     source?.clientId ? "existing" : "none",
@@ -2972,22 +2973,30 @@ function CreateOrderPanel({
           />
         </label>
 
+        {/* 附件复制：整块只有两个子元素（选项行 + 说明），
+            不再借用 .field 的列布局——.field 是给「标签 + 控件」用的，
+            复选框塞进去会被 .field input 的宽度规则撑满一行。 */}
         {source && (
-          <div className="field field-wide">
-            <label className="check-line">
-              <input
-                type="checkbox"
-                checked={copyAttachments && (copyFrom?.attachmentCount ?? 0) > 0}
-                onChange={(e) => setCopyAttachments(e.target.checked)}
-                disabled={busy || (copyFrom?.attachmentCount ?? 0) === 0}
-              />
-              <span>
-                同时复制附件（{copyFrom?.attachmentCount ?? 0} 张，独立文件副本）
-              </span>
-            </label>
-            <p className="hint">
-              复制的是新的文件副本；之后删除副本附件不会影响原订单。
-            </p>
+          <div className="copy-attachments field-wide" data-testid="copy-attachments">
+            {attachmentCount > 0 ? (
+              <label className="copy-attachment-option">
+                <input
+                  type="checkbox"
+                  checked={copyAttachments}
+                  onChange={(e) => setCopyAttachments(e.target.checked)}
+                  disabled={busy}
+                />
+                <span className="copy-attachment-text">
+                  同时复制 {attachmentCount} 张附件
+                </span>
+                <span className="copy-attachment-tag">独立文件副本</span>
+              </label>
+            ) : (
+              <p className="copy-attachment-empty">来源订单没有附件，无需复制</p>
+            )}
+            {attachmentCount > 0 && (
+              <p className="hint">复制出的是新文件；删除副本不会影响原订单。</p>
+            )}
           </div>
         )}
 
@@ -3022,6 +3031,12 @@ function CreateOrderPanel({
           />
         </label>
 
+        {source && (
+          <p className="hint field-wide" data-testid="copy-dates-note">
+            复制不带原订单的排期：两个日期都是空的，需要时再填。
+          </p>
+        )}
+
         <label className="field field-wide">
           <span>委托说明</span>
           <textarea
@@ -3042,7 +3057,7 @@ function CreateOrderPanel({
           disabled={busy || title.trim() === "" || (clientMode === "existing" && clientId === "") ||
             (clientMode === "new" && newClientName.trim() === "")}
         >
-          {busy ? "创建中…" : "创建订单"}
+          {busy ? "创建中…" : source ? "创建副本" : "创建订单"}
         </button>
         <button type="button" className="btn" onClick={onCancel} disabled={busy}>
           取消

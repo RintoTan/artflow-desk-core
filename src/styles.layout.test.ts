@@ -13,6 +13,9 @@ import { describe, expect, it } from "vitest";
 const raw = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
 const css = raw.replace(/\/\*[\s\S]*?\*\//g, "");
 
+/** 文本控件选择器：复选框与单选框被排除在外。 */
+const FIELD_INPUT = '.field input:not([type="checkbox"]):not([type="radio"])';
+
 /** 取从 marker 开始的整块（按大括号配对），用于 @container 这种嵌套块。 */
 function blockAt(marker: string): string {
   const start = css.indexOf(marker);
@@ -94,12 +97,15 @@ describe("UI 规范：控件与排版", () => {
   it("按钮与输入框共用同一控件高度令牌", () => {
     expect(css).toMatch(/--control-h:\s*34px/);
     expect(rule(".btn")).toMatch(/min-height:\s*var\(--control-h\)/);
-    expect(rule(".field input")).toMatch(/min-height:\s*var\(--control-h\)/);
+    expect(rule(FIELD_INPUT)).toMatch(/min-height:\s*var\(--control-h\)/);
   });
 
   it("输入框跟随容器宽度，长标题不会撑破表单", () => {
-    expect(rule(".field input")).toMatch(/width:\s*100%/);
-    expect(rule(".field input")).toMatch(/min-width:\s*0/);
+    expect(rule(FIELD_INPUT)).toMatch(/width:\s*100%/);
+    expect(rule(FIELD_INPUT)).toMatch(/width:\s*100%/);
+    // 复选框不能套用文本框的满宽与外框，否则会把同一行的文字顶开
+    // 复选框不在选择器覆盖范围内，不再被撑满一行
+    expect(css).toMatch(/\.field input:not\(\[type="checkbox"\]\)/);
     expect(rule(".field")).toMatch(/min-width:\s*0/);
   });
 
