@@ -7765,6 +7765,77 @@ dl.stat-row {
   margin: 0 0 10px;
 }
 
+/* 数据归档：卡片保留原有面板语言，默认收起。
+   低频动作（归档 / 移入回收站）展开后才出现，避免与保存、推进抢注意力。 */
+.archive-zone {
+  margin-top: 18px;
+  padding: 0;
+}
+
+.archive-zone-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.archive-zone-summary::-webkit-details-marker {
+  display: none;
+}
+
+.archive-zone-summary::after {
+  content: "展开";
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.archive-zone[open] .archive-zone-summary::after {
+  content: "收起";
+}
+
+.archive-zone-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 10px;
+}
+
+.archive-zone-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.archive-zone-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 0 16px 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.archive-zone-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.archive-zone-label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.archive-zone-hint {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* 回收站行内操作：不挤压标题与元信息。 */
 .trash-actions {
   display: inline-flex;

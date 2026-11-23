@@ -119,12 +119,12 @@ beforeEach(() => {
 });
 
 describe("客户详情里的删除入口", () => {
-  it("入口在标签区之后的底部危险操作区", async () => {
+  it("删除入口收在默认折叠的「数据归档」卡片里", async () => {
     await setup();
-    const heading = screen.getByRole("heading", { name: "危险操作" });
-    expect(heading.closest("section")).toContainElement(
-      screen.getByRole("button", { name: "移入回收站…" }),
-    );
+    const zone = screen.getByText("数据归档").closest("details") as HTMLDetailsElement;
+    expect(zone).not.toBeNull();
+    expect(zone.open).toBe(false);
+    expect(zone).toContainElement(screen.getByRole("button", { name: "移入回收站…" }));
   });
 
   it("影响范围取自服务端；没有已删订单时不显示次级说明", async () => {

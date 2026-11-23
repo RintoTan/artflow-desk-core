@@ -114,8 +114,8 @@ async function setup(refreshQa?: () => void) {
   );
   const cells = await screen.findAllByText("AF-2026-0001");
   await userEvent.click(cells[0]!);
-  // 危险操作区出现即代表抽屉已打开。
-  await screen.findByRole("button", { name: "移入回收站…" });
+  // 归档卡片出现即代表抽屉已打开。
+  await screen.findByText("数据归档");
 }
 
 beforeEach(() => {
@@ -125,12 +125,22 @@ beforeEach(() => {
 });
 
 describe("订单详情里的删除入口", () => {
-  it("入口在抽屉底部的危险操作区，文案是「移入回收站」", async () => {
+  it("删除入口收在默认折叠的「数据归档」卡片里", async () => {
     await setup();
-    const heading = screen.getByRole("heading", { name: "危险操作" });
-    const zone = heading.closest("section");
+    const zone = screen.getByText("数据归档").closest("details");
+    expect(zone).not.toBeNull();
+    expect((zone as HTMLDetailsElement).open).toBe(false);
     expect(zone).toContainElement(screen.getByRole("button", { name: "移入回收站…" }));
-    expect(zone).toHaveTextContent("删除后可随时恢复");
+    expect(zone).toHaveTextContent("可随时恢复");
+  });
+
+  it("展开后才看得到归档与移入回收站两个动作", async () => {
+    const user = userEvent.setup();
+    await setup();
+    const zone = screen.getByText("数据归档").closest("details") as HTMLDetailsElement;
+    await user.click(screen.getByText("数据归档"));
+    expect(zone.open).toBe(true);
+    expect(zone).toContainElement(screen.getByRole("button", { name: "移入回收站…" }));
   });
 
   it("取消确认不会调用删除 API，抽屉保持打开", async () => {

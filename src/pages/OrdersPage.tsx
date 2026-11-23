@@ -209,6 +209,8 @@ export default function OrdersPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   /** 普通列表与归档空间是两个归属，不混在同一张列表里。 */
   const [archiveScope, setArchiveScope] = useState<ArchiveScope>("live");
+  /** 归档/取消归档的进行中状态：只锁这一个动作，不影响其他按钮。 */
+  const [archiveBusy, setArchiveBusy] = useState(false);
   /** 偏好保存失败时的提示：视图仍会切换，但不能假装已经记住。 */
   const [viewPersistError, setViewPersistError] = useState<string | null>(null);
   /** 看板/表格模式下详情以右侧抽屉呈现；卡片模式永远并排显示。 */
@@ -467,6 +469,38 @@ export default function OrdersPage() {
       setDeleteBusy(false);
     }
   }, [detail, refreshQa, reloadList]);
+
+  /**
+   * 归档 / 取消归档：只改变「订单信息」里的归属，
+   * 不动业务状态、阶段、排期、金额与历史，所以不需要 revision 与确认框。
+   */
+  const applyArchive = useCallback(
+    async (next: boolean) => {
+      if (!detail || archiveBusy) return;
+      setArchiveBusy(true);
+      setError(null);
+      try {
+        const updated = next ? await api.archiveOrder(detail.id) : await api.unarchiveOrder(detail.id);
+        setDetail(updated);
+        setDraft(draftFrom(updated));
+        setNotice(
+          next
+            ? `${updated.code} 已归档，可在「归档」中查看；其他页面照常显示`
+            : `${updated.code} 已取消归档，回到普通列表`,
+        );
+        try {
+          await reloadList();
+        } catch (e) {
+          setError(describeError(e));
+        }
+      } catch (e) {
+        setError(describeError(e));
+      } finally {
+        setArchiveBusy(false);
+      }
+    },
+    [detail, archiveBusy, reloadList],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -1490,29 +1524,59 @@ export default function OrdersPage() {
             </div>
             </div>
 
-            {/* 危险操作区：与编辑、生命周期按钮分开，永远在抽屉最底部。 */}
-            <section className="panel danger-zone">
-              <header className="panel-head compact">
-                <h2>危险操作</h2>
-                <span className="muted">删除后可随时恢复</span>
-              </header>
-              <p className="muted">
-                订单会被移入回收站，制作历史、阶段与附件都会保留。
-              </p>
-              <div className="actions">
-                <button
-                  type="button"
-                  className="btn btn-quiet-danger"
-                  disabled={busy || deleteBusy}
-                  onClick={() => {
-                    setDeleteError(null);
-                    setDeleteOpen(true);
-                  }}
-                >
-                  移入回收站…
-                </button>
+            {/* 数据归档：低频操作收进折叠卡片，默认收起，不抢主要操作的注意力。
+                展开后才出现「归档」与「移入回收站」，后者保持红色描边。 */}
+            <details className="panel archive-zone">
+              <summary className="archive-zone-summary">
+                <span className="archive-zone-title">数据归档</span>
+                <span className="muted">收起不常用的收纳与删除</span>
+              </summary>
+              <div className="archive-zone-body">
+                <div className="archive-zone-row">
+                  <div>
+                    <p className="archive-zone-label">归档</p>
+                    <p className="muted archive-zone-hint">
+                      {isArchived(detail)
+                        ? "已归档：当前只在「归档」里出现，其他页面照常显示。"
+                        : "从普通列表收起，客户、工作台、日历与统计仍然可见。"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={archiveBusy || busy || (!isArchived(detail) && detail.status !== "complete")}
+                    title={
+                      !isArchived(detail) && detail.status !== "complete"
+                        ? "只有已完成的订单可以归档"
+                        : undefined
+                    }
+                    onClick={() => void applyArchive(!isArchived(detail))}
+                  >
+                    {isArchived(detail) ? "取消归档" : archiveBusy ? "归档中…" : "归档"}
+                  </button>
+                </div>
+
+                <div className="archive-zone-row">
+                  <div>
+                    <p className="archive-zone-label">移入回收站</p>
+                    <p className="muted archive-zone-hint">
+                      制作历史、阶段与附件都会保留，可随时恢复。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-quiet-danger btn-sm"
+                    disabled={busy || deleteBusy || archiveBusy}
+                    onClick={() => {
+                      setDeleteError(null);
+                      setDeleteOpen(true);
+                    }}
+                  >
+                    移入回收站…
+                  </button>
+                </div>
               </div>
-            </section>
+            </details>
           </>
         )}
 

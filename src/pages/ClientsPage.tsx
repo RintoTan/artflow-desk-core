@@ -737,26 +737,31 @@ export default function ClientsPage() {
               )}
             </section>
 
-            {/* 危险操作区：放在详情最底部，与资料、标签、订单列表分开。 */}
-            <section className="panel danger-zone">
-              <header className="panel-head compact">
-                <h2>危险操作</h2>
-                <span className="muted">删除后可随时恢复</span>
-              </header>
-              <p className="muted">
-                客户与其名下的全部订单会一起移入回收站，制作历史与附件都会保留。
-              </p>
-              <div className="actions">
-                <button
-                  type="button"
-                  className="btn btn-quiet-danger"
-                  disabled={busy || deleteBusy}
-                  onClick={() => void openDeleteClient()}
-                >
-                  移入回收站…
-                </button>
+            {/* 数据归档：与订单详情同一套折叠卡片，默认收起。 */}
+            <details className="panel archive-zone">
+              <summary className="archive-zone-summary">
+                <span className="archive-zone-title">数据归档</span>
+                <span className="muted">收起不常用的收纳与删除</span>
+              </summary>
+              <div className="archive-zone-body">
+                <div className="archive-zone-row">
+                  <div>
+                    <p className="archive-zone-label">移入回收站</p>
+                    <p className="muted archive-zone-hint">
+                      客户与其名下的全部订单会一起移入回收站，制作历史与附件都会保留。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-quiet-danger btn-sm"
+                    disabled={busy || deleteBusy}
+                    onClick={() => void openDeleteClient()}
+                  >
+                    移入回收站…
+                  </button>
+                </div>
               </div>
-            </section>
+            </details>
           </>
         )}
 
