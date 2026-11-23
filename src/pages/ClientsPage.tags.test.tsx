@@ -104,6 +104,8 @@ vi.mock("../bridge/commands", async () => {
     ...actual,
     api: {
       ...actual.api,
+      // CUST-02 起客户页要读完整订单来分组，这里给空集合即可。
+      listOrders: async () => [],
       status: async () => ({
         appVersion: "0.1.0",
         firstRun: false,
@@ -225,8 +227,9 @@ describe("客户页：标签与动态统计", () => {
     await user.click(row);
     await waitFor(() => expect(screen.getByText("AF-2026-0001")).toBeInTheDocument());
 
-    expect(screen.getByText("活动")).toBeInTheDocument();
-    expect(screen.queryByText("active")).toBeNull();
+    // 状态与阶段合并在同一行元信息里，用包含匹配；仍要求中文标签存在、英文枚举不出现。
+    expect(screen.getAllByText(/活动/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/\bactive\b/)).toBeNull();
   });
 
   it("按客户 ID 跳转到订单页", async () => {
@@ -234,7 +237,7 @@ describe("客户页：标签与动态统计", () => {
     renderPage();
     await waitFor(() => expect(screen.getAllByText("林小满").length).toBeGreaterThan(0));
 
-    await user.click(screen.getByRole("button", { name: "查看该客户的订单" }));
+    await user.click(screen.getByRole("button", { name: "在订单信息中查看全部" }));
     await waitFor(() => expect(screen.getByText("订单页")).toBeInTheDocument());
   });
 

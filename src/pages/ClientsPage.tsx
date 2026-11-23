@@ -18,6 +18,7 @@ import {
   type ClientDetail,
   type ClientTag,
   type ClientView,
+  type OrderView,
 } from "../bridge/commands";
 
 type Draft = { displayName: string; contact: string; note: string };
@@ -67,6 +68,10 @@ export default function ClientsPage() {
 
   const [allTags, setAllTags] = useState<ClientTag[]>([]);
   const [tagFilter, setTagFilter] = useState<string>("all");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<"default" | "recent" | "orders">("default");
+  /** 详情里的订单分组要用完整订单（含归档、计划交付），list_clients 的 brief 没有这些字段。 */
+  const [orders, setOrders] = useState<OrderView[]>([]);
   const [newTagName, setNewTagName] = useState("");
   const [tagBusy, setTagBusy] = useState(false);
   const [timezone, setTimezone] = useState<string | null>(null);
@@ -282,22 +287,65 @@ export default function ClientsPage() {
   );
 
   const visibleClients = useMemo(() => {
-    if (tagFilter === "all") return clients;
-    return clients.filter((client) => client.tags.some((tag) => tag.id === tagFilter));
-  }, [clients, tagFilter]);
+    const keyword = query.trim().toLowerCase();
+    const filtered = clients.filter((client) => {
+      const byTag = tagFilter === "all" || client.tags.some((tag) => tag.id === tagFilter);
+      const byName = keyword === "" || client.displayName.toLowerCase().includes(keyword);
+      return byTag && byName;
+    });
+    if (sort === "default") return filtered;
+    return [...filtered].sort((a, b) => {
+      if (sort === "orders") return b.orderCount - a.orderCount || a.displayName.localeCompare(b.displayName);
+      // 最近委托：没有委托时间的排在后面，再按名称稳定排序
+      const at = a.lastOrderAt ?? "";
+      const bt = b.lastOrderAt ?? "";
+      if (at === bt) return a.displayName.localeCompare(b.displayName);
+      return bt.localeCompare(at);
+    });
+  }, [clients, tagFilter, query, sort]);
+
+  /**
+   * 详情里的订单分组。
+   * 分组用客户详情自带的 orders（后端已按客户过滤），再用完整订单补齐
+   * 计划交付与归档标记——brief 里没有这两项。补不到就退化为 brief 的字段，
+   * 不因为列表还没加载出来而显示成「没有订单」。
+   */
+  const clientOrderGroups = useMemo(() => {
+    const brief = detail?.orders ?? [];
+    const full = new Map(orders.map((order) => [order.id, order]));
+    const mine = brief.map((item) => {
+      const extra = full.get(item.id);
+      return {
+        id: item.id,
+        code: item.code,
+        title: item.title,
+        status: item.status,
+        currentStageTitle: item.currentStageTitle,
+        plannedDeliveryDate: extra?.plannedDeliveryDate ?? null,
+        archivedAt: extra?.archivedAt ?? null,
+      };
+    });
+    return [
+      { key: "active", label: "进行中", items: mine.filter((order) => order.status === "active") },
+      { key: "complete", label: "已完成", items: mine.filter((order) => order.status === "complete") },
+      { key: "cancelled", label: "已取消", items: mine.filter((order) => order.status === "cancelled") },
+    ];
+  }, [orders, detail]);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const [list, tags, status] = await Promise.all([
+        const [list, tags, status, orderList] = await Promise.all([
           clientApi.list(),
           clientTagApi.list(),
           api.status(),
+          api.listOrders(),
         ]);
         if (!alive) return;
         setClients(list);
         setAllTags(tags);
+        setOrders(orderList);
         setTimezone(status.workingTimezone);
         if (list[0]) await select(list[0].id);
       } catch (e) {
@@ -405,6 +453,35 @@ export default function ClientsPage() {
         </header>
 
         <div className="list-tools">
+          <div className="search-box">
+            <input
+              type="search"
+              value={query}
+              placeholder="搜索客户名称"
+              aria-label="搜索客户名称"
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {query !== "" && (
+              <button
+                type="button"
+                className="btn btn-sm"
+                aria-label="清空客户搜索"
+                onClick={() => setQuery("")}
+              >
+                清空
+              </button>
+            )}
+          </div>
+          <select
+            className="select-inline"
+            value={sort}
+            onChange={(e) => setSort(e.target.value as "default" | "recent" | "orders")}
+            aria-label="客户排序"
+          >
+            <option value="default">默认顺序</option>
+            <option value="recent">最近委托</option>
+            <option value="orders">订单数量</option>
+          </select>
           <select
             className="select-inline"
             value={tagFilter}
@@ -424,6 +501,11 @@ export default function ClientsPage() {
           <div className="empty">
             <p>还没有客户档案。</p>
             <p className="muted">新建订单时也可以直接创建客户。</p>
+          </div>
+        ) : visibleClients.length === 0 ? (
+          <div className="empty">
+            <p>没有匹配的客户。</p>
+            <p className="muted">换个名称，或清空搜索与标签筛选。</p>
           </div>
         ) : (
           <ul className="order-rows">
@@ -579,13 +661,6 @@ export default function ClientsPage() {
             <section className="panel">
               <header className="panel-head compact">
                 <h2>客户概览</h2>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() => navigate(`/orders?client=${encodeURIComponent(detail.client.id)}`)}
-                >
-                  查看该客户的订单
-                </button>
               </header>
               <dl className="stat-row">
                 <div>
@@ -706,35 +781,63 @@ export default function ClientsPage() {
             </div>
             </div>
 
-            <section className="panel">
+            <section className="panel client-orders">
               <header className="panel-head compact">
                 <h2>关联订单</h2>
-                <span className="muted">{detail.orders.length} 单</span>
+                <span className="muted">
+                  {clientOrderGroups.reduce((sum, group) => sum + group.items.length, 0)} 笔 · 含已归档
+                </span>
               </header>
-              {detail.orders.length === 0 ? (
+
+              {clientOrderGroups.every((group) => group.items.length === 0) ? (
                 <p className="muted">这位客户还没有关联订单。</p>
               ) : (
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>编号</th>
-                      <th>标题</th>
-                      <th>状态</th>
-                      <th>当前阶段</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detail.orders.map((order) => (
-                      <tr key={order.id}>
-                        <td className="mono">{order.code}</td>
-                        <td>{order.title}</td>
-                        <td>{orderStatusLabel(order.status)}</td>
-                        <td>{order.currentStageTitle ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                clientOrderGroups.map((group) => (
+                  <div className="client-order-group" key={group.key}>
+                    <h3 className="client-order-group-head">
+                      {group.label}
+                      <span className="muted">{group.items.length} 笔</span>
+                    </h3>
+                    {group.items.length === 0 ? (
+                      <p className="muted client-order-empty">暂无</p>
+                    ) : (
+                      <ul className="order-rows">
+                        {group.items.map((order) => (
+                          <li key={order.id}>
+                            <button
+                              type="button"
+                              className="order-row"
+                              onClick={() => navigate(`/orders?orderId=${encodeURIComponent(order.id)}`)}
+                            >
+                              <span className="order-row-title">
+                                <code className="order-code">{order.code}</code> {order.title}
+                              </span>
+                              <span className="order-row-meta">
+                                {orderStatusLabel(order.status)}
+                                {order.status === "active"
+                                  ? ` · 当前阶段 ${order.currentStageTitle ?? "未开始"}`
+                                  : ""}
+                                {order.plannedDeliveryDate ? ` · 交付 ${order.plannedDeliveryDate}` : " · 未排期"}
+                              </span>
+                              {order.archivedAt !== null && <span className="chip chip-archived">已归档</span>}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))
               )}
+
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => navigate(`/orders?client=${encodeURIComponent(detail.client.id)}`)}
+                >
+                  在订单信息中查看全部
+                </button>
+              </div>
             </section>
 
             {/* 数据归档：与订单详情同一套折叠卡片，默认收起。 */}

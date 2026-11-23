@@ -7943,3 +7943,26 @@ dl.stat-row {
     row-gap: 8px;
   }
 }
+
+/* CUST-02：客户详情内的订单分组。只新增 .client-* 命名空间，不动 .cal-* 与 .timeline-*。 */
+.client-order-group + .client-order-group {
+  margin-top: 12px;
+}
+
+.client-order-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 6px 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.client-order-empty {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+
+.client-orders .actions {
+  margin-top: 12px;
+}

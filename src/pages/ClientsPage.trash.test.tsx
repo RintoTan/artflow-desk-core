@@ -59,6 +59,8 @@ vi.mock("../bridge/commands", async () => {
     ...actual,
     api: {
       ...actual.api,
+      // CUST-02 起客户页要读完整订单来分组，这里给空集合即可。
+      listOrders: async () => [],
       status: async () => ({
         appVersion: "0.1.0",
         firstRun: false,
