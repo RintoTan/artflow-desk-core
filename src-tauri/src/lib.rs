@@ -99,6 +99,7 @@ fn build_app() -> Result<tauri::App, String> {
             commands::preferences::working_timezone_get,
             commands::preferences::working_timezone_set,
             commands::orders::create_order,
+            commands::orders::duplicate_order,
             commands::orders::list_orders,
             commands::orders::order_archive,
             commands::orders::order_unarchive,

@@ -1236,3 +1236,197 @@ pub mod test_hooks {
         Ok(())
     }
 }
+
+// ---------------------------------------------------------------- 订单复制：附件做真正的副本
+
+/// 复制时从来源订单读出的附件行（只取复制需要的列）。
+#[derive(Debug, Clone)]
+pub struct SourceAttachment {
+    pub id: String,
+    pub original_name: String,
+    pub display_name: Option<String>,
+    pub note: Option<String>,
+    pub tag: Option<String>,
+    pub role: Option<String>,
+    pub gallery_visible: i64,
+    pub rel_path: String,
+    pub mime_type: String,
+    pub byte_size: i64,
+    pub sha256: String,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+}
+
+/// 已落盘、但还没有元数据行的附件副本。
+///
+/// 复制和导入走同一条路径：先记 `attachment_jobs`（意图），再落文件，
+/// 元数据行由调用方在**它自己的事务**里插入。这样崩溃后 `recover` 仍按
+/// 同一套规则判断该补做还是该隔离，不需要第二套文件管理。
+#[derive(Debug, Clone)]
+pub struct StagedCopy {
+    pub id: String,
+    pub original_name: String,
+    pub display_name: Option<String>,
+    pub note: Option<String>,
+    pub tag: Option<String>,
+    pub role: Option<String>,
+    pub gallery_visible: i64,
+    pub rel_path: String,
+    pub thumb_rel_path: Option<String>,
+    pub mime_type: String,
+    pub byte_size: i64,
+    pub sha256: String,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub job_id: String,
+}
+
+pub fn source_rows(conn: &Connection, order_id: &str) -> AppResult<Vec<SourceAttachment>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, original_name, display_name, note, tag, role, gallery_visible,
+                rel_path, mime_type, byte_size, sha256, width, height
+         FROM attachments WHERE order_id = ?1 ORDER BY created_at, id",
+    )?;
+    let rows = stmt
+        .query_map([order_id], |r| {
+            Ok(SourceAttachment {
+                id: r.get(0)?,
+                original_name: r.get(1)?,
+                display_name: r.get(2)?,
+                note: r.get(3)?,
+                tag: r.get(4)?,
+                role: r.get(5)?,
+                gallery_visible: r.get(6)?,
+                rel_path: r.get(7)?,
+                mime_type: r.get(8)?,
+                byte_size: r.get(9)?,
+                sha256: r.get(10)?,
+                width: r.get(11)?,
+                height: r.get(12)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// 把一个来源附件复制成**独立文件**：新 ID、新路径、字节原样不动。
+///
+/// 不重新编码原图（重新编码会改变字节与 SHA-256，也就无法证明副本与原件一致）。
+pub fn stage_copy(
+    conn: &Connection,
+    layout: &Layout,
+    generation: &str,
+    src: &SourceAttachment,
+) -> AppResult<StagedCopy> {
+    let source_path = abs_path(layout, generation, &src.rel_path)?;
+    if !source_path.exists() {
+        return Err(AppError::not_found(format!(
+            "原图文件缺失，无法复制：{}",
+            src.original_name
+        )));
+    }
+    // 只读取与校验，不修改来源文件。
+    let image = import::read_and_validate(&source_path)?;
+    if image.sha256 != src.sha256 {
+        return Err(AppError::invalid(format!(
+            "原图内容与记录不一致（可能已损坏），已停止复制：{}",
+            src.original_name
+        )));
+    }
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let rel = media::original_rel_path(&id, image.kind.extension());
+    let thumb_rel = media::thumb_rel_path(&id);
+    let original_path = abs_path(layout, generation, &rel)?;
+    let thumb_path = abs_path(layout, generation, &thumb_rel)?;
+
+    let job_id = start_job(
+        conn,
+        "import",
+        &id,
+        generation,
+        &rel,
+        None,
+        Some(&image.sha256),
+        Some("复制附件"),
+    )?;
+
+    if let Err(e) = write_atomic(&original_path, &image.bytes) {
+        let _ = std::fs::remove_file(&original_path);
+        let _ = finish_job(conn, &job_id, "failed", Some("复制原图失败"));
+        return Err(e);
+    }
+
+    let thumb_written = match thumb::render_webp(&image.bytes) {
+        Ok(bytes) => write_atomic(&thumb_path, &bytes).is_ok(),
+        Err(_) => false,
+    };
+    if !thumb_written {
+        let _ = std::fs::remove_file(&thumb_path);
+    }
+
+    Ok(StagedCopy {
+        id,
+        original_name: src.original_name.clone(),
+        display_name: src.display_name.clone(),
+        note: src.note.clone(),
+        tag: src.tag.clone(),
+        role: src.role.clone(),
+        gallery_visible: src.gallery_visible,
+        rel_path: rel,
+        thumb_rel_path: if thumb_written { Some(thumb_rel) } else { None },
+        mime_type: image.kind.mime().to_string(),
+        byte_size: image.bytes.len() as i64,
+        sha256: image.sha256,
+        width: Some(image.width as i64),
+        height: Some(image.height as i64),
+        job_id,
+    })
+}
+
+/// 在调用方的事务里插入副本的元数据行，并把 job 收尾。
+pub fn attach_staged(tx: &Connection, order_id: &str, staged: &StagedCopy) -> AppResult<()> {
+    let now = timezone::now_timestamp();
+    tx.execute(
+        "INSERT INTO attachments (
+            id, order_id, original_name, display_name, note, tag, rel_path, thumb_rel_path,
+            mime_type, byte_size, sha256, width, height, state, created_at, role, gallery_visible
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'ok', ?14, ?15, ?16)",
+        params![
+            staged.id,
+            order_id,
+            staged.original_name,
+            staged.display_name,
+            staged.note,
+            staged.tag,
+            staged.rel_path,
+            staged.thumb_rel_path,
+            staged.mime_type,
+            staged.byte_size,
+            staged.sha256,
+            staged.width,
+            staged.height,
+            now,
+            staged.role,
+            staged.gallery_visible
+        ],
+    )?;
+    finish_job(tx, &staged.job_id, "done", None)
+}
+
+/// 复制失败时的回滚：删掉已经落盘的副本文件，并把 job 标记失败。
+///
+/// 只删除本次复制刚写出的文件（路径由我们自己生成），不会碰来源订单的任何文件。
+pub fn discard_staged(conn: &Connection, layout: &Layout, generation: &str, staged: &[StagedCopy]) {
+    for item in staged {
+        if let Ok(path) = abs_path(layout, generation, &item.rel_path) {
+            let _ = std::fs::remove_file(path);
+        }
+        if let Some(thumb) = &item.thumb_rel_path {
+            if let Ok(path) = abs_path(layout, generation, thumb) {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+        let _ = finish_job(conn, &item.job_id, "failed", Some("复制订单失败，已清理副本"));
+    }
+}

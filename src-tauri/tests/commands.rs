@@ -6,6 +6,7 @@ const APPROVED: &[&str] = &[
     "working_timezone_get",
     "working_timezone_set",
     "create_order",
+    "duplicate_order",
     "list_orders",
     "get_order",
     "order_archive",

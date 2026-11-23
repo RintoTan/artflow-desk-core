@@ -8238,3 +8238,25 @@ dl.stat-row {
     opacity: 0;
   }
 }
+
+/* 复制订单：勾选项与详情页头部的次要动作。
+   勾选项只压一行，说明文字在下面，避免复选框被段落挤到中间。 */
+.check-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.check-line input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.detail-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}

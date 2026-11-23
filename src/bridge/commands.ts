@@ -144,6 +144,20 @@ export type CreateOrderInput = {
   requestId?: string | null;
 };
 
+/** ORDER-01：从已有订单复制一笔新的活动订单。 */
+export type DuplicateOrderInput = {
+  sourceOrderId: string;
+  title: string;
+  clientId?: string | null;
+  commissionType?: string | null;
+  source?: string | null;
+  amountCents?: number | null;
+  note?: string | null;
+  /** 默认 true；false 时不复制任何附件。 */
+  copyAttachments: boolean;
+  requestId?: string | null;
+};
+
 export type UpdateDetailsInput = {
   orderId: string;
   expectedRevision: number;
@@ -332,6 +346,8 @@ export const api = {
   listOrderEvents: (orderId: string) => invoke<OrderEvent[]>("list_order_events", { orderId }),
   listClients: () => invoke<ClientView[]>("list_clients"),
   createOrder: (input: CreateOrderInput) => invoke<OrderView>("create_order", { input }),
+  duplicateOrder: (input: DuplicateOrderInput) =>
+    invoke<OrderView>("duplicate_order", { input }),
   archiveOrder: (orderId: string) => invoke<OrderView>("order_archive", { orderId }),
   unarchiveOrder: (orderId: string) => invoke<OrderView>("order_unarchive", { orderId }),
   updateOrderDetails: (input: UpdateDetailsInput) =>

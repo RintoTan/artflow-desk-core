@@ -5,7 +5,9 @@ use tauri::State;
 use crate::domain::events::Event;
 use crate::domain::lifecycle::{self, LifecycleInput, ReworkInput, SkipInput};
 use crate::domain::clients::ClientView;
-use crate::domain::orders::{self, CreateOrderInput, OrderView, UpdateDetailsInput};
+use crate::domain::orders::{
+    self, CreateOrderInput, DuplicateOrderInput, OrderView, UpdateDetailsInput,
+};
 use crate::domain::workflow::{
     self, AddStageInput, RemoveStageInput, RenameStageInput, ReorderStagesInput,
 };
@@ -21,6 +23,29 @@ pub fn create_order(state: State<'_, AppState>, input: CreateOrderInput) -> AppR
     println!(
         "[minidesk] create_order {} stage={:?} queue={}",
         view.code, view.current_stage_title, view.queue_position
+    );
+    Ok(view)
+}
+
+#[tauri::command]
+pub fn duplicate_order(
+    state: State<'_, AppState>,
+    input: DuplicateOrderInput,
+) -> AppResult<OrderView> {
+    let mut conn = state.env.open_db()?;
+    let tz = settings::working_timezone(&conn)?;
+    let copied_attachments = input.copy_attachments;
+    let view = orders::duplicate_order(
+        &mut conn,
+        &state.highwater,
+        tz,
+        state.env.layout(),
+        state.env.active_generation(),
+        input,
+    )?;
+    println!(
+        "[minidesk] duplicate_order {} from={} attachments",
+        view.code, copied_attachments
     );
     Ok(view)
 }

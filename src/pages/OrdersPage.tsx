@@ -37,6 +37,7 @@ import { usePageShortcuts } from "../lib/shortcuts";
 import { useUnsavedGuard } from "../lib/unsavedRegistry";
 import {
   api,
+  attachmentApi,
   describeError,
   isConflict,
   trashApi,
@@ -186,7 +187,14 @@ type PendingAction = {
 type PendingNav =
   | { kind: "order"; orderId: string }
   | { kind: "create" }
+  | { kind: "copy"; order: OrderView; attachmentCount: number }
   | { kind: "route" };
+
+/** 复制来源：既有订单 + 它的附件张数（用于表单里的勾选项）。 */
+type CopySource = {
+  order: OrderView;
+  attachmentCount: number;
+};
 
 // ---------------------------------------------------------------- 主页面
 
@@ -198,6 +206,8 @@ export default function OrdersPage() {
   const [detail, setDetail] = useState<OrderView | null>(null);
   const [events, setEvents] = useState<OrderEvent[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
+  /** ORDER-01：非空时新建面板处于「复制订单」模式。 */
+  const [copySource, setCopySource] = useState<CopySource | null>(null);
   /** 改期原因：只在日期真的变了时随保存提交。 */
   const [dateReason, setDateReason] = useState("");
   const [timezone, setTimezone] = useState<string | null>(null);
@@ -312,6 +322,7 @@ export default function OrdersPage() {
   /** 退出新建：看板/表格回到新建前的抽屉与详情，卡片视图只是关掉表单。 */
   const cancelCreate = useCallback(() => {
     setCreating(false);
+    setCopySource(null);
     const back = createReturn.current;
     createReturn.current = null;
     if (!back) return;
@@ -863,6 +874,8 @@ export default function OrdersPage() {
   }
 
   function openCreate() {
+    // 普通新建不继承上一次的复制意图。
+    setCopySource(null);
     // 看板/表格下新建表单就在右侧抽屉里：先把抽屉打开，否则表单虽已渲染，
     // 却被 `.orders-detail.is-hidden` 的 display:none 挡住，点了像没反应。
     createReturn.current =
@@ -875,6 +888,29 @@ export default function OrdersPage() {
     setEvents([]);
     setError(null);
     setNotice(null);
+  }
+
+  /** ORDER-01：从详情进入「复制订单」。附件张数用于表单里的勾选项文案。 */
+  async function openCopy(order: OrderView) {
+    let attachmentCount = 0;
+    try {
+      const rows = await attachmentApi.list(order.id);
+      attachmentCount = rows.length;
+    } catch {
+      // 附件读不到不影响复制资料，按 0 处理并由后端在真正复制时报告错误。
+      attachmentCount = 0;
+    }
+    if (dirty) {
+      setGuardError(null);
+      setManualNav({ kind: "copy", order, attachmentCount });
+      return;
+    }
+    beginCopy(order, attachmentCount);
+  }
+
+  function beginCopy(order: OrderView, attachmentCount: number) {
+    openCreate();
+    setCopySource({ order, attachmentCount });
   }
 
   function attemptSelect(orderId: string) {
@@ -917,6 +953,10 @@ export default function OrdersPage() {
     }
     if (nav.kind === "create") {
       openCreate();
+      return;
+    }
+    if (nav.kind === "copy") {
+      beginCopy(nav.order, nav.attachmentCount);
       return;
     }
     void selectOrder(nav.orderId);
@@ -1383,6 +1423,7 @@ export default function OrdersPage() {
             }}
             onError={setError}
             setBusy={setBusy}
+            copyFrom={copySource}
           />
         ) : !detail ? (
           <section className="panel empty">
@@ -1410,6 +1451,17 @@ export default function OrdersPage() {
                     {detail.queuePosition + 1}
                     {detail.clientName ? ` · 客户 ${detail.clientName}` : ""}
                   </p>
+                </div>
+                <div className="detail-head-actions">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => void openCopy(detail)}
+                    disabled={busy}
+                    title="以这张订单的资料新建一笔订单，不继承进度与历史"
+                  >
+                    复制订单
+                  </button>
                 </div>
               </header>
 
@@ -2705,6 +2757,7 @@ function CreateOrderPanel({
   onCreated,
   onError,
   setBusy,
+  copyFrom = null,
 }: {
   clients: ClientView[];
   templates: TemplateView[];
@@ -2713,10 +2766,17 @@ function CreateOrderPanel({
   onCreated: (order: OrderView) => Promise<void>;
   onError: (message: string) => void;
   setBusy: (value: boolean) => void;
+  /** 非空时进入「复制订单」模式：资料预填，流程取来源快照，计划日期留空。 */
+  copyFrom?: CopySource | null;
 }) {
-  const [title, setTitle] = useState("");
-  const [clientMode, setClientMode] = useState<"none" | "existing" | "new">("none");
-  const [clientId, setClientId] = useState("");
+  const source = copyFrom?.order ?? null;
+  const [title, setTitle] = useState(source?.title ?? "");
+  const [clientMode, setClientMode] = useState<"none" | "existing" | "new">(
+    source?.clientId ? "existing" : "none",
+  );
+  const [clientId, setClientId] = useState(source?.clientId ?? "");
+  /** 复制附件默认开启；来源没有附件时该项不可用。 */
+  const [copyAttachments, setCopyAttachments] = useState(true);
   // 默认选中当前默认模板；用户可主动切换（D-00-07）
   const defaultTemplateId = templates.find((t) => t.isDefault)?.id ?? templates[0]?.id ?? "";
   const [templateId, setTemplateId] = useState(defaultTemplateId);
@@ -2725,12 +2785,13 @@ function CreateOrderPanel({
     if (templateId === "" && defaultTemplateId !== "") setTemplateId(defaultTemplateId);
   }, [defaultTemplateId, templateId]);
   const [newClientName, setNewClientName] = useState("");
-  const [commissionType, setCommissionType] = useState("");
-  const [source, setSource] = useState("");
-  const [amount, setAmount] = useState("");
+  const [commissionType, setCommissionType] = useState(source?.commissionType ?? "");
+  const [orderSource, setOrderSource] = useState(source?.source ?? "");
+  const [amount, setAmount] = useState(centsToYuan(source?.amountCents ?? null));
+  // 复制不继承旧排期：计划日期一律留空，由用户决定。
   const [startDate, setStartDate] = useState("");
   const [deliveryDate, setDeliveryDate] = useState("");
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(source?.note ?? "");
   const requestId = useMemo(() => newRequestId("create"), []);
 
   async function submit(): Promise<string | null> {
@@ -2744,18 +2805,30 @@ function CreateOrderPanel({
             ? { mode: "new", displayName: newClientName.trim() }
             : { mode: "none" };
 
-      const order = await api.createOrder({
-        title,
-        client,
-        commissionType: commissionType.trim() === "" ? null : commissionType,
-        source: source.trim() === "" ? null : source.trim(),
-        amountCents: yuanToCents(amount),
-        plannedStartDate: startDate === "" ? null : startDate,
-        plannedDeliveryDate: deliveryDate === "" ? null : deliveryDate,
-        note: note.trim() === "" ? null : note,
-        templateId: templateId === "" ? null : templateId,
-        requestId,
-      });
+      const order = source
+        ? await api.duplicateOrder({
+            sourceOrderId: source.id,
+            title,
+            clientId: clientMode === "existing" && clientId !== "" ? clientId : null,
+            commissionType: commissionType.trim() === "" ? null : commissionType,
+            source: orderSource.trim() === "" ? null : orderSource.trim(),
+            amountCents: yuanToCents(amount),
+            note: note.trim() === "" ? null : note,
+            copyAttachments: copyAttachments && (copyFrom?.attachmentCount ?? 0) > 0,
+            requestId,
+          })
+        : await api.createOrder({
+            title,
+            client,
+            commissionType: commissionType.trim() === "" ? null : commissionType,
+            source: orderSource.trim() === "" ? null : orderSource.trim(),
+            amountCents: yuanToCents(amount),
+            plannedStartDate: startDate === "" ? null : startDate,
+            plannedDeliveryDate: deliveryDate === "" ? null : deliveryDate,
+            note: note.trim() === "" ? null : note,
+            templateId: templateId === "" ? null : templateId,
+            requestId,
+          });
       await onCreated(order);
       return null;
     } catch (e) {
@@ -2787,8 +2860,12 @@ function CreateOrderPanel({
     <section className="panel">
       <header className="panel-head">
         <div>
-          <h2>新建订单</h2>
-          <p className="muted">只有委托标题是必填项。创建后会自动分配编号并加入队列末尾。</p>
+          <h2>{source ? "复制订单" : "新建订单"}</h2>
+          <p className="muted">
+            {source
+              ? `从 ${source.code} 复制资料。会分配新编号、从第一个阶段开始，不继承制作与排期历史。`
+              : "只有委托标题是必填项。创建后会自动分配编号并加入队列末尾。"}
+          </p>
         </div>
       </header>
 
@@ -2848,6 +2925,11 @@ function CreateOrderPanel({
           <label htmlFor="create-order-template">
             <span>制作流程</span>
           </label>
+          {source ? (
+            <p className="hint" data-testid="copy-flow-note">
+              沿用原订单的阶段快照（{source.stageCount} 个阶段），不读取当前模板。
+            </p>
+          ) : (
           <select
             id="create-order-template"
             value={templateId}
@@ -2862,7 +2944,10 @@ function CreateOrderPanel({
               </option>
             ))}
           </select>
-          <p className="hint">创建时会把该流程的阶段复制成这张订单的独立流程。</p>
+          )}
+          {!source && (
+            <p className="hint">创建时会把该流程的阶段复制成这张订单的独立流程。</p>
+          )}
         </div>
 
         <label className="field">
@@ -2878,14 +2963,33 @@ function CreateOrderPanel({
         <label className="field">
           <span>来源</span>
           <input
-            value={source}
-            onChange={(e) => setSource(e.target.value)}
+            value={orderSource}
+            onChange={(e) => setOrderSource(e.target.value)}
             maxLength={40}
             disabled={busy}
             list="order-source-options"
             placeholder="例如 米画师 / 画加 / 私信"
           />
         </label>
+
+        {source && (
+          <div className="field field-wide">
+            <label className="check-line">
+              <input
+                type="checkbox"
+                checked={copyAttachments && (copyFrom?.attachmentCount ?? 0) > 0}
+                onChange={(e) => setCopyAttachments(e.target.checked)}
+                disabled={busy || (copyFrom?.attachmentCount ?? 0) === 0}
+              />
+              <span>
+                同时复制附件（{copyFrom?.attachmentCount ?? 0} 张，独立文件副本）
+              </span>
+            </label>
+            <p className="hint">
+              复制的是新的文件副本；之后删除副本附件不会影响原订单。
+            </p>
+          </div>
+        )}
 
         <label className="field">
           <span>委托金额（元，留空表示未知）</span>

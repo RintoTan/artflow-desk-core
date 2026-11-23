@@ -4,6 +4,7 @@ use chrono_tz::Tz;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 
+use crate::domain::attachments;
 use crate::domain::deadline::{self, DeadlineState};
 use crate::domain::events::{self, NewEvent};
 use crate::domain::lifecycle::{self, Capabilities, WorkState};
@@ -11,6 +12,7 @@ use crate::domain::numbering;
 use crate::domain::queue;
 use crate::error::{AppError, AppResult};
 use crate::store::highwater::HighWater;
+use crate::store::paths::Layout;
 use crate::store::settings;
 use crate::store::timezone;
 use crate::store::visibility;
@@ -328,6 +330,105 @@ pub struct CreateOrderInput {
     pub expected_queue_revision: Option<i64>,
 }
 
+// ---------------------------------------------------------------- 插入活动订单（创建与复制共用）
+
+/// 一笔新活动订单的最小组成：订单行 + 阶段快照 + 队列位置 + 创建事件。
+///
+/// 创建（阶段来自模板）与复制（阶段来自来源订单的快照）差别只在阶段来源，
+/// 其余必须完全一致，所以收敛到这一个函数里，避免两条 INSERT 各自漂移。
+struct ActiveOrderRow<'a> {
+    id: &'a str,
+    code: &'a str,
+    title: &'a str,
+    client_id: Option<&'a str>,
+    commission_type: Option<&'a str>,
+    source: Option<&'a str>,
+    amount_cents: Option<i64>,
+    note: Option<&'a str>,
+    template_id: &'a str,
+    current_stage_id: &'a str,
+    planned_start_date: Option<&'a str>,
+    planned_delivery_date: Option<&'a str>,
+    request_id: Option<&'a str>,
+    now: &'a str,
+}
+
+fn insert_active_order(
+    tx: &rusqlite::Transaction<'_>,
+    row: ActiveOrderRow<'_>,
+    stages: &[(String, String, i64)],
+    queue_insert_position: Option<i64>,
+) -> AppResult<()> {
+    if stages.is_empty() {
+        return Err(AppError::invalid("订单没有可用的制作阶段"));
+    }
+
+    // 先落一个临时位置，随后由 queue::insert_new 统一重排为连续位置。
+    let queue_position: i64 = tx.query_row(
+        "SELECT COALESCE(MAX(queue_position), -1) + 1 FROM orders_visible WHERE status = 'active'",
+        [],
+        |r| r.get(0),
+    )?;
+
+    tx.execute(
+        "INSERT INTO orders (
+            id, code, title, client_id, commission_type, source, amount_cents, note, status,
+            stage_template_id, current_stage_id, queue_position,
+            planned_start_date, planned_delivery_date,
+            started_at, completed_at, cancelled_at, request_id,
+            revision, created_at, updated_at
+         ) VALUES (
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'active',
+            ?9, ?10, ?11,
+            ?12, ?13,
+            NULL, NULL, NULL, ?14,
+            0, ?15, ?15
+         )",
+        params![
+            row.id,
+            row.code,
+            row.title,
+            row.client_id,
+            row.commission_type,
+            row.source,
+            row.amount_cents,
+            row.note,
+            row.template_id,
+            row.current_stage_id,
+            queue_position,
+            row.planned_start_date,
+            row.planned_delivery_date,
+            row.request_id,
+            row.now
+        ],
+    )?;
+
+    for (stage_id, stage_title, position) in stages {
+        tx.execute(
+            "INSERT INTO order_stages (order_id, stage_id, title, position)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![row.id, stage_id, stage_title, position],
+        )?;
+    }
+
+    queue::insert_new(tx, row.id, queue_insert_position)?;
+
+    events::append(
+        tx,
+        row.id,
+        &NewEvent {
+            kind: events::CREATED,
+            to_stage_id: Some(&stages[0].0),
+            to_stage_title: Some(&stages[0].1),
+            to_status: Some(lifecycle::STATUS_ACTIVE),
+            occurred_at: row.now,
+            ..Default::default()
+        },
+    )?;
+
+    Ok(())
+}
+
 pub fn create_order(
     conn: &mut Connection,
     hw: &HighWater,
@@ -422,7 +523,6 @@ pub fn create_order(
 
     let order_id = uuid::Uuid::new_v4().to_string();
     let first_stage_id = steps[0].0.clone();
-    let first_stage_title = steps[0].1.clone();
 
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
@@ -440,70 +540,182 @@ pub fn create_order(
         _ => None,
     };
 
-    // 先落一个临时位置，随后由 queue::insert_new 统一重排为连续位置。
-    let queue_position: i64 = tx.query_row(
-        "SELECT COALESCE(MAX(queue_position), -1) + 1 FROM orders_visible WHERE status = 'active'",
-        [],
-        |r| r.get(0),
-    )?;
-
-    tx.execute(
-        "INSERT INTO orders (
-            id, code, title, client_id, commission_type, source, amount_cents, note, status,
-            stage_template_id, current_stage_id, queue_position,
-            planned_start_date, planned_delivery_date,
-            started_at, completed_at, cancelled_at, request_id,
-            revision, created_at, updated_at
-         ) VALUES (
-            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'active',
-            ?9, ?10, ?11,
-            ?12, ?13,
-            NULL, NULL, NULL, ?14,
-            0, ?15, ?15
-         )",
-        params![
-            order_id,
-            code,
-            title,
-            client_id,
-            commission_type,
-            source,
-            input.amount_cents,
-            note,
-            template_id,
-            first_stage_id,
-            queue_position,
-            start_date,
-            delivery_date,
-            request_id,
-            now
-        ],
-    )?;
-
-    for (step_id, step_title, position) in &steps {
-        tx.execute(
-            "INSERT INTO order_stages (order_id, stage_id, title, position)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![order_id, step_id, step_title, position],
-        )?;
-    }
-
-    queue::insert_new(&tx, &order_id, input.queue_insert_position)?;
-
-    events::append(
+    insert_active_order(
         &tx,
-        &order_id,
-        &NewEvent {
-            kind: events::CREATED,
-            to_stage_id: Some(&first_stage_id),
-            to_stage_title: Some(&first_stage_title),
-            to_status: Some(lifecycle::STATUS_ACTIVE),
-            occurred_at: &now,
-            ..Default::default()
+        ActiveOrderRow {
+            id: &order_id,
+            code: &code,
+            title: &title,
+            client_id: client_id.as_deref(),
+            commission_type: commission_type.as_deref(),
+            source: source.as_deref(),
+            amount_cents: input.amount_cents,
+            note: note.as_deref(),
+            template_id: &template_id,
+            current_stage_id: &first_stage_id,
+            planned_start_date: start_date.as_deref(),
+            planned_delivery_date: delivery_date.as_deref(),
+            request_id: request_id.as_deref(),
+            now: &now,
         },
+        &steps,
+        input.queue_insert_position,
     )?;
 
     tx.commit()?;
+    load(conn, &order_id)
+}
+
+// ---------------------------------------------------------------- 复制订单
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateOrderInput {
+    /// 来源订单；必须在当前可见范围内（回收站里的订单按「请先恢复」拒绝）。
+    pub source_order_id: String,
+    pub title: String,
+    pub client_id: Option<String>,
+    pub commission_type: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    pub amount_cents: Option<i64>,
+    pub note: Option<String>,
+    /// 默认由界面勾选；false 时不复制任何附件。
+    #[serde(default)]
+    pub copy_attachments: bool,
+    pub request_id: Option<String>,
+}
+
+/// 从一笔已有订单复制出一笔**全新的活动订单**。
+///
+/// 复制的是「资料」，不是「历史」：
+/// - 资料（标题、客户、委托类型、来源、金额、备注）按界面提交值落库；
+/// - 流程取来源订单**当时保存的阶段快照**，不重新读模板；
+/// - 当前阶段、开工/完成时间、计划日期、事件历史一律重置；
+/// - 附件做真正的文件副本（新 ID、新路径、字节与 SHA-256 不变）。
+///
+/// 来源订单只读，不会被修改。
+pub fn duplicate_order(
+    conn: &mut Connection,
+    hw: &HighWater,
+    tz: Tz,
+    layout: &Layout,
+    generation: &str,
+    input: DuplicateOrderInput,
+) -> AppResult<OrderView> {
+    // 回收站里的订单回「请先恢复」，不回「不存在」——与其它业务读一致。
+    visibility::require_visible_order(conn, &input.source_order_id)?;
+
+    let title = clean_title(&input.title)?;
+    let commission_type = clean_optional(&input.commission_type, 80, "委托类型")?;
+    let source = clean_source(&input.source)?;
+    let note = clean_optional(&input.note, 4000, "委托说明")?;
+    validate_amount(input.amount_cents)?;
+    let request_id = clean_request_id(&input.request_id)?;
+
+    // 重复提交（连点保存）不产生第二笔副本。
+    if let Some(rid) = &request_id {
+        if let Some(existing) = find_by_request_id(conn, rid)? {
+            return load(conn, &existing);
+        }
+    }
+
+    if let Some(client_id) = &input.client_id {
+        visibility::require_visible_client(conn, client_id)?;
+    }
+
+    // 模板归属沿用来源订单：阶段快照跟着它，模板使用数才对得上。
+    let template_id: String = conn.query_row(
+        "SELECT stage_template_id FROM orders_visible WHERE id = ?1",
+        [&input.source_order_id],
+        |r| r.get(0),
+    )?;
+
+    let mut stage_stmt = conn.prepare(
+        "SELECT stage_id, title, position FROM order_stages
+         WHERE order_id = ?1 ORDER BY position, stage_id",
+    )?;
+    let stages: Vec<(String, String, i64)> = stage_stmt
+        .query_map([&input.source_order_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(stage_stmt);
+    if stages.is_empty() {
+        return Err(AppError::not_found("来源订单没有制作阶段，无法复制"));
+    }
+
+    // 附件先落文件（走 attachment_jobs 的既有机制），元数据行随后与订单同事务写入。
+    let source_rows = if input.copy_attachments {
+        attachments::source_rows(conn, &input.source_order_id)?
+    } else {
+        Vec::new()
+    };
+    let mut staged = Vec::with_capacity(source_rows.len());
+    for row in &source_rows {
+        match attachments::stage_copy(conn, layout, generation, row) {
+            Ok(copy) => staged.push(copy),
+            Err(e) => {
+                attachments::discard_staged(conn, layout, generation, &staged);
+                return Err(e);
+            }
+        }
+    }
+
+    let now = timezone::now_timestamp();
+    // 编号由独立高水位分配：绝不复用来源订单的编号。
+    let code = match numbering::reserve(hw, &now, tz) {
+        Ok(code) => code,
+        Err(e) => {
+            attachments::discard_staged(conn, layout, generation, &staged);
+            return Err(e);
+        }
+    };
+
+    let order_id = uuid::Uuid::new_v4().to_string();
+    let first_stage_id = stages[0].0.clone();
+
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let written = (|| -> AppResult<()> {
+        insert_active_order(
+            &tx,
+            ActiveOrderRow {
+                id: &order_id,
+                code: &code,
+                title: &title,
+                client_id: input.client_id.as_deref(),
+                commission_type: commission_type.as_deref(),
+                source: source.as_deref(),
+                amount_cents: input.amount_cents,
+                note: note.as_deref(),
+                template_id: &template_id,
+                current_stage_id: &first_stage_id,
+                // 复制不继承旧排期：计划日期一律清空。
+                planned_start_date: None,
+                planned_delivery_date: None,
+                request_id: request_id.as_deref(),
+                now: &now,
+            },
+            &stages,
+            // 追加到活动队列末尾。
+            None,
+        )?;
+        for item in &staged {
+            attachments::attach_staged(&tx, &order_id, item)?;
+        }
+        Ok(())
+    })();
+
+    match written {
+        Ok(()) => tx.commit()?,
+        Err(e) => {
+            // 事务回滚后，把已经落盘的副本文件删掉：不留半个副本，也不留孤立文件。
+            drop(tx);
+            attachments::discard_staged(conn, layout, generation, &staged);
+            return Err(e);
+        }
+    }
+
     load(conn, &order_id)
 }
 
