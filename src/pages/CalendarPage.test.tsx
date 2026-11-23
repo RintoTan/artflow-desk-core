@@ -531,3 +531,20 @@ describe("UI-06：未排期订单拖入日期格", () => {
     }
   });
 });
+
+describe("UX-05 日历条与改期按钮不重叠", () => {
+  /**
+   * 「改期」按钮绝对定位压在条右端，条自身是 z-index: 1 的层叠上下文，
+   * 抓手压不过它——只能靠几何让位。类名一旦丢失，右端拖拽会重新被按钮吃掉，
+   * 而 CSS 规则断言仍然会通过，所以这里必须守住 JSX 这一侧。
+   */
+  it("活动订单的条带 has-action，让出改期按钮的位置", async () => {
+    await ready([order()]);
+    const segs = Array.from(document.querySelectorAll<HTMLElement>(".cal-seg"));
+    expect(segs.length).toBeGreaterThan(0);
+    for (const seg of segs) {
+      expect(seg.classList.contains("has-action")).toBe(true);
+      expect(seg.querySelector(".cal-chip-action")).not.toBeNull();
+    }
+  });
+});

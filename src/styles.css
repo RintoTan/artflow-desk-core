@@ -5324,6 +5324,7 @@ dl.stat-row {
 
 .cal-chip-action {
   flex: none;
+  margin-left: 4px;
   opacity: 0;
   font-size: 10px;
   padding: 0 4px;
@@ -6020,27 +6021,30 @@ dl.stat-row {
   cursor: grabbing;
 }
 
+/* 端点抓手：必须是真实命中区（不是装饰），否则右端的「改交付日期」只会被当成整条平移。
+   条本身 overflow: hidden，抓手不会溢出到相邻轨道。 */
 .cal-chip-handle {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 12px;
+  width: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
-  pointer-events: none;
+  pointer-events: auto;
   cursor: ew-resize;
+  z-index: 3;
 }
 
 .cal-chip-handle.is-start {
-  left: 0;
+  left: -2px;
   border-radius: 7px 0 0 7px;
   background: linear-gradient(90deg, var(--accent-soft), transparent);
 }
 
 .cal-chip-handle.is-end {
-  right: 0;
+  right: -2px;
   border-radius: 0 7px 7px 0;
   background: linear-gradient(270deg, var(--accent-soft), transparent);
 }
@@ -6630,6 +6634,15 @@ dl.stat-row {
    鼠标悬停时它浮在条的右端，尺寸不变。 */
 .cal-seg {
   position: relative;
+}
+
+/* 「改期」绝对定位压在条的右端；条自己有 z-index: 1 的层叠上下文，
+   所以抓手再高的 z-index 也压不过按钮——只能让两者在几何上不重叠。
+   按钮不可牺牲（它必须独立可点），因此改成条永远让出按钮的位置：
+   这样 hover 时既不会跳动，右端抓手也不会被抢走。
+   32px = 「改期」两字（约 20px）+ 左右内边距 8px + 边框 2px + 右侧 1px 留白。 */
+.cal-seg.has-action {
+  padding-right: 32px;
 }
 
 .cal-chip-action {

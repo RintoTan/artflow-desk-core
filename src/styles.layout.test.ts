@@ -294,6 +294,24 @@ describe("时间线工具栏不被压变形", () => {
   });
 });
 
+describe("日历端点抓手不被「改期」按钮覆盖", () => {
+  /**
+   * 「改期」是绝对定位压在条右端的独立按钮（z-index 2），而条自己有 z-index: 1
+   * 的层叠上下文——抓手即使 z-index 更高也赢不了它，交付日期的拖拽就是这样丢的。
+   * 结论不是抬高层级（那会把按钮压住），而是让条在几何上让开按钮的位置。
+   */
+  it("有条让出按钮位置的规则，且宽度足够放「改期」两字", () => {
+    const reserve = rule(".cal-seg.has-action");
+    const px = Number((/padding-right:\s*(\d+)px/.exec(reserve) ?? [])[1]);
+    expect(px).toBeGreaterThanOrEqual(28);
+  });
+
+  it("抓手是真实命中区，不是装饰层", () => {
+    expect(rule(".cal-chip-handle")).toMatch(/pointer-events:\s*auto/);
+    expect(rule(".cal-chip-handle")).toMatch(/width:\s*14px/);
+  });
+});
+
 describe("日历 +N 浮窗滚动隔离", () => {
   it("浮窗用 overscroll-behavior 挡住滚动穿透", () => {
     expect(rule(".cal-popover")).toMatch(/overscroll-behavior:\s*contain/);

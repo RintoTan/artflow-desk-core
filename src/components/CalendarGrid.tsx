@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { OrderView } from "../bridge/commands";
+import { chipDropZone } from "../lib/chipZone";
 import { civilFromDays, formatDayKey, type DayIndex } from "../lib/scheduleBar";
 import {
   isSameMonth,
@@ -77,7 +78,9 @@ function Chip({
 
   return (
     <div
-      className={`cal-seg${focusedOrderId === order.id ? " is-focus-target" : ""}`}
+      className={`cal-seg${focusedOrderId === order.id ? " is-focus-target" : ""}${
+        terminal ? "" : " has-action"
+      }`}
       style={{ gridColumn: `${segment.colStart + 1} / ${segment.colEnd + 2}`, gridRow: segment.lane + 2 }}
     >
     <button
@@ -120,13 +123,21 @@ function Chip({
         // 单日订单没有端点可分，统一整体移动。
         const rect = event.currentTarget.getBoundingClientRect();
         const ratio = rect.width === 0 ? 0.5 : (event.clientX - rect.left) / rect.width;
-        const edge = Math.min(0.25, 12 / Math.max(rect.width, 1));
-        let zone: DropMode = mode;
-        if (!single) {
-          if (ratio <= edge && !clippedLeft) zone = "start";
-          else if (ratio >= 1 - edge && !clippedRight) zone = "delivery";
-          else zone = "move";
-        }
+        const handle = (event.target as HTMLElement | null)?.closest?.(
+          ".cal-chip-handle",
+        ) as HTMLElement | null;
+        const zone = chipDropZone({
+          singleDay: single,
+          clippedLeft,
+          clippedRight,
+          handle: handle?.classList.contains("is-start")
+            ? "start"
+            : handle?.classList.contains("is-end")
+              ? "end"
+              : null,
+          ratio,
+          width: rect.width,
+        });
         onChipPointerDown({ order, mode: zone, event });
       }}
     >
