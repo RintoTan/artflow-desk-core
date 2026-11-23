@@ -94,7 +94,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 
 ### 迁移链
 
-`APP_SCHEMA_VERSION = 8`，迁移 append-only：只允许新增 `vN → vN+1`，不允许改写历史迁移文件。
+`APP_SCHEMA_VERSION = 9`，迁移 append-only：只允许新增 `vN → vN+1`，不允许改写历史迁移文件。
 
 | 版本 | 内容 |
 | --- | --- |

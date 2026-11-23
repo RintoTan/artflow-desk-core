@@ -55,7 +55,7 @@ QA 版使用独立 identifier，并在其根目录下按场景再分一层：
 
 - 迁移链 append-only：只允许新增 `vN → vN+1`，不允许改写历史迁移文件。
 - 每次迁移在**新代际**里执行，整步在事务中，失败整步回滚后放弃该代际。
-- 当前 `APP_SCHEMA_VERSION = 7`。版本历史见 [ARCHITECTURE.md](ARCHITECTURE.md#迁移链)。
+- 当前 `APP_SCHEMA_VERSION = 9`。版本历史见 [ARCHITECTURE.md](ARCHITECTURE.md#迁移链)。
 - 恢复时若 `schemaVersion` **高于**程序支持 → 直接拒绝（不尝试降级）；**低于** → 在隔离代际内沿迁移链升级到当前版本。
 
 ## 4. 备份包格式（v1）
