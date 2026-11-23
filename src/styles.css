@@ -5219,10 +5219,12 @@ dl.stat-row {
   grid-template-columns: repeat(7, minmax(0, 1fr));
   background: var(--surface-alt);
   border-bottom: 1px solid var(--border);
-  /* 吸附在 .cal-scroll 顶部；背景必须不透明，否则日期内容会透上来 */
+  /* 吸附在 .cal-scroll 顶部；背景必须不透明，否则日期内容会透上来。
+     z-index 必须高于格内所有内容层（.cal-day-num 是 2、.cal-more 是 3）：
+     同级时按文档顺序绘制，靠后的日号会盖住星期文字。 */
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 4;
 }
 
 .cal-weekdays span {

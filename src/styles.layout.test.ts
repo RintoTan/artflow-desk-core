@@ -236,4 +236,25 @@ describe("月视图星期表头吸附", () => {
   it("网格用 clip 而非 hidden，避免建立滚动容器使 sticky 失效", () => {
     expect(grid).toMatch(/overflow:\s*clip/);
   });
+
+  /**
+   * 表头吸顶位置正确，不代表看得见：格内的日号与「+N」都是定位元素，
+   * 表头与它们同级时按文档顺序绘制，靠后的内容会盖住星期文字。
+   * 这里只锁「层叠顺序」这一条规则，真实覆盖仍要人眼在滚动中确认。
+   */
+  it("表头层级高于格内日号与 +N，避免滚动时被内容盖住", () => {
+    const zOf = (block: string): number => {
+      const hit = /z-index:\s*(\d+)/.exec(block);
+      return hit === null ? Number.NaN : Number(hit[1]);
+    };
+    const header = zOf(weekdays);
+    const dayNum = zOf(rule(".cal-day-num"));
+    const more = zOf(rule(".cal-more"));
+
+    expect(Number.isNaN(header)).toBe(false);
+    expect(Number.isNaN(dayNum)).toBe(false);
+    expect(Number.isNaN(more)).toBe(false);
+    expect(header).toBeGreaterThan(dayNum);
+    expect(header).toBeGreaterThan(more);
+  });
 });
