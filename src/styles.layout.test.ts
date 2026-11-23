@@ -277,3 +277,19 @@ describe("订单表格紧凑态", () => {
     expect(base).not.toMatch(/display:\s*block/);
   });
 });
+
+describe("时间线工具栏不被压变形", () => {
+  // 上一版窄窗口把「今天」挤成两行、分段控件换成两排，原因是
+  // 控件允许收缩 + 分组可换行 + 容器查询声明在改版时丢失。
+  it("时间线面板声明为容器，窄宽规则才有作用", () => {
+    expect(rule(".timeline-panel")).toMatch(/container-name:\s*timeline/);
+    expect(rule(".timeline-panel")).toMatch(/container-type:\s*inline-size/);
+  });
+
+  it("工具栏控件一律不收缩、不换行", () => {
+    expect(rule(".tl-today")).toMatch(/white-space:\s*nowrap/);
+    expect(rule(".tl-today")).toMatch(/flex:\s*0 0 auto/);
+    expect(rule(".timeline-controls .segmented")).toMatch(/flex-wrap:\s*nowrap/);
+    expect(rule(".timeline-controls .filter-chip")).toMatch(/white-space:\s*nowrap/);
+  });
+});

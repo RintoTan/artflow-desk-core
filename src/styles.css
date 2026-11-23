@@ -7983,3 +7983,166 @@ dl.stat-row {
 .timeline-scroll.is-panning {
   cursor: grabbing;
 }
+
+.timeline-panel {
+  container-type: inline-size;
+  container-name: timeline;
+}
+
+/* UX-05 工具栏（第三版）：无边框轻量风格。
+   导航 / 缩放 / 刷新是图标，只在悬停时出现极浅底；「今天」用低饱和蓝灰底；
+   四个视图合成一个整体分段容器，选中项白底。不做第二行、不加卡片。 */
+.timeline-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: nowrap;
+}
+
+.tl-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.tl-icon {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tl-icon:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+}
+
+.tl-icon:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.tl-icon:focus-visible,
+.tl-today:focus-visible,
+.timeline-controls .filter-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* 「今天」是主导航：低饱和蓝灰底 + 强调色文字，不用描边。 */
+.tl-today {
+  flex: 0 0 auto;
+  height: 26px;
+  white-space: nowrap;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tl-today:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* 分组之间只用一条 14px 高的细分隔线。 */
+.tl-sep {
+  width: 1px;
+  height: 14px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+/* 四个视图是一个整体容器：浅灰蓝底 + 内边距，选中项白底浮起。 */
+.timeline-controls .segmented {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  gap: 2px;
+  padding: 2px;
+  border: 0;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.timeline-controls .filter-chip {
+  flex: 0 0 auto;
+  height: 22px;
+  white-space: nowrap;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.timeline-controls .filter-chip:hover {
+  color: var(--text);
+}
+
+.timeline-controls .filter-chip-active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+/* 标题说明不再和工作栏抢宽度：允许说明独占一行，工具栏靠右。 */
+.timeline-head {
+  align-items: center;
+  gap: 12px;
+}
+
+.timeline-head > div:first-child {
+  min-width: 0;
+}
+
+/* 时间线自身宽度不足时，工具栏整行落到标题下方，但仍是单行。 */
+@container timeline (max-width: 780px) {
+  .timeline-head {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .timeline-controls {
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .timeline-controls::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* 空间不足时先省掉分隔线，不省控件 */
+  .tl-sep {
+    display: none;
+  }
+}
+
+/* 更窄：标题说明截断，不再挤成「不表示完 / 成进度」这种断词。 */
+@container timeline (max-width: 620px) {
+  .timeline-head > div:first-child p {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

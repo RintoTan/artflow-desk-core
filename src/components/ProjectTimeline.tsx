@@ -225,6 +225,19 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
     [navigate],
   );
 
+  /**
+   * 保持「今天」在屏幕上的相对位置：算出今天在当前窗口里的比例，
+   * 再反推新跨度下能让它停在同一比例的锚点。今天不在窗口内时退回「保中心」。
+   */
+  const anchorKeepingToday = (totalNew: number): DayIndex | null => {
+    if (win === null || today === null) return viewportCenterDay();
+    const totalOld = win.to - win.from + 1;
+    const ratio = (today - win.from + 0.5) / totalOld;
+    if (ratio < -0.5 || ratio > 1.5) return viewportCenterDay();
+    const clamped = Math.min(1, Math.max(0, ratio));
+    return today + Math.round((0.5 - clamped) * totalNew);
+  };
+
   /** 当前视口中心对应的日期：切视图与缩放都以它为新锚点。 */
   const viewportCenterDay = useCallback(() => {
     if (win === null) return effectiveAnchor;
@@ -280,7 +293,9 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
   };
 
   const changeScale = (next: TimelineScale) => {
-    const center = viewportCenterDay();
+    const nextWindow = effectiveAnchor === null ? null : spanWindow(next, effectiveAnchor, spans[next]);
+    const totalNew = nextWindow === null ? 0 : nextWindow.to - nextWindow.from + 1;
+    const center = totalNew > 0 ? anchorKeepingToday(totalNew) : viewportCenterDay();
     setScale(next);
     if (center !== null) {
       setAnchor(center);
@@ -291,7 +306,11 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
   /** 缩放只改当前视图的跨度；锚点取当前视口中心，不跳回今天。
    *  finer = true 是「放大」（看更细、跨度更小），false 是「缩小」（看更多日期）。 */
   const zoom = (finer: boolean) => {
-    const center = viewportCenterDay();
+    const nextSpan = stepSpan(scale, spans[scale], finer ? -1 : 1);
+    const nextWindow =
+      effectiveAnchor === null ? null : spanWindow(scale, effectiveAnchor, nextSpan);
+    const totalNew = nextWindow === null ? 0 : nextWindow.to - nextWindow.from + 1;
+    const center = totalNew > 0 ? anchorKeepingToday(totalNew) : viewportCenterDay();
     setSpans((prev) => {
       const next = stepSpan(scale, prev[scale], finer ? -1 : 1);
       return next === prev[scale] ? prev : { ...prev, [scale]: next };
@@ -347,29 +366,47 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
     orders.some((order) => order.status !== "active");
 
   return (
-    <section className="panel" aria-labelledby="timeline-title">
+    <section className="panel timeline-panel" aria-labelledby="timeline-title">
       <header className="panel-head timeline-head">
         <div>
           <h2 id="timeline-title">跨订单项目时间线</h2>
           <p id="timeline-subtitle" className="muted">
-            只读 · {SCALE_CONFIG[scale].label}尺度 · 按计划日期绘制 · 不表示完成进度 · 逾期读后端判定
+            只读 · 按计划日期绘制 · 不表示完成进度
           </p>
         </div>
         <div className="timeline-controls">
-          <button type="button" className="btn btn-icon" aria-label="上一时间段" onClick={() => shift(-1)}>
-            ‹
-          </button>
-          <button type="button" className="btn" onClick={goToday}>
-            今天
-          </button>
-          <button type="button" className="btn btn-icon" aria-label="下一时间段" onClick={() => shift(1)}>
-            ›
-          </button>
-          <div className="timeline-zoom" role="group" aria-label="跨度缩放">
+          <div className="tl-group">
             <button
               type="button"
-              className="btn btn-icon"
+              className="tl-icon"
+              aria-label="上一时间段"
+              title="上一时间段"
+              onClick={() => shift(-1)}
+            >
+              ‹
+            </button>
+            <button type="button" className="tl-today" onClick={goToday}>
+              今天
+            </button>
+            <button
+              type="button"
+              className="tl-icon"
+              aria-label="下一时间段"
+              title="下一时间段"
+              onClick={() => shift(1)}
+            >
+              ›
+            </button>
+          </div>
+
+          <span className="tl-sep" aria-hidden="true" />
+
+          <div className="tl-group" role="group" aria-label="跨度缩放">
+            <button
+              type="button"
+              className="tl-icon"
               aria-label="缩小跨度"
+              title="缩小跨度"
               disabled={!hasLargerSpan(scale, span)}
               onClick={() => zoom(false)}
             >
@@ -377,20 +414,24 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
             </button>
             <button
               type="button"
-              className="btn btn-icon"
+              className="tl-icon"
               aria-label="放大跨度"
+              title="放大跨度"
               disabled={!hasSmallerSpan(scale, span)}
               onClick={() => zoom(true)}
             >
               +
             </button>
           </div>
-          <div className="segmented" role="group" aria-label="时间尺度">
+
+          <span className="tl-sep" aria-hidden="true" />
+
+          <div className="segmented tl-views" role="group" aria-label="时间尺度">
             {SCALES.map((item) => (
               <button
                 key={item}
                 type="button"
-                className={`filter-chip${item === scale ? " filter-chip-active" : ""}`}
+                className={`filter-chip tl-view${item === scale ? " filter-chip-active" : ""}`}
                 aria-pressed={item === scale}
                 onClick={() => changeScale(item)}
               >
@@ -398,6 +439,18 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
               </button>
             ))}
           </div>
+
+          <span className="tl-sep" aria-hidden="true" />
+
+          <button
+            type="button"
+            className="tl-icon tl-refresh"
+            aria-label="刷新"
+            title="刷新"
+            onClick={() => setGeneration((n) => n + 1)}
+          >
+            ↻
+          </button>
         </div>
       </header>
 
@@ -424,13 +477,6 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
           />
           显示已结束
         </label>
-        <button
-          type="button"
-          className="btn timeline-refresh"
-          onClick={() => setGeneration((n) => n + 1)}
-        >
-          刷新
-        </button>
       </div>
 
       {refreshError && (

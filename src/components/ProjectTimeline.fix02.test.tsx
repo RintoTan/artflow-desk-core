@@ -516,4 +516,31 @@ describe("WB-02 拖动平移与中心复核", () => {
 
     expect(winOf().from).toBe(before.from);
   });
+
+  it("刷新是工具栏里的图标按钮，不再单独占一行", async () => {
+    await renderWith([order()]);
+    const refresh = screen.getByRole("button", { name: "刷新" });
+    expect(refresh).toHaveAttribute("title", "刷新");
+    expect(refresh.closest(".timeline-controls")).not.toBeNull();
+  });
+
+  it("月 → 日之后，今天仍停在窗口中部（相对位置不漂）", async () => {
+    const user = userEvent.setup();
+    await renderWith([order()]);
+
+    const today = Date.parse("2026-11-18T00:00:00Z") / 86400000;
+    const ratioOf = (w: { from: string; to: string }) => {
+      const from = Date.parse(`${w.from}T00:00:00Z`) / 86400000;
+      const to = Date.parse(`${w.to}T00:00:00Z`) / 86400000;
+      return (today - from) / (to - from + 1);
+    };
+
+    const before = ratioOf(winOf());
+    await user.click(screen.getByRole("button", { name: "日" }));
+    const after = ratioOf(winOf());
+
+    expect(before).toBeGreaterThan(0.3);
+    expect(before).toBeLessThan(0.7);
+    expect(Math.abs(after - before)).toBeLessThan(0.06);
+  });
 });
