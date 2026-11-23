@@ -158,6 +158,36 @@ export type DuplicateOrderInput = {
   requestId?: string | null;
 };
 
+/** DEV-0.1.1-04：数据重置。六项独立，`only` 用于重试失败项。 */
+export type DataResetInput = {
+  business: boolean;
+  settings: boolean;
+  backups: boolean;
+  reminder: boolean;
+  logs: boolean;
+  quarantine: boolean;
+  only?: string[];
+};
+
+export type ResetItem = {
+  option: string;
+  /** ok | failed | skipped */
+  status: string;
+  reason: string | null;
+  detail: string | null;
+};
+
+export type ResetReport = {
+  items: ResetItem[];
+  /** all_ok | partial | all_failed */
+  overall: string;
+  newGeneration: string | null;
+  oldGeneration: string;
+  oldGenerationPath: string;
+  oldGenerationBytes: number;
+  snapshotPath: string | null;
+};
+
 export type UpdateDetailsInput = {
   orderId: string;
   expectedRevision: number;
@@ -369,6 +399,7 @@ export const api = {
   backupRestore: (path: string) => invoke<BackupRestored>("backup_restore", { path }),
   backupSetReminder: (days: number) => invoke<BackupStatus>("backup_set_reminder", { days }),
   restartApp: () => invoke<void>("restart_app"),
+  dataReset: (input: DataResetInput) => invoke<ResetReport>("data_reset", { input }),
 
   maintenanceQuarantine: () => invoke<QuarantineReport>("maintenance_quarantine"),
   maintenanceQuarantineClear: (names: string[]) =>

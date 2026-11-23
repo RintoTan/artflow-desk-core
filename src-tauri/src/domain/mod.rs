@@ -7,6 +7,7 @@ pub mod lifecycle;
 pub mod maintenance;
 pub mod numbering;
 pub mod orders;
+pub mod reset;
 pub mod queue;
 pub mod templates;
 pub mod trash;

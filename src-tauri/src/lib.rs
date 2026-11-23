@@ -167,6 +167,7 @@ fn build_app() -> Result<tauri::App, String> {
             commands::backup::backup_set_reminder,
             commands::backup::restart_app,
             commands::maintenance::maintenance_quarantine,
+            commands::reset::data_reset,
             commands::maintenance::maintenance_quarantine_clear,
             commands::maintenance::maintenance_jobs,
             commands::maintenance::maintenance_jobs_prune,

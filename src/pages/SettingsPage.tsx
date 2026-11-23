@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, describeError, type TimezoneInfo } from "../bridge/commands";
 import { AppIconImage } from "../components/AppIconImage";
 import AttachmentMaintenancePanel from "../components/AttachmentMaintenancePanel";
+import DataResetPanel from "../components/DataResetPanel";
 import BackupPanel from "../components/BackupPanel";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { NavIcon } from "../components/NavIcon";
@@ -553,6 +554,8 @@ export default function SettingsPage() {
           </span>
         </Link>
       </section>
+
+      <DataResetPanel onError={setError} />
 
       <section className="panel panel-quiet settings-module settings-module-full">
         <h2>本阶段尚未提供的设置</h2>

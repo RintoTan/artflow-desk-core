@@ -8287,3 +8287,176 @@ dl.stat-row {
   gap: 8px;
   flex: 0 0 auto;
 }
+
+/* DEV-0.1.1-04 数据重置。
+   这里是不可逆操作：选项之间要有清晰边界，结果必须逐项分色，不允许混淆。
+   只使用现有令牌，避免为主题切换留下未定义变量。 */
+.reset-options {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.reset-option {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--surface-alt);
+}
+
+.reset-option-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.reset-option-head input {
+  flex: none;
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.reset-option-label {
+  color: var(--text);
+}
+
+.reset-option-scope {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.reset-option-note {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.reset-option-risk {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  color: var(--danger);
+}
+
+.reset-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.reset-hint {
+  font-size: 12px;
+}
+
+.reset-report {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.reset-overall {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.reset-overall.is-all_ok {
+  color: var(--accent);
+}
+
+.reset-overall.is-all_failed {
+  color: var(--danger);
+}
+
+.reset-results {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reset-result {
+  display: grid;
+  grid-template-columns: 140px 60px 1fr;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12.5px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--surface-alt);
+}
+
+.reset-result.is-failed {
+  background: var(--danger-soft);
+}
+
+.reset-result.is-skipped {
+  opacity: 0.75;
+}
+
+.reset-result-name {
+  font-weight: 600;
+}
+
+.reset-result-status {
+  color: var(--text-muted);
+}
+
+.reset-result.is-failed .reset-result-status,
+.reset-result.is-failed .reset-result-reason {
+  color: var(--danger);
+}
+
+.reset-result-reason {
+  grid-column: 1 / -1;
+  color: var(--danger);
+}
+
+.reset-result-detail {
+  grid-column: 3 / -1;
+}
+
+.reset-note {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.reset-restart-warning {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--danger-border);
+  font-size: 12px;
+  background: var(--surface-alt);
+}
+
+.reset-confirm-list {
+  margin: 8px 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+@media (max-width: 720px) {
+  .reset-result {
+    grid-template-columns: 1fr auto;
+  }
+
+  .reset-result-detail {
+    grid-column: 1 / -1;
+  }
+}

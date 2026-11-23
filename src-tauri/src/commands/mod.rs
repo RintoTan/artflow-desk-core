@@ -7,6 +7,7 @@ pub mod maintenance;
 pub mod orders;
 pub mod preferences;
 pub mod queue;
+pub mod reset;
 pub mod stats;
 pub mod theme;
 pub mod trash;
