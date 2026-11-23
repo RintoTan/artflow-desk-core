@@ -18,12 +18,18 @@ import {
   rowGeometry,
   shiftAnchor,
   splitOrders,
-  timelineWindow,
+  DEFAULT_SPAN,
+  TODAY_ANCHOR_RATIO,
+  anchorFromViewport,
+  hasLargerSpan,
+  hasSmallerSpan,
+  spanWindow,
+  stepSpan,
   visibleRange,
   type TimelineScale,
 } from "../lib/timeline";
 
-const SCALES: TimelineScale[] = ["day", "week", "month", "year"];
+const SCALES: TimelineScale[] = ["day", "month", "year"];
 
 const LEGEND = [
   { key: "scheduled", label: "按排期" },
@@ -89,6 +95,8 @@ export function dateTipLines(order: OrderView): string[] {
 export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
   const navigate = useNavigate();
   const [scale, setScale] = useState<TimelineScale>("month");
+  /** 日 / 月 / 年各自记住最近用过的跨度；缩放不跨视图。 */
+  const [spans, setSpans] = useState<Record<TimelineScale, number>>({ ...DEFAULT_SPAN });
   const [anchor, setAnchor] = useState<DayIndex | null>(null);
   const [showTerminal, setShowTerminal] = useState(false);
   const [orders, setOrders] = useState<OrderView[] | null>(null);
@@ -154,9 +162,10 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
   }, [timezone, nowIso]);
 
   const effectiveAnchor = anchor ?? today;
+  const span = spans[scale];
   const win = useMemo(
-    () => (effectiveAnchor === null ? null : timelineWindow(scale, effectiveAnchor)),
-    [scale, effectiveAnchor],
+    () => (effectiveAnchor === null ? null : spanWindow(scale, effectiveAnchor, span)),
+    [scale, effectiveAnchor, span],
   );
   const ticks = useMemo(
     () => (win === null || today === null ? null : buildTicks(win, scale, today)),
@@ -167,16 +176,19 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
     [orders, showTerminal],
   );
 
-  // 首次进入、点「今天」、切尺度后把参照点放到视口 45% 处。
+  /** 切视图与缩放放中心（0.5）；点「今天」放左侧 20%。 */
+  const [centerRatio, setCenterRatio] = useState(0.5);
+
   useEffect(() => {
     if (centerOn === null || win === null || viewport === 0) return;
     const node = scrollerRef.current;
     if (!node) return;
     const x = dayToX(centerOn, win, scale) + SCALE_CONFIG[scale].pxPerDay / 2;
-    node.scrollLeft = Math.max(0, x - viewport * 0.45);
+    node.scrollLeft = Math.max(0, x - viewport * centerRatio);
     setScrollLeft(node.scrollLeft);
     setCenterOn(null);
-  }, [centerOn, win, scale, viewport]);
+    setCenterRatio(0.5);
+  }, [centerOn, win, scale, viewport, centerRatio]);
 
   useEffect(() => {
     if (orders === null || today === null) return;
@@ -200,14 +212,44 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
     [navigate],
   );
 
+  /** 当前视口中心对应的日期：切视图与缩放都以它为新锚点。 */
+  const viewportCenterDay = useCallback(() => {
+    if (win === null) return effectiveAnchor;
+    const node = scrollerRef.current;
+    const left = node?.scrollLeft ?? scrollLeft;
+    const width = viewport || node?.clientWidth || 0;
+    // 视口还没量出来时不要移动锚点：0 宽会把中心算成窗口起点，造成跳变。
+    if (width === 0) return effectiveAnchor;
+    return anchorFromViewport(scale, win, left, width);
+  }, [win, scale, scrollLeft, viewport, effectiveAnchor]);
+
   const goToday = () => {
     setAnchor(today);
     setCenterOn(today);
+    setCenterRatio(TODAY_ANCHOR_RATIO);
   };
 
   const changeScale = (next: TimelineScale) => {
+    const center = viewportCenterDay();
     setScale(next);
-    if (effectiveAnchor !== null) setCenterOn(effectiveAnchor);
+    if (center !== null) {
+      setAnchor(center);
+      setCenterOn(center);
+    }
+  };
+
+  /** 缩放只改当前视图的跨度；锚点取当前视口中心，不跳回今天。
+   *  finer = true 是「放大」（看更细、跨度更小），false 是「缩小」（看更多日期）。 */
+  const zoom = (finer: boolean) => {
+    const center = viewportCenterDay();
+    setSpans((prev) => {
+      const next = stepSpan(scale, prev[scale], finer ? -1 : 1);
+      return next === prev[scale] ? prev : { ...prev, [scale]: next };
+    });
+    if (center !== null) {
+      setAnchor(center);
+      setCenterOn(center);
+    }
   };
 
   const shift = (direction: -1 | 1) => {
@@ -243,11 +285,6 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
   }
 
   const total = canvasWidth(win, scale);
-  // 周视图最后一个刻度是「末周的周一」，不是窗口终点；文案里点明，避免把 01-11 误读成 01-17。
-  const lastWeekTick =
-    scale === "week" && ticks.tier2.length > 0
-      ? formatDayKey(ticks.tier2[ticks.tier2.length - 1]!.day)
-      : "";
   const todayX = dayToX(today, win, scale) + SCALE_CONFIG[scale].pxPerDay / 2;
   const todayInside = today >= win.from && today <= win.to;
   const visible = visibleRange(win, scale, scrollLeft, viewport);
@@ -278,6 +315,26 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
           <button type="button" className="btn btn-icon" aria-label="下一时间段" onClick={() => shift(1)}>
             ›
           </button>
+          <div className="timeline-zoom" role="group" aria-label="跨度缩放">
+            <button
+              type="button"
+              className="btn btn-icon"
+              aria-label="缩小跨度"
+              disabled={!hasLargerSpan(scale, span)}
+              onClick={() => zoom(false)}
+            >
+              −
+            </button>
+            <button
+              type="button"
+              className="btn btn-icon"
+              aria-label="放大跨度"
+              disabled={!hasSmallerSpan(scale, span)}
+              onClick={() => zoom(true)}
+            >
+              +
+            </button>
+          </div>
           <div className="segmented" role="group" aria-label="时间尺度">
             {SCALES.map((item) => (
               <button
@@ -300,7 +357,7 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
           {" · "}
           {SCALE_CONFIG[scale].label}尺度 · 时间线 {split.scheduled.length} 单 · 完全未排期{" "}
           {split.unscheduled.length} 单 · 共 {orders.length} 单
-          {scale === "week" && " · 周一刻度，末周起 " + lastWeekTick}
+
         </p>
         <ul className="timeline-legend" aria-label="排期状态图例">
           {LEGEND.map((item) => (
@@ -467,7 +524,22 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
                       data-tone={tone}
                       onClick={() => gotoOrder(order.id)}
                     >
-                      {geo.band && (
+                      {/* 年视图 3 年跨度下单日只有 1.8px：短到画不出比例的条改成圆点，
+                          宽度不再表达时长，但位置仍然准确、仍然可点。 */}
+                      {geo.band && geo.band.width <= 6 && (
+                        <span
+                          className={`timeline-dot tone-${tone}`}
+                          style={{ left: `${geo.band.left + geo.band.width / 2}px` }}
+                          tabIndex={0}
+                          role="img"
+                          aria-label={`${order.code} 排期：${tipLines.join("；")}`}
+                          onPointerEnter={(event) => showTip(event.currentTarget, tipLines)}
+                          onPointerLeave={hideTip}
+                          onFocus={(event) => showTip(event.currentTarget, tipLines)}
+                          onBlur={hideTip}
+                        />
+                      )}
+                      {geo.band && geo.band.width > 6 && (
                         <span
                           className={`timeline-bar tone-${tone}${singleDay ? " is-single" : ""}`}
                           style={{ left: `${geo.band.left}px`, width: `${geo.band.width}px` }}

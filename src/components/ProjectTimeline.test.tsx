@@ -120,7 +120,7 @@ describe("ProjectTimeline 尺度与导航", () => {
     renderTimeline();
     await screen.findByTestId("timeline-frame");
     expect(screen.getByRole("button", { name: "月" })).toHaveAttribute("aria-pressed", "true");
-    expect(rangeText()).toContain("窗口 2026-09-01 ~ 2027-09-30");
+    expect(rangeText()).toContain("窗口 2026-05-01 ~ 2027-04-30");
   });
 
   it("切到日尺度会重算窗口与画布宽", async () => {
@@ -128,16 +128,17 @@ describe("ProjectTimeline 尺度与导航", () => {
     renderTimeline();
     await screen.findByTestId("timeline-frame");
     await user.click(screen.getByRole("button", { name: "日" }));
-    expect(rangeText()).toContain("窗口 2026-11-11 ~ 2026-12-01");
-    expect(screen.getByTestId("timeline-canvas").style.width).toBe("924px");
+    expect(rangeText()).toContain("窗口 2026-11-03 ~ 2026-12-02");
+    expect(screen.getByTestId("timeline-canvas").style.width).toBe("1320px");
   });
 
-  it("切到周尺度按完整自然周对齐", async () => {
-    const user = userEvent.setup();
+  it("只有日 / 月 / 年三个视图，不提供周视图", async () => {
     renderTimeline();
     await screen.findByTestId("timeline-frame");
-    await user.click(screen.getByRole("button", { name: "周" }));
-    expect(rangeText()).toContain("窗口 2026-10-26 ~ 2027-01-17");
+    const group = screen.getByRole("group", { name: "时间尺度" });
+    const labels = Array.from(group.querySelectorAll("button")).map((b) => b.textContent);
+    expect(labels).toEqual(["日", "月", "年"]);
+    expect(screen.queryByRole("button", { name: "周" })).not.toBeInTheDocument();
   });
 
   it("切到年尺度按自然年对齐", async () => {
@@ -145,7 +146,7 @@ describe("ProjectTimeline 尺度与导航", () => {
     renderTimeline();
     await screen.findByTestId("timeline-frame");
     await user.click(screen.getByRole("button", { name: "年" }));
-    expect(rangeText()).toContain("窗口 2025-01-01 ~ 2030-12-31");
+    expect(rangeText()).toContain("窗口 2025-01-01 ~ 2027-12-31");
   });
 
   it("上一段 / 下一段按当前尺度移动一个自然月", async () => {
@@ -153,11 +154,11 @@ describe("ProjectTimeline 尺度与导航", () => {
     renderTimeline();
     await screen.findByTestId("timeline-frame");
     await user.click(screen.getByRole("button", { name: "上一时间段" }));
-    expect(rangeText()).toContain("窗口 2026-08-01 ~ 2027-08-31");
+    expect(rangeText()).toContain("窗口 2026-04-01 ~ 2027-03-31");
     await user.click(screen.getByRole("button", { name: "下一时间段" }));
-    expect(rangeText()).toContain("窗口 2026-09-01 ~ 2027-09-30");
+    expect(rangeText()).toContain("窗口 2026-05-01 ~ 2027-04-30");
     await user.click(screen.getByRole("button", { name: "下一时间段" }));
-    expect(rangeText()).toContain("窗口 2026-10-01 ~ 2027-10-31");
+    expect(rangeText()).toContain("窗口 2026-06-01 ~ 2027-05-31");
   });
 
   it("「今天」把锚点恢复到工作时区的今天", async () => {
@@ -166,14 +167,14 @@ describe("ProjectTimeline 尺度与导航", () => {
     await screen.findByTestId("timeline-frame");
     await user.click(screen.getByRole("button", { name: "上一时间段" }));
     await user.click(screen.getByRole("button", { name: "今天" }));
-    expect(rangeText()).toContain("窗口 2026-09-01 ~ 2027-09-30");
+    expect(rangeText()).toContain("窗口 2026-05-01 ~ 2027-04-30");
   });
 
   it("切换尺度不重新请求订单", async () => {
     const user = userEvent.setup();
     renderTimeline();
     await screen.findByTestId("timeline-frame");
-    await user.click(screen.getByRole("button", { name: "周" }));
+    await user.click(screen.getByRole("button", { name: "日" }));
     await user.click(screen.getByRole("button", { name: "年" }));
     expect(hoisted.listOrders).toHaveBeenCalledTimes(1);
   });

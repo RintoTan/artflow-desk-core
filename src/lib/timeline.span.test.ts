@@ -22,6 +22,7 @@ describe("跨度档位", () => {
   it("默认跨度符合规格：日 30 天 / 月 12 个月 / 年 3 年", () => {
     expect(VIEW_SPANS.day).toEqual([14, 30, 60]);
     expect(VIEW_SPANS.month).toEqual([6, 12, 24]);
+    expect(Object.keys(VIEW_SPANS)).toEqual(["day", "month", "year"]);
     expect(VIEW_SPANS.year).toEqual([3, 5, 10]);
     expect(DEFAULT_SPAN.day).toBe(30);
     expect(DEFAULT_SPAN.month).toBe(12);
@@ -44,12 +45,6 @@ describe("窗口按跨度生成", () => {
     expect(days(win)).toBe(30);
     expect(win.from).toBe(TODAY - 15);
     expect(win.to).toBe(TODAY + 14);
-  });
-
-  it("周视图按整周补齐，不出现半周", () => {
-    const win = spanWindow("week", TODAY, 8);
-    expect(days(win)).toBeGreaterThanOrEqual(56);
-    expect(days(win) % 7).toBe(0);
   });
 
   it("月视图 12 个月覆盖整年边界", () => {

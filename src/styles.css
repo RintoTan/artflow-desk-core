@@ -7918,3 +7918,28 @@ dl.stat-row {
 .trash-cleanup-unavailable > p {
   margin: 0;
 }
+
+/* 年视图的短单圆点：宽 6px，居中在起点与终点的中点，仍可聚焦与悬停。 */
+.timeline-dot {
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.timeline-dot.tone-terminal {
+  background: var(--text-muted);
+}
+
+/* 窄窗口：时间线控件换行，不允许把面板撑出横向滚动。 */
+@media (max-width: 900px) {
+  .timeline-controls {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+}

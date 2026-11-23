@@ -15,7 +15,8 @@ import {
  * `scheduleBar.barModel`，本文件不复制那套判断。
  */
 
-export type TimelineScale = "day" | "week" | "month" | "year";
+/** WB-01 只有日 / 月 / 年三个视图；日历页的周视图是另一套坐标系，不在此列。 */
+export type TimelineScale = "day" | "month" | "year";
 
 /**
  * 周起始偏移：0 = 周一（ISO 8601，暂定）。
@@ -40,9 +41,9 @@ export type ScaleConfig = {
 
 export const SCALE_CONFIG: Record<TimelineScale, ScaleConfig> = {
   day: { label: "日", pxPerDay: 44, minBarPx: 22, beforeDays: 7, afterDays: 13, shiftDays: 7 },
-  week: { label: "周", pxPerDay: 26, minBarPx: 14, beforeDays: 21, afterDays: 56, shiftDays: 28 },
   month: { label: "月", pxPerDay: 6, minBarPx: 7, beforeMonths: 2, afterMonths: 10 },
-  year: { label: "年", pxPerDay: 1.8, minBarPx: 3, beforeMonths: 12, afterMonths: 48 },
+  // 年视图：3 年跨度下单日只有 1.8px，短条改为 6px 圆点，保证仍可点。
+  year: { label: "年", pxPerDay: 1.8, minBarPx: 6, beforeMonths: 12, afterMonths: 48 },
 };
 
 /** 周一 = 0（偏移后）。1970-01-01 是周四 → 在周一制里是 3。 */
@@ -89,15 +90,6 @@ export function timelineWindow(scale: TimelineScale, anchor: DayIndex): Timeline
     return { from: anchor - (cfg.beforeDays ?? 0), to: anchor + (cfg.afterDays ?? 0) };
   }
 
-  if (scale === "week") {
-    const rawFrom = anchor - (cfg.beforeDays ?? 0);
-    const rawTo = anchor + (cfg.afterDays ?? 0);
-    return {
-      from: rawFrom - weekdayIndex(rawFrom),
-      to: rawTo + (6 - weekdayIndex(rawTo)),
-    };
-  }
-
   if (scale === "month") {
     const start = monthStart(anchor);
     const from = monthStart(addMonthsClamped(start, -(cfg.beforeMonths ?? 0)));
@@ -117,7 +109,7 @@ export function timelineWindow(scale: TimelineScale, anchor: DayIndex): Timeline
 /** 上一段/下一段：日 7 天、周 28 天、月 1 个自然月、年 12 个月。 */
 export function shiftAnchor(scale: TimelineScale, anchor: DayIndex, direction: -1 | 1): DayIndex {
   const cfg = SCALE_CONFIG[scale];
-  if (scale === "day" || scale === "week") {
+  if (scale === "day") {
     return anchor + (cfg.shiftDays ?? 0) * direction;
   }
   return addMonthsClamped(anchor, (scale === "year" ? 12 : 1) * direction);
@@ -187,20 +179,6 @@ export function buildTicks(win: TimelineWindow, scale: TimelineScale, today: Day
         label: String(c.day),
         sub: WEEKDAY_LABELS[weekdayIndex(day)] ?? "",
         isToday: day === today,
-      });
-    }
-  } else if (scale === "week") {
-    pushMonthGroups(tier1, win, scale);
-    for (let day = win.from; day <= win.to; day += 1) {
-      if (weekdayIndex(day) !== 0) continue;
-      const end = Math.min(day + 7, win.to + 1);
-      const c = civilFromDays(day);
-      tier2.push({
-        day,
-        left: dayToX(day, win, scale),
-        width: (end - day) * px,
-        label: `${String(c.month).padStart(2, "0")}-${String(c.day).padStart(2, "0")}`,
-        isToday: today >= day && today < end,
       });
     }
   } else if (scale === "month") {
@@ -413,24 +391,18 @@ export function visibleRange(
  */
 export const VIEW_SPANS: Record<TimelineScale, number[]> = {
   day: [14, 30, 60],
-  week: [4, 8, 12],
   month: [6, 12, 24],
   year: [3, 5, 10],
 };
 
 export const DEFAULT_SPAN: Record<TimelineScale, number> = {
   day: 30,
-  week: 8,
   month: 12,
   year: 3,
 };
 
 /** 今天落在视口左侧的比例（点「今天」时使用）。 */
 export const TODAY_ANCHOR_RATIO = 0.2;
-
-export function spanDays(scale: TimelineScale, span: number): number {
-  return scale === "week" ? span * 7 : span;
-}
 
 export function clampSpanIndex(scale: TimelineScale, index: number): number {
   const list = VIEW_SPANS[scale];
@@ -483,16 +455,9 @@ export function spanWindow(
 ): TimelineWindow {
   const ratio = options.todayRatio;
 
-  if (scale === "day" || scale === "week") {
-    const total = spanDays(scale, span);
-    const lead = ratio === undefined ? Math.floor(total / 2) : Math.round(total * ratio);
-    const rawFrom = anchor - lead;
-    const rawTo = rawFrom + total - 1;
-    if (scale === "day") return { from: rawFrom, to: rawTo };
-    return {
-      from: rawFrom - weekdayIndex(rawFrom),
-      to: rawTo + (6 - weekdayIndex(rawTo)),
-    };
+  if (scale === "day") {
+    const lead = ratio === undefined ? Math.floor(span / 2) : Math.round(span * ratio);
+    return { from: anchor - lead, to: anchor - lead + span - 1 };
   }
 
   if (scale === "month") {

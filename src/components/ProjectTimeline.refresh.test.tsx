@@ -211,9 +211,9 @@ describe("U7-C 主动刷新", () => {
     await screen.findByTestId("timeline-frame");
     expect(listCalls()).toBe(1);
 
-    await user.click(screen.getByRole("button", { name: "周" }));
+    await user.click(screen.getByRole("button", { name: "日" }));
     await user.click(screen.getByRole("checkbox", { name: "显示已结束" }));
-    expect(screen.getByRole("button", { name: "周" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "日" })).toHaveAttribute("aria-pressed", "true");
 
     hoisted.listOrders.mockImplementation(async () =>
       ipc([
@@ -224,7 +224,7 @@ describe("U7-C 主动刷新", () => {
     await user.click(screen.getByRole("button", { name: "刷新" }));
     await waitFor(() => expect(listCalls()).toBe(2));
 
-    expect(screen.getByRole("button", { name: "周" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "日" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("checkbox", { name: "显示已结束" })).toBeChecked();
     expect(rowTitles()).toEqual(["刷新后的订单", "刷新后才出现的一单"]);
     expect(screen.getByText(/时间线 2 单/)).toBeInTheDocument();

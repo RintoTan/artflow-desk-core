@@ -13,7 +13,6 @@ import {
   splitOrders,
   timelineWindow,
   visibleRange,
-  weekdayIndex,
   type TimelineScale,
 } from "./timeline";
 
@@ -92,15 +91,6 @@ describe("timelineWindow", () => {
     expect(win.to - win.from + 1).toBe(21);
   });
 
-  it("周尺度：起点回到周一、终点推到周日", () => {
-    const win = timelineWindow("week", TODAY);
-    expect(weekdayIndex(win.from)).toBe(0);
-    expect(weekdayIndex(win.to)).toBe(6);
-    expect((win.to - win.from + 1) % 7).toBe(0);
-    expect(key(win.from)).toBe("2026-10-26");
-    expect(key(win.to)).toBe("2027-01-17");
-  });
-
   it("月尺度：自然月首尾对齐，含 13 个月", () => {
     const win = timelineWindow("month", TODAY);
     expect(key(win.from)).toBe("2026-09-01");
@@ -119,9 +109,9 @@ describe("timelineWindow", () => {
 });
 
 describe("shiftAnchor", () => {
-  it("日 7 天、周 28 天", () => {
+  it("日尺度按 7 天移动", () => {
     expect(shiftAnchor("day", TODAY, 1) - TODAY).toBe(7);
-    expect(shiftAnchor("week", TODAY, -1) - TODAY).toBe(-28);
+    expect(shiftAnchor("day", TODAY, -1) - TODAY).toBe(-7);
   });
 
   it("月位移夹到目标月末，不溢出", () => {
@@ -166,7 +156,7 @@ describe("日期解析的边界", () => {
 
 describe("刻度与坐标一致", () => {
   it("第二层刻度左边界从 0 开始，且宽度总和等于画布宽", () => {
-    for (const scale of ["day", "week", "month", "year"] as TimelineScale[]) {
+    for (const scale of ["day", "month", "year"] as TimelineScale[]) {
       const win = timelineWindow(scale, TODAY);
       const ticks = buildTicks(win, scale, TODAY);
       expect(ticks.tier2[0]!.left).toBe(0);

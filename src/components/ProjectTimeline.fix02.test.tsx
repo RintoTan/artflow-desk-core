@@ -254,13 +254,14 @@ describe("UX-TL-01 日期提示", () => {
   });
 
   it("部分超出窗口：提示仍是完整原始起止日期", async () => {
-    await renderWith([order({ plannedStartDate: "2026-08-01", plannedDeliveryDate: "2026-09-10" })]);
+    // 12 个月窗口从 2026-05-01 起：开始早于窗口、交付在窗口内，验证左侧裁切。
+    await renderWith([order({ plannedStartDate: "2026-04-01", plannedDeliveryDate: "2026-06-10" })]);
     const bar = document.querySelector<HTMLElement>(".timeline-bar")!;
     expect(bar).toHaveAttribute("data-clip", "left");
     fireEvent.pointerOver(bar);
     const tip = await screen.findByRole("tooltip");
-    expect(tip).toHaveTextContent("开始日期：2026-08-01");
-    expect(tip).toHaveTextContent("交付日期：2026-09-10");
+    expect(tip).toHaveTextContent("开始日期：2026-04-01");
+    expect(tip).toHaveTextContent("交付日期：2026-06-10");
   });
 
   it("已结束订单同样给出日期提示", async () => {
@@ -328,48 +329,87 @@ describe("UX-TL-01 日期提示", () => {
 
 // ---------------------------------------------------------------- ISSUE-02
 
-describe("ISSUE-02 周视图范围", () => {
-  it("周窗口 2026-10-26 ~ 2027-01-17，84 天、12 个周一刻度，末周起 01-11", async () => {
-    const user = userEvent.setup();
+describe("WB-01 视图与缩放", () => {
+  it("只有日 / 月 / 年三个视图，周视图已按裁定移除", async () => {
     await renderWith([order()]);
-    await user.click(screen.getByRole("button", { name: "周" }));
-
-    expect(rangeText()).toContain("窗口 2026-10-26 ~ 2027-01-17");
-    expect(rangeText()).toContain("末周起 2027-01-11");
-
-    const ticks = [...document.querySelectorAll(".timeline-tier-2 .timeline-tick")];
-    expect(ticks).toHaveLength(12);
-    expect(ticks[0]!.textContent).toBe("10-26");
-    expect(ticks[ticks.length - 1]!.textContent).toBe("01-11");
-
-    // 画布覆盖到窗口最后一天 01-17：84 天 × 26px
-    expect(screen.getByTestId("timeline-canvas").style.width).toBe("2184px");
+    const group = screen.getByRole("group", { name: "时间尺度" });
+    expect(
+      Array.from(group.querySelectorAll("button")).map((b) => b.textContent),
+    ).toEqual(["日", "月", "年"]);
+    expect(screen.queryByRole("button", { name: "周" })).toBeNull();
   });
 
-  it("周一刻度逐条落在整周边界上（每条宽度 7 天，末周 6 天）", async () => {
+  it("缩放只改当前视图的跨度，到边界禁用", async () => {
     const user = userEvent.setup();
     await renderWith([order()]);
-    await user.click(screen.getByRole("button", { name: "周" }));
-    const ticks = [...document.querySelectorAll<HTMLElement>(".timeline-tier-2 .timeline-tick")];
-    const widths = ticks.map((t) => t.style.width);
-    expect(widths.every((w) => w === "182px")).toBe(true); // 7 × 26
-    // 末周从 01-11 起算到 01-18（半开区间），右端正好落在画布终点 2184px：
-    // 所以视觉上最后一周覆盖 01-11 ~ 01-17，不会多画出一天。
-    const last = ticks[ticks.length - 1]!;
-    expect(parseFloat(last.style.left) + parseFloat(last.style.width)).toBe(2184);
-  });
-
-  it("日 / 月 / 年窗口不受影响", async () => {
-    const user = userEvent.setup();
-    await renderWith([order()]);
-    expect(rangeText()).toContain("窗口 2026-09-01 ~ 2027-09-30");
 
     await user.click(screen.getByRole("button", { name: "日" }));
-    expect(rangeText()).toContain("窗口 2026-11-11 ~ 2026-12-01");
+    expect(rangeText()).toContain("窗口 2026-11-03 ~ 2026-12-02"); // 30 天
 
+    // 「放大」= 看更细 = 跨度变小（14 天）
+    await user.click(screen.getByRole("button", { name: "放大跨度" }));
+    expect(rangeText()).toContain("窗口 2026-11-11 ~ 2026-11-24");
+    expect(screen.getByRole("button", { name: "放大跨度" })).toBeDisabled();
+
+    // 「缩小」= 看更多日期 = 跨度变大（60 天）
+    await user.click(screen.getByRole("button", { name: "缩小跨度" }));
+    await user.click(screen.getByRole("button", { name: "缩小跨度" }));
+    expect(rangeText()).toContain("窗口 2026-10-19 ~ 2026-12-17");
+    expect(screen.getByRole("button", { name: "缩小跨度" })).toBeDisabled();
+  });
+
+  it("切视图后仍停在原视图的跨度上，不串档", async () => {
+    const user = userEvent.setup();
+    await renderWith([order()]);
+
+    await user.click(screen.getByRole("button", { name: "日" }));
+    await user.click(screen.getByRole("button", { name: "缩小跨度" }));
+    expect(rangeText()).toContain("窗口 2026-10-19 ~ 2026-12-17");
+
+    await user.click(screen.getByRole("button", { name: "月" }));
+    expect(rangeText()).toContain("窗口 2026-05-01 ~ 2027-04-30");
+
+    await user.click(screen.getByRole("button", { name: "日" }));
+    expect(rangeText()).toContain("窗口 2026-10-19 ~ 2026-12-17");
+  });
+});
+
+describe("WB-01 年视图与归档", () => {
+  it("年视图里短到不足 6px 的订单改画圆点，仍可聚焦并带排期说明", async () => {
+    const user = userEvent.setup();
+    await renderWith([
+      order({ id: "id-short", code: "AF-2026-0101", plannedStartDate: "2026-06-01", plannedDeliveryDate: "2026-06-03" }),
+    ]);
     await user.click(screen.getByRole("button", { name: "年" }));
-    expect(rangeText()).toContain("窗口 2025-01-01 ~ 2030-12-31");
-    // 非周尺度不带末周刻度文案
-    expect(rangeText()).not.toContain("末周起");
+
+    const dot = document.querySelector<HTMLElement>(".timeline-dot");
+    expect(dot).not.toBeNull();
+    expect(document.querySelector(".timeline-bar")).toBeNull();
+    expect(dot).toHaveAttribute("tabindex", "0");
+    expect(dot!.getAttribute("aria-label")).toContain("2026-06-01");
+  });
+
+  it("年视图里的长排期仍然画成条，不误降级为圆点", async () => {
+    const user = userEvent.setup();
+    await renderWith([
+      order({ id: "id-long", code: "AF-2026-0102", plannedStartDate: "2025-03-01", plannedDeliveryDate: "2027-09-30" }),
+    ]);
+    await user.click(screen.getByRole("button", { name: "年" }));
+
+    expect(document.querySelector(".timeline-bar")).not.toBeNull();
+    expect(document.querySelector(".timeline-dot")).toBeNull();
+  });
+
+  it("归档订单照常出现在时间线上（归档只影响订单信息页的列表归属）", async () => {
+    await renderWith([
+      order({
+        id: "id-arch",
+        code: "AF-2026-0103",
+        archivedAt: "2026-11-20T00:00:00+08:00",
+        plannedStartDate: "2026-11-10",
+        plannedDeliveryDate: "2026-11-20",
+      }),
+    ]);
+    expect(screen.getAllByText("AF-2026-0103").length).toBeGreaterThan(0);
   });
 });
