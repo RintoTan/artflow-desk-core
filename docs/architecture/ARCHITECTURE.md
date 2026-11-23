@@ -60,7 +60,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | `bridge/commands.ts` | 命令类型与 `api` 封装，**invoke 的唯一出口** |
 | `styles.css` | 原生 CSS + 设计令牌（Arctic Blue） |
 
-## 数据模型（schema v8）
+## 数据模型（schema v9）
 
 > 删除、回收站、数据重置与存储位置迁移的详细设计与实现约束见 [DATA-LIFECYCLE.md](DATA-LIFECYCLE.md)（已实施并验收）。
 
@@ -103,6 +103,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | v6 | `order_events` 增加 `rescheduled` 与改期六字段（原/新开始与交付日期、原因、来源） |
 | v7 | `order_events` 增加 `stage_skipped`、`skipped_stages`、`skip_reason` |
 | v8 | `orders` / `clients` 增加 `deleted_at`、`deleted_batch` 与部分索引；新增 `orders_visible` / `orders_trashed` / `clients_visible` 视图 |
+| v9 | `orders` 增加 `archived_at` 与部分索引；**重建两个订单视图**（SQLite 的 `SELECT *` 在建视图时冻结列清单）。归档只影响「订单信息」页普通列表的归属，其余查询口径不变 |
 
 ## 关键机制
 
@@ -129,6 +130,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 7. **打包不要带上开发 CLI**（`minidesk-probe` / `attachments-probe` / `qa_seed`）。它们是测试依赖，只能从打包配置里排除，不能删源码。
 8. **子进程退出是异步的**：Windows 冒烟测试判定残留要给收敛窗口（15 秒），固定 800 ms 会误报。
 9. **单个数据目录只允许一个实例**（`.write.lock`）。第二个实例提示后退出，不聚焦已有窗口——已知取舍。
+10. **同一类数据 ≠ 同一个交互模块**。工作台全览时间线（`DashboardPage` / `ProjectTimeline` / `lib/timeline`）与日历排单（`CalendarPage` / `CalendarGrid`）都画订单日期，但前者只读全览、后者可编辑排期，**二者独立实现，不得合并、不得互相复用状态机与布局计算**。为其中一个改需求时，不允许"顺手"改动另一个的组件、`.cal-*` 规则、断点、sticky / overflow / z-index 或改期链路；`styles.css` 是共享文件，各自只改自己的命名空间（`.timeline-*` / `.cal-*`）。若发现某段代码被两者共用，先停下评估影响面，不得自行重构。
 
 ## 已采纳的技术结论
 
