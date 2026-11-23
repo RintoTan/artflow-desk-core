@@ -57,9 +57,9 @@ describe("侧边栏折叠", () => {
     await renderShell();
     await userEvent.click(screen.getByRole("button", { name: "折叠侧边栏" }));
 
-    const orders = screen.getByRole("link", { name: "订单" });
-    expect(orders).toHaveAttribute("title", "订单");
-    expect(orders).toHaveAccessibleName("订单");
+    const orders = screen.getByRole("link", { name: "订单信息" });
+    expect(orders).toHaveAttribute("title", "订单信息");
+    expect(orders).toHaveAccessibleName("订单信息");
     // 八个导航项；回收站不在侧边栏，入口在设置页的「数据维护」里
     expect(screen.getAllByRole("link")).toHaveLength(8);
   });
@@ -69,12 +69,12 @@ describe("侧边栏折叠", () => {
     const labels = screen.getAllByRole("link").map((link) => link.textContent?.trim());
     expect(labels).toEqual([
       "工作台",
-      "日历",
-      "订单",
-      "客户",
+      "日历排单",
+      "订单信息",
+      "客户管理",
       "流程模板",
-      "历史统计",
-      "设置",
+      "数据统计",
+      "通用设置",
       "关于软件",
     ]);
     expect(labels).not.toContain("回收站");

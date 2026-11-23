@@ -202,7 +202,7 @@ export default function StatsPage() {
       <section className="panel stats-overview">
         <header className="stats-toolbar">
           <div className="stats-heading">
-            <h1 className="page-title">历史统计</h1>
+            <h1 className="page-title">数据统计</h1>
             <p className="muted">
               {report.fromMonth} ~ {report.toMonth} · {report.timezone} · 按自然月 ·
               完成与取消按事件时间计入

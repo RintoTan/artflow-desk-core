@@ -231,7 +231,7 @@ export default function SettingsPage() {
       <header className="settings-head">
         <NavIcon name="settings" className="settings-head-icon" />
         <div>
-          <h1>设置</h1>
+          <h1>通用设置</h1>
           <p className="muted">配置应用的外观、工作区域与保存方式。</p>
         </div>
       </header>

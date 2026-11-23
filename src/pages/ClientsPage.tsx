@@ -383,7 +383,7 @@ export default function ClientsPage() {
       <aside className="orders-list panel">
         <header className="panel-head compact">
           <div>
-            <h2>客户</h2>
+            <h2>客户管理</h2>
             <p className="muted">{clients.length} 位 · 同名不合并</p>
           </div>
           <button

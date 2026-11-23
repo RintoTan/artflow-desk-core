@@ -755,7 +755,7 @@ export default function CalendarPage() {
     <div className="cal-page">
       <header className="cal-head">
         <div>
-          <h2>日历</h2>
+          <h2>日历排单</h2>
           <p className="cal-sub">
             只读计划日期 · 拖放或「改期」都会先确认再写入 · 今天是 {formatDayKey(today)}（
             {timezone}）
@@ -803,7 +803,7 @@ export default function CalendarPage() {
           onDragStart={(order, event) => startDrag({ order, mode: orderSpan(order) === null ? "unscheduled" : "move", event })}
         />
 
-        <section className="cal-main" aria-label="日历">
+        <section className="cal-main" aria-label="日历排单">
           <div className="cal-toolbar">
             <div className="cal-nav">
               <button type="button" onClick={() => shift(-1)} aria-label="上一段">

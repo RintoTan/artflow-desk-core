@@ -163,7 +163,7 @@ describe("设置页主题编辑", () => {
   it("全页只有一处保存入口，模块按页头 + 双栏 + 保存栏组织", async () => {
     await renderSettings();
     expect(screen.getAllByRole("button", { name: "保存设置" })).toHaveLength(1);
-    expect(screen.getByRole("heading", { level: 1, name: "设置" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "通用设置" })).toBeInTheDocument();
     expect(document.querySelector(".settings-grid")).not.toBeNull();
     expect(document.querySelectorAll(".settings-savebar")).toHaveLength(1);
   });

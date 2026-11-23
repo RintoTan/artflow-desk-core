@@ -50,12 +50,12 @@ function qaScenarioLabel(qa: { scenario: string | null; orders: number }): strin
 
 const NAV: NavItem[] = [
   { to: "/", label: "工作台", icon: "dashboard", end: true },
-  { to: "/calendar", label: "日历", icon: "calendar" },
-  { to: "/orders", label: "订单", icon: "orders" },
-  { to: "/clients", label: "客户", icon: "clients" },
+  { to: "/calendar", label: "日历排单", icon: "calendar" },
+  { to: "/orders", label: "订单信息", icon: "orders" },
+  { to: "/clients", label: "客户管理", icon: "clients" },
   { to: "/templates", label: "流程模板", icon: "templates" },
-  { to: "/stats", label: "历史统计", icon: "stats" },
-  { to: "/settings", label: "设置", icon: "settings" },
+  { to: "/stats", label: "数据统计", icon: "stats" },
+  { to: "/settings", label: "通用设置", icon: "settings" },
   { to: "/about", label: "关于软件", icon: "status" },
 ];
 

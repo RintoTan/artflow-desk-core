@@ -946,7 +946,7 @@ export default function OrdersPage() {
       <header className="panel orders-head">
         <div className="orders-head-top">
           <div className="orders-head-title">
-            <h2 className="orders-head-h">订单</h2>
+            <h2 className="orders-head-h">订单信息</h2>
             <p className="muted">
               {visible.length}/{orders.length} 张 · 活动在前
             </p>

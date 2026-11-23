@@ -68,10 +68,10 @@ async function setup(initial = "/stats") {
       <StatsPage />
     </MemoryRouter>,
   );
-  await screen.findByText("历史统计");
+  await screen.findByText("数据统计");
 }
 
-describe("历史统计", () => {
+describe("数据统计", () => {
   beforeEach(() => {
     reportFn.mockClear();
     exportSummary.mockClear();

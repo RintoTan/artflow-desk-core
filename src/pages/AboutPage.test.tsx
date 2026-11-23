@@ -87,12 +87,12 @@ describe("关于软件页面", () => {
     const modules = await screen.findByRole("region", { name: "功能模块" });
     for (const title of [
       "工作台",
-      "订单管理",
+      "订单信息",
       "客户管理",
       "流程模板",
-      "日历排期",
-      "历史统计",
-      "系统设置",
+      "日历排单",
+      "数据统计",
+      "通用设置",
     ]) {
       expect(within(modules).getByRole("heading", { name: title })).toBeTruthy();
     }
@@ -205,7 +205,7 @@ describe("快捷键与内容规范", () => {
     const table = shortcuts.textContent ?? "";
     // 实现：⌘N 只在订单/客户/模板；设置页只有 ⌘S；⌘F 与方向键/Enter 只在订单列表
     expect(table).toContain("订单、客户、流程模板");
-    expect(table).toContain("订单详情、客户、流程模板、设置");
+    expect(table).toContain("订单详情、客户、流程模板、通用设置");
     expect(table).toContain("聚焦搜索框");
     expect(table).toContain("订单列表");
     expect(table).toContain("⌘ N");
