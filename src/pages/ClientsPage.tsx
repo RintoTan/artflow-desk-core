@@ -778,6 +778,34 @@ export default function ClientsPage() {
                 </details>
               )}
             </section>
+
+            {/* 数据归档：与订单详情同一套折叠卡片，默认收起。 */}
+            <details className="panel archive-zone">
+              <summary className="archive-zone-summary">
+                <span className="archive-zone-heading">
+                  <span className="archive-zone-title">数据归档</span>
+                  <span className="muted archive-zone-sub">收起不常用的收纳与删除</span>
+                </span>
+              </summary>
+              <div className="archive-zone-body">
+                <div className="archive-zone-row">
+                  <div>
+                    <p className="archive-zone-label">移入回收站</p>
+                    <p className="muted archive-zone-hint">
+                      客户与其名下的全部订单会一起移入回收站，制作历史与附件都会保留。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-quiet-danger btn-sm"
+                    disabled={busy || deleteBusy}
+                    onClick={() => void openDeleteClient()}
+                  >
+                    移入回收站…
+                  </button>
+                </div>
+              </div>
+            </details>
             </div>
             </div>
 
@@ -840,31 +868,7 @@ export default function ClientsPage() {
               </div>
             </section>
 
-            {/* 数据归档：与订单详情同一套折叠卡片，默认收起。 */}
-            <details className="panel archive-zone">
-              <summary className="archive-zone-summary">
-                <span className="archive-zone-title">数据归档</span>
-                <span className="muted">收起不常用的收纳与删除</span>
-              </summary>
-              <div className="archive-zone-body">
-                <div className="archive-zone-row">
-                  <div>
-                    <p className="archive-zone-label">移入回收站</p>
-                    <p className="muted archive-zone-hint">
-                      客户与其名下的全部订单会一起移入回收站，制作历史与附件都会保留。
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-quiet-danger btn-sm"
-                    disabled={busy || deleteBusy}
-                    onClick={() => void openDeleteClient()}
-                  >
-                    移入回收站…
-                  </button>
-                </div>
-              </div>
-            </details>
+
           </>
         )}
 

@@ -1521,15 +1521,15 @@ export default function OrdersPage() {
 
             <EventTimeline events={events} formatTime={formatTime} />
             <ScheduleHistory events={events} formatTime={formatTime} />
-            </div>
-            </div>
 
             {/* 数据归档：低频操作收进折叠卡片，默认收起，不抢主要操作的注意力。
                 展开后才出现「归档」与「移入回收站」，后者保持红色描边。 */}
             <details className="panel archive-zone">
               <summary className="archive-zone-summary">
-                <span className="archive-zone-title">数据归档</span>
-                <span className="muted">收起不常用的收纳与删除</span>
+                <span className="archive-zone-heading">
+                  <span className="archive-zone-title">数据归档</span>
+                  <span className="muted archive-zone-sub">收起不常用的收纳与删除</span>
+                </span>
               </summary>
               <div className="archive-zone-body">
                 <div className="archive-zone-row">
@@ -1577,6 +1577,10 @@ export default function OrdersPage() {
                 </div>
               </div>
             </details>
+            </div>
+            </div>
+
+
           </>
         )}
 

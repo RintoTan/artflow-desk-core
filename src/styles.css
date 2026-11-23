@@ -7496,7 +7496,7 @@ dl.stat-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 10px;
   margin: 0 0 14px;
   padding: 12px 14px;
   border: 1px solid var(--tone-warn-border);
@@ -7777,7 +7777,7 @@ dl.stat-row {
 
 .archive-zone-summary {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   padding: 12px 16px;
   cursor: pointer;
@@ -7789,9 +7789,23 @@ dl.stat-row {
   display: none;
 }
 
+.archive-zone-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.archive-zone-sub {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* 右侧展开/收起提示：与卡片同高居中，不再是一条横栏 */
 .archive-zone-summary::after {
   content: "展开";
   margin-left: auto;
+  align-self: center;
   font-size: 12px;
   color: var(--text-muted);
 }
@@ -7814,8 +7828,8 @@ dl.stat-row {
 .archive-zone-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 0 16px 16px;
+  gap: 8px;
+  padding: 0 14px 12px;
   border-top: 1px solid var(--border);
   padding-top: 14px;
 }
@@ -7949,25 +7963,40 @@ dl.stat-row {
 
 /* CUST-02：客户详情内的订单分组。只新增 .client-* 命名空间，不动 .cal-* 与 .timeline-*。 */
 .client-order-group + .client-order-group {
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
 .client-order-group-head {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  margin: 6px 0;
+  gap: 6px;
+  margin: 2px 0;
   font-size: 13px;
   font-weight: 600;
 }
 
 .client-order-empty {
-  margin: 0 0 6px;
+  margin: 0;
   font-size: 12px;
 }
 
+/* 客户详情的关联订单卡片：这两块是信息密度区，减少四周留白，
+   内容与判定标准（分组、归档标记、跳转）不变。 */
+.client-orders.panel {
+  padding: 14px 16px 14px;
+}
+
+.client-orders .panel-head {
+  margin-bottom: 6px;
+}
+
+/* 没有关联订单时只占一行，不再留出分组级别的空白 */
+.client-orders > p.muted {
+  margin: 0 0 4px;
+}
+
 .client-orders .actions {
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
 /* 单击选中：中性浅灰底，和蓝色描边、状态色都拉开距离，不抢信息。 */
