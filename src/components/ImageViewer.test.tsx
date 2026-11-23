@@ -31,12 +31,13 @@ function item(id: string): AttachmentView {
 
 const noop = () => {};
 
-function renderViewer(index = 0) {
+function renderViewer(index = 0, count = 2) {
   const onChangeIndex = vi.fn();
   const onClose = vi.fn();
+  const items = Array.from({ length: count }, (_, i) => item(`a${i}`));
   render(
     <ImageViewer
-      items={[item("a"), item("b")]}
+      items={items}
       index={index}
       busy={false}
       onClose={onClose}
@@ -78,5 +79,59 @@ describe("附件查看器", () => {
     const { onClose } = renderViewer();
     await user.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("拖拽平移改的是 offset，松手后停住", () => {
+    renderViewer();
+    const stage = document.querySelector(".viewer-stage") as HTMLElement;
+    const img = document.querySelector(".viewer-image") as HTMLImageElement;
+
+    fireEvent.pointerDown(stage, { clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(stage, { clientX: 140, clientY: 130 });
+    expect(img.style.transform).toContain("translate(40px, 30px)");
+
+    fireEvent.pointerMove(stage, { clientX: 180, clientY: 160 });
+    expect(img.style.transform).toContain("translate(80px, 60px)");
+
+    fireEvent.pointerUp(stage);
+    fireEvent.pointerMove(stage, { clientX: 400, clientY: 400 });
+    expect(img.style.transform).toContain("translate(80px, 60px)");
+  });
+
+  it("切换图片即「适配画面」：缩放与位移归零", () => {
+    const { rerender } = render(
+      <ImageViewer items={[item("a"), item("b")]} index={0} busy={false}
+        onClose={noop} onChangeIndex={noop} onSaveMeta={noop}
+        onRemove={noop} onRepair={noop} />,
+    );
+    const stage = document.querySelector(".viewer-stage") as HTMLElement;
+    fireEvent.pointerDown(stage, { clientX: 50, clientY: 50 });
+    fireEvent.pointerMove(stage, { clientX: 90, clientY: 90 });
+    fireEvent.pointerUp(stage);
+    fireEvent.wheel(stage, { deltaY: -100 });
+    expect(document.querySelector(".viewer-image")!.getAttribute("style")).toContain("translate(40px, 40px)");
+
+    rerender(<ImageViewer items={[item("a"), item("b")]} index={1} busy={false}
+      onClose={noop} onChangeIndex={noop} onSaveMeta={noop}
+      onRemove={noop} onRepair={noop} />);
+    // CSSOM 会把 translate(0px, 0px) 归一化成 translate(0px)，只断言归零与 scale(1)
+    expect(document.querySelector(".viewer-image")!.getAttribute("style")).toMatch(/translate\(0px\)|translate\(0px, 0px\)/);
+    expect(document.querySelector(".viewer-image")!.getAttribute("style")).toContain("scale(1)");
+  });
+
+  it("中间位置可以双向切换，两端各自禁用", async () => {
+    const user = userEvent.setup();
+    const { onChangeIndex } = renderViewer(1, 3);
+    await user.click(screen.getByRole("button", { name: /上一/ }));
+    expect(onChangeIndex).toHaveBeenLastCalledWith(0);
+    await user.click(screen.getByRole("button", { name: /下一/ }));
+    expect(onChangeIndex).toHaveBeenLastCalledWith(2);
+  });
+});
+
+describe("附件查看器 · 两端", () => {
+  it("最后一张时下一张禁用", () => {
+    renderViewer(2, 3);
+    expect(screen.getByRole("button", { name: /下一/ })).toBeDisabled();
   });
 });

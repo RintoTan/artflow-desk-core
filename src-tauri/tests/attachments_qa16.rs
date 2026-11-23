@@ -112,6 +112,38 @@ fn sixteen_mixed_attachments_survive_import_delete_and_restore() {
         assert!(decoded.width() > 0 && decoded.height() > 0);
     }
 
+    // 透明底：原图四角 alpha 必须为 0，中心不透明（验证 alpha 通道没被压平）
+    let originals_dir = ctx.env.layout().attachments_dir(&generation);
+    for outcome in &ok {
+        let view = outcome.attachment.as_ref().unwrap();
+        if !view.original_path.contains("alpha") {
+            continue;
+        }
+        let img = image::open(originals_dir.join(&view.original_path))
+            .unwrap()
+            .to_rgba8();
+        let (w, h) = img.dimensions();
+        for (x, y) in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)] {
+            assert_eq!(img.get_pixel(x, y)[3], 0, "透明角被写成不透明: {}", view.original_path);
+        }
+        assert_eq!(img.get_pixel(w / 2, h / 2)[3], 255, "中心被误透明");
+    }
+
+    // 缩略图确实来自同一张原图：等比缩放后平均色接近（±8/255），宽高比近似一致
+    for outcome in &ok {
+        let view = outcome.attachment.as_ref().unwrap();
+        let original = image::open(originals_dir.join(&view.original_path)).unwrap();
+        let thumb = image::open(originals_dir.join(view.thumb_path.as_ref().unwrap())).unwrap();
+        let ratio_o = original.width() as f64 / original.height() as f64;
+        let ratio_t = thumb.width() as f64 / thumb.height() as f64;
+        assert!((ratio_o - ratio_t).abs() / ratio_o < 0.02, "宽高比不一致 {}", view.original_path);
+        let a = mean_rgb(&original.thumbnail(thumb.width(), thumb.height()));
+        let b = mean_rgb(&thumb);
+        for i in 0..3 {
+            assert!((a[i] - b[i]).abs() < 8.0, "缩略图与原图色差过大 {} ch{}: {a:?} vs {b:?}", view.original_path, i);
+        }
+    }
+
     let listed = attachments::list(&conn, ctx.env.layout(), &generation, &order_id).unwrap();
     assert_eq!(listed.len(), 16, "列表应返回 16 条");
 
@@ -151,4 +183,17 @@ fn sixteen_mixed_attachments_survive_import_delete_and_restore() {
         assert!(after_env.layout().attachments_dir(&gen2).join(t).exists());
     }
     let _ = restored.summary.attachments;
+}
+
+fn mean_rgb(img: &image::DynamicImage) -> [f64; 3] {
+    let rgba = img.to_rgba8();
+    let mut sum = [0f64; 3];
+    let mut n = 0f64;
+    for px in rgba.pixels() {
+        sum[0] += px[0] as f64;
+        sum[1] += px[1] as f64;
+        sum[2] += px[2] as f64;
+        n += 1.0;
+    }
+    [sum[0] / n, sum[1] / n, sum[2] / n]
 }
