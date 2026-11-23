@@ -6638,10 +6638,17 @@ dl.stat-row {
 
 /* 「改期」绝对定位压在条的右端；条自己有 z-index: 1 的层叠上下文，
    所以抓手再高的 z-index 也压不过按钮——只能让两者在几何上不重叠。
-   按钮不可牺牲（它必须独立可点），因此改成条永远让出按钮的位置：
-   这样 hover 时既不会跳动，右端抓手也不会被抢走。
-   32px = 「改期」两字（约 20px）+ 左右内边距 8px + 边框 2px + 右侧 1px 留白。 */
-.cal-seg.has-action {
+
+   ⚠️ 约束：条的长度代表日期区间，**不能被压缩**。所以不能让 .cal-seg 让位
+   （那会把彩色条截短，视觉上条不再覆盖最后一天）。只压内部内容：
+   按钮向右内缩 16px 让出 14px 的端点抓手，文字再让出按钮整宽。
+   46px = 按钮 30px + 内缩 16px。 */
+.cal-seg.has-action .cal-chip:not(.is-single) {
+  padding-right: 46px;
+}
+
+/* 单日条没有端点抓手，按钮可以贴右端，只让出按钮自身的宽度 */
+.cal-seg.has-action .cal-chip.is-single {
   padding-right: 32px;
 }
 
@@ -6651,6 +6658,11 @@ dl.stat-row {
   top: 50%;
   transform: translateY(-50%);
   z-index: 2;
+}
+
+/* 跨日条有抓手：按钮内缩到抓手左侧（单日条保持贴右端） */
+.cal-seg.has-action .cal-chip:not(.is-single) ~ .cal-chip-action {
+  right: 16px;
 }
 
 /* 这些尺寸由 CalendarGrid 按可用空间内联覆盖；这里给出默认值，保证单独引用也能解析 */

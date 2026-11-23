@@ -300,10 +300,30 @@ describe("日历端点抓手不被「改期」按钮覆盖", () => {
    * 的层叠上下文——抓手即使 z-index 更高也赢不了它，交付日期的拖拽就是这样丢的。
    * 结论不是抬高层级（那会把按钮压住），而是让条在几何上让开按钮的位置。
    */
-  it("有条让出按钮位置的规则，且宽度足够放「改期」两字", () => {
-    const reserve = rule(".cal-seg.has-action");
-    const px = Number((/padding-right:\s*(\d+)px/.exec(reserve) ?? [])[1]);
-    expect(px).toBeGreaterThanOrEqual(28);
+  it("条的几何宽度不变：让位靠压内容，不动 .cal-seg 的盒子", () => {
+    // 条的长度代表日期区间。给 .cal-seg 加 padding 会把彩色条截短，
+    // 视觉上不再覆盖最后一天——这是实现错误，不是可接受的代价。
+    const segBlocks = [...css.matchAll(/(?:^|\n)\s*\.cal-seg(?:\.has-action)?\s*\{([^}]*)\}/g)].map(
+      (m) => m[1] ?? "",
+    );
+    expect(segBlocks.length).toBeGreaterThan(0);
+    expect(segBlocks.some((b) => /padding(-right)?\s*:/.test(b))).toBe(false);
+  });
+
+  it("跨日条压内部内容给按钮让位，文字不钻到按钮底下", () => {
+    const pad = Number(
+      (/padding-right:\s*(\d+)px/.exec(rule(".cal-seg.has-action .cal-chip:not(.is-single)")) ?? [])[1],
+    );
+    const offset = Number(
+      (
+        /right:\s*(\d+)px/.exec(rule(".cal-seg.has-action .cal-chip:not(.is-single) ~ .cal-chip-action")) ??
+        []
+      )[1],
+    );
+    expect(pad).toBeGreaterThanOrEqual(40);
+    expect(offset).toBeGreaterThanOrEqual(14);
+    // 文字右边界必须落在按钮左边界之外，否则会被按钮盖住
+    expect(pad).toBeGreaterThanOrEqual(offset + 28);
   });
 
   it("抓手是真实命中区，不是装饰层", () => {
