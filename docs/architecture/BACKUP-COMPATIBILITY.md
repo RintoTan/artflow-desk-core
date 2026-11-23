@@ -14,7 +14,7 @@
 
 1. 备份 manifest 的 `format` 为 `artflow-minidesk-backup`；
 2. 包内 `database.sqlite` 含 `orders`、`clients`、`order_events`、`app_settings` 四张基础表；
-3. manifest 的 `schema_version` 与这三张表的存在性自洽。
+3. manifest 的 `schema_version` 与这四张表的存在性自洽。
 
 旧备份允许缺少 `working_timezone`、`number_high_water`、`total_files`、`total_bytes`，也允许用 snake_case 写键名——这些都按 §3 的规则补。
 
