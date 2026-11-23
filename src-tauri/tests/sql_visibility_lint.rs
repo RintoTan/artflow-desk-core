@@ -89,6 +89,22 @@ const EXEMPTIONS: &[Exemption] = &[
         kind: Kind::MigrationSchema,
         why: "回收站视图按定义只能读基表",
     },
+    // v9 加 archived_at 后必须重建视图（SQLite 的 SELECT * 列冻结），
+    // 重建语句与 v8 同形，但属于新文件，单独登记。
+    Exemption {
+        file: "store/migrations/v9.rs",
+        needle: "CREATE VIEW orders_visible  AS SELECT * FROM orders  WHERE deleted_at IS NULL;",
+        lines: 1,
+        kind: Kind::MigrationSchema,
+        why: "v9 重建可见性视图，让新列在视图里可见",
+    },
+    Exemption {
+        file: "store/migrations/v9.rs",
+        needle: "CREATE VIEW orders_trashed  AS SELECT * FROM orders  WHERE deleted_at IS NOT NULL;",
+        lines: 1,
+        kind: Kind::MigrationSchema,
+        why: "v9 重建回收站视图，同上",
+    },
     Exemption {
         file: "store/migrations/v8.rs",
         needle: "CREATE VIEW clients_visible AS SELECT * FROM clients WHERE deleted_at IS NULL;",
@@ -597,7 +613,11 @@ fn historical_migrations_are_untouched_snapshots() {
             .unwrap()
             .to_string_lossy()
             .replace('\\', "/");
-        if !rel.starts_with("store/migrations/") || rel.ends_with("mod.rs") || rel.ends_with("v8.rs")
+        // v8 引入可见性视图、v9 因加列重建它们：两者都必须读基表。
+        if !rel.starts_with("store/migrations/")
+            || rel.ends_with("mod.rs")
+            || rel.ends_with("v8.rs")
+            || rel.ends_with("v9.rs")
         {
             continue;
         }

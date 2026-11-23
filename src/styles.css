@@ -1207,6 +1207,17 @@ code.mono {
   color: var(--accent-contrast);
 }
 
+/* 归档标记：弱化但仍可辨识，不与状态色抢眼。 */
+.chip-archived {
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.table-archived {
+  margin-left: 6px;
+}
+
 .detail-code {
   display: flex;
   align-items: center;

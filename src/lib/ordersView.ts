@@ -5,6 +5,8 @@ export type RiskFilter = "all" | "overdue" | "today" | "dueSoon" | "unscheduled"
 export type WorkFilter = "all" | "queued" | "inProgress";
 /** "all" 或某个来源文本；来源是自由文本，不做枚举。 */
 export type SourceFilter = "all" | string;
+/** 归档归属：普通列表不显示已归档，归档空间只显示已归档。 */
+export type ArchiveScope = "live" | "archived";
 
 /** 搜索匹配标题、编号、客户名；大小写与前后空白都不敏感。 */
 export function matchesQuery(order: OrderView, query: string): boolean {
@@ -37,6 +39,14 @@ export function matchesRisk(order: OrderView, filter: RiskFilter): boolean {
   return filter === "all" || order.deadlineState === filter;
 }
 
+export function isArchived(order: OrderView): boolean {
+  return (order.archivedAt ?? null) !== null;
+}
+
+export function matchesArchive(order: OrderView, scope: ArchiveScope): boolean {
+  return scope === "archived" ? isArchived(order) : !isArchived(order);
+}
+
 export function matchesWork(order: OrderView, filter: WorkFilter): boolean {
   if (filter === "all") return true;
   if (order.status !== "active") return false;
@@ -51,6 +61,7 @@ export function filterOrders(
     risk?: RiskFilter;
     work?: WorkFilter;
     source?: SourceFilter;
+    archive?: ArchiveScope;
   } = {},
 ): OrderView[] {
   const query = options.query ?? "";
@@ -58,8 +69,10 @@ export function filterOrders(
   const risk = options.risk ?? "all";
   const work = options.work ?? "all";
   const source = options.source ?? "all";
+  const archive = options.archive ?? "live";
   const filtered = orders.filter(
     (order) =>
+      matchesArchive(order, archive) &&
       matchesStatus(order, status) &&
       matchesQuery(order, query) &&
       matchesRisk(order, risk) &&

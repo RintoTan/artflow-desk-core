@@ -8,6 +8,8 @@ const APPROVED: &[&str] = &[
     "create_order",
     "list_orders",
     "get_order",
+    "order_archive",
+    "order_unarchive",
     "list_order_events",
     "list_clients",
     "update_order_details",

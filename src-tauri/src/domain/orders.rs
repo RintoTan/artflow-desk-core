@@ -57,6 +57,9 @@ pub struct OrderView {
     pub revision: i64,
     pub created_at: String,
     pub updated_at: String,
+    /// 归档时间；`Some` 表示已从「订单信息」的普通列表收起。
+    /// 只影响该列表的归属，不影响客户、工作台、日历与统计。
+    pub archived_at: Option<String>,
     pub capabilities: Capabilities,
 }
 
@@ -166,7 +169,8 @@ pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
                 o.amount_cents, o.note, o.status, o.current_stage_id, o.queue_position,
                 o.planned_start_date, o.planned_delivery_date,
                 o.started_at, o.completed_at, o.cancelled_at,
-                o.revision, o.created_at, o.updated_at, o.source, o.stage_template_id
+                o.revision, o.created_at, o.updated_at, o.source, o.stage_template_id,
+                o.archived_at
          FROM orders_visible o
          LEFT JOIN clients c ON c.id = o.client_id
          WHERE o.id = ?1",
@@ -194,6 +198,7 @@ pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
                 r.get::<_, String>(18)?,
                 r.get::<_, Option<String>>(19)?,
                 r.get::<_, Option<String>>(20)?,
+                r.get::<_, Option<String>>(21)?,
             ))
         },
     )
@@ -254,6 +259,7 @@ pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
         revision: row.16,
         created_at: row.17,
         updated_at: row.18,
+        archived_at: row.21,
         capabilities: caps,
     })
 }
@@ -664,6 +670,53 @@ pub fn update_details(conn: &mut Connection, input: UpdateDetailsInput) -> AppRe
     }
 
     let view = load(&tx, &input.order_id)?;
+    tx.commit()?;
+    Ok(view)
+}
+
+// ---------------------------------------------------------------- 归档
+
+/// 归档 / 取消归档。
+///
+/// 归档是收纳，不是业务变更：
+/// - 只写 `archived_at`，不碰 `status`、阶段、金额、排期、附件，也不写事件；
+/// - 不动 `revision`：归档不是编辑，不应该让正在编辑的人保存失败；
+/// - 只有已完成订单能归档；取消归档对任何已归档订单都允许，
+///   这样「归档后又被重新打开」的订单仍然可以取回。
+pub fn set_archived(
+    conn: &mut Connection,
+    order_id: &str,
+    archived: bool,
+) -> AppResult<OrderView> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_order(&tx, order_id)?;
+
+    let (status, current): (String, Option<String>) = tx.query_row(
+        "SELECT status, archived_at FROM orders_visible WHERE id = ?1",
+        [order_id],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+
+    if archived {
+        if status != lifecycle::STATUS_COMPLETE {
+            return Err(AppError::invalid(
+                "只有已完成的订单可以归档；进行中或已取消的订单请先处理业务状态",
+            ));
+        }
+        if current.is_none() {
+            tx.execute(
+                "UPDATE orders SET archived_at = ?1 WHERE id = ?2",
+                params![timezone::now_timestamp(), order_id],
+            )?;
+        }
+    } else if current.is_some() {
+        tx.execute(
+            "UPDATE orders SET archived_at = NULL WHERE id = ?1",
+            params![order_id],
+        )?;
+    }
+
+    let view = load(&tx, order_id)?;
     tx.commit()?;
     Ok(view)
 }

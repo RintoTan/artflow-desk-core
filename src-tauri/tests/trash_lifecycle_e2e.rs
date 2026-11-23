@@ -211,7 +211,7 @@ fn one_order_walks_the_whole_trash_lifecycle() {
         migrations::APP_SCHEMA_VERSION,
         "恢复后仍应停在最新 schema"
     );
-    assert_eq!(migrations::APP_SCHEMA_VERSION, 8);
+    assert!(migrations::APP_SCHEMA_VERSION >= 8, "03D 之后 schema 只增不减");
 
     // 基表里有，业务面看不见。
     let total: i64 = conn

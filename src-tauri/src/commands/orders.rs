@@ -26,6 +26,18 @@ pub fn create_order(state: State<'_, AppState>, input: CreateOrderInput) -> AppR
 }
 
 #[tauri::command]
+pub fn order_archive(state: State<'_, AppState>, order_id: String) -> AppResult<OrderView> {
+    let mut conn = state.env.open_db()?;
+    orders::set_archived(&mut conn, &order_id, true)
+}
+
+#[tauri::command]
+pub fn order_unarchive(state: State<'_, AppState>, order_id: String) -> AppResult<OrderView> {
+    let mut conn = state.env.open_db()?;
+    orders::set_archived(&mut conn, &order_id, false)
+}
+
+#[tauri::command]
 pub fn list_orders(state: State<'_, AppState>) -> AppResult<Vec<OrderView>> {
     let conn = state.env.open_db()?;
     orders::list(&conn)

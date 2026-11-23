@@ -142,7 +142,12 @@ export default function OrderTable({
                 }
               }}
             >
-              <td className="mono">{order.code}</td>
+              <td className="mono">
+                {order.code}
+                {(order.archivedAt ?? null) !== null && (
+                  <span className="chip chip-archived table-archived">已归档</span>
+                )}
+              </td>
               {compact ? (
                 <>
                   <td className="title-cell">

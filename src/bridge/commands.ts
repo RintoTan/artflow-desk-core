@@ -95,6 +95,9 @@ export type OrderView = {
   revision: number;
   createdAt: string;
   updatedAt: string;
+  /** 归档时间；非空表示已从「订单信息」的普通列表收起，其他页面照常显示。
+   *  可缺省：旧缓存或测试夹具没有这个字段时应视为未归档，而不是已归档。 */
+  archivedAt?: string | null;
   capabilities: Capabilities;
 };
 
@@ -329,6 +332,8 @@ export const api = {
   listOrderEvents: (orderId: string) => invoke<OrderEvent[]>("list_order_events", { orderId }),
   listClients: () => invoke<ClientView[]>("list_clients"),
   createOrder: (input: CreateOrderInput) => invoke<OrderView>("create_order", { input }),
+  archiveOrder: (orderId: string) => invoke<OrderView>("order_archive", { orderId }),
+  unarchiveOrder: (orderId: string) => invoke<OrderView>("order_unarchive", { orderId }),
   updateOrderDetails: (input: UpdateDetailsInput) =>
     invoke<OrderView>("update_order_details", { input }),
 

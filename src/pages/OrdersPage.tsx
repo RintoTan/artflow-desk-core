@@ -25,7 +25,9 @@ import {
   densityClass,
   dropIndex,
   filterOrders,
+  isArchived,
   riskBadge,
+  type ArchiveScope,
   type RiskFilter,
   type SourceFilter,
   type StatusFilter,
@@ -205,6 +207,8 @@ export default function OrdersPage() {
   const [workFilter, setWorkFilter] = useState<WorkFilter>("all");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
+  /** 普通列表与归档空间是两个归属，不混在同一张列表里。 */
+  const [archiveScope, setArchiveScope] = useState<ArchiveScope>("live");
   /** 偏好保存失败时的提示：视图仍会切换，但不能假装已经记住。 */
   const [viewPersistError, setViewPersistError] = useState<string | null>(null);
   /** 看板/表格模式下详情以右侧抽屉呈现；卡片模式永远并排显示。 */
@@ -634,6 +638,11 @@ export default function OrdersPage() {
     [loadList, selectOrder, selectedId],
   );
 
+  const scopedCount = useMemo(
+    () => orders.filter((order) => isArchived(order) === (archiveScope === "archived")).length,
+    [orders, archiveScope],
+  );
+
   const visible = useMemo(() => {
     const filtered = filterOrders(orders, {
       query,
@@ -641,11 +650,12 @@ export default function OrdersPage() {
       risk: riskFilter,
       work: workFilter,
       source: sourceFilter,
+      archive: archiveScope,
     });
     return clientFilter === null
       ? filtered
       : filtered.filter((order) => order.clientId === clientFilter);
-  }, [orders, query, statusFilter, riskFilter, workFilter, sourceFilter, clientFilter]);
+  }, [orders, query, statusFilter, riskFilter, workFilter, sourceFilter, clientFilter, archiveScope]);
 
   /** 来源是自由文本：筛选项从现有订单里取，去重后排序，不预置枚举。 */
   const sourceOptions = useMemo(() => {
@@ -948,18 +958,38 @@ export default function OrdersPage() {
           <div className="orders-head-title">
             <h2 className="orders-head-h">订单信息</h2>
             <p className="muted">
-              {visible.length}/{orders.length} 张 · 活动在前
+              {visible.length}/{scopedCount} 张 · {archiveScope === "archived" ? "按归档时间" : "活动在前"}
             </p>
           </div>
           <div className="orders-head-actions">
             <ViewSwitch value={viewMode} onChange={(next) => void changeView(next)} />
-            <button type="button" className="btn btn-primary btn-sm" onClick={attemptCreate}>
-              新建
-            </button>
+            {archiveScope === "live" && (
+              <button type="button" className="btn btn-primary btn-sm" onClick={attemptCreate}>
+                新建
+              </button>
+            )}
           </div>
         </div>
 
         <div className="orders-head-filters">
+          <div className="view-switch" role="group" aria-label="订单归属">
+            <button
+              type="button"
+              className={`filter-chip${archiveScope === "live" ? " filter-chip-active" : ""}`}
+              aria-pressed={archiveScope === "live"}
+              onClick={() => setArchiveScope("live")}
+            >
+              普通
+            </button>
+            <button
+              type="button"
+              className={`filter-chip${archiveScope === "archived" ? " filter-chip-active" : ""}`}
+              aria-pressed={archiveScope === "archived"}
+              onClick={() => setArchiveScope("archived")}
+            >
+              归档
+            </button>
+          </div>
           <div className="search-box">
             <input
               ref={searchRef}
@@ -1158,6 +1188,7 @@ export default function OrdersPage() {
                   >
                     <span className="order-row-top">
                       <code className="order-code">{order.code}</code>
+                      {isArchived(order) && <span className="chip chip-archived">已归档</span>}
                       <span className={`chip chip-${order.status}`}>{orderStatusLabel(order.status)}</span>
                     </span>
                     <TruncatedTitle className="order-row-title" text={order.title}>

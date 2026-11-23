@@ -81,8 +81,9 @@ fn v7_upgrades_to_v8_and_keeps_every_row() {
         oid
     };
 
-    let env = common::open(&root);
-    assert_eq!(migrations::APP_SCHEMA_VERSION, 8);
+    // 显式停在 v8：这是 v8 的历史断言，后续版本由各自的迁移测试覆盖。
+    let env = open_at(&root, 8);
+    assert!(migrations::APP_SCHEMA_VERSION >= 8);
     assert_eq!(user_version(&env), 8);
     let conn = env.open_db().unwrap();
 
@@ -191,7 +192,12 @@ fn views_split_visible_and_trashed_by_deleted_at() {
 fn production_migration_list_is_contiguous_and_old_names_unchanged() {
     let list = migrations::production();
     let versions: Vec<i64> = list.iter().map(|m| m.version).collect();
-    assert_eq!(versions, (1..=8).collect::<Vec<_>>(), "版本必须从 1 连续");
+    let latest = migrations::APP_SCHEMA_VERSION;
+    assert_eq!(
+        versions,
+        (1..=latest).collect::<Vec<_>>(),
+        "版本必须从 1 连续"
+    );
     let names: Vec<&str> = list.iter().map(|m| m.name).collect();
     assert_eq!(
         &names[..7],
@@ -244,7 +250,7 @@ fn failed_v8_migration_leaves_old_generation_and_data_untouched() {
     drop(env);
 
     // 换回正常迁移表仍可升级到 v8。
-    let env = common::open(&root);
+    let env = open_at(&root, 8);
     assert_eq!(user_version(&env), 8);
     let conn = env.open_db().unwrap();
     let (code, deleted): (String, Option<String>) = conn
@@ -264,14 +270,14 @@ fn reopening_a_v8_database_does_not_migrate_again() {
     let root = dir.path().join("data");
 
     let generation = {
-        let env = common::open(&root);
+        let env = open_at(&root, 8);
         assert_eq!(user_version(&env), 8);
         let mut conn = env.open_db().unwrap();
         common::insert_order(&mut conn, "AF-2026-0105", "重复启动");
         env.active_generation().to_string()
     };
 
-    let env = common::open(&root);
+    let env = open_at(&root, 8);
     assert_eq!(user_version(&env), 8);
     assert_eq!(env.active_generation(), generation, "已是最新版本时不得新建代际");
     let conn = env.open_db().unwrap();
