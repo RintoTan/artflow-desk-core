@@ -3405,6 +3405,19 @@ body:has(.row-dragging) {
   font-size: 11px;
 }
 
+/* 紧凑表格本来就是「两行单元格」：主值一行、补充说明一行。
+   这两行此前只是内联 span，四列挤成一条长句，右端「交付 / 金额」被裁掉；
+   这里把它们排成真正的两行，列宽随之回到单行内容宽度。
+   只在紧凑表格内生效——宽屏表格的状态格里 .table-sub 仍是同行后缀。 */
+.order-table-compact .table-main {
+  display: block;
+}
+
+.order-table-compact .table-sub {
+  display: block;
+  margin-left: 0;
+}
+
 .schedule-cell {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;

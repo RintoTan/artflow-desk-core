@@ -258,3 +258,22 @@ describe("月视图星期表头吸附", () => {
     expect(header).toBeGreaterThan(more);
   });
 });
+
+describe("订单表格紧凑态", () => {
+  /**
+   * 紧凑表格的注释写明「两行单元格」，但两行此前只是内联 span：
+   * 四列并成一长句，880 宽下右端「交付 / 金额」被裁掉。这里锁住两行排版，
+   * 并确认宽屏表格的状态格没有被连带改成换行。
+   */
+  it("紧凑态主值与补充说明各自成行", () => {
+    expect(rule(".order-table-compact .table-main")).toMatch(/display:\s*block/);
+    expect(rule(".order-table-compact .table-sub")).toMatch(/display:\s*block/);
+    expect(rule(".order-table-compact .table-sub")).toMatch(/margin-left:\s*0/);
+  });
+
+  it("宽屏表格的补充说明仍是同行后缀", () => {
+    const base = rule(".table-sub");
+    expect(base).toMatch(/margin-left:\s*6px/);
+    expect(base).not.toMatch(/display:\s*block/);
+  });
+});

@@ -96,7 +96,7 @@ export default function OrderTable({
 
   return (
     <div className="table-wrap" ref={wrapRef}>
-      <table className="order-table">
+      <table className={`order-table${compact ? " order-table-compact" : ""}`}>
         <caption className="muted">
           共 {rows.length} 张。列排序只影响当前展示，不改变队列顺序。
         </caption>
