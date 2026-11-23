@@ -4676,11 +4676,12 @@ dl.stat-row {
   white-space: nowrap;
 }
 
+/* Fit-to-Window：窗口始终完整呈现，不再需要横向拖动。
+   overflow-x 保持 hidden 作为兜底——画布按可视宽度算，正常情况下没有横向溢出。 */
 .timeline-scroll {
   min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding-bottom: 10px;
+  overflow-x: hidden;
+  overflow-y: visible;
 }
 
 .timeline-canvas {

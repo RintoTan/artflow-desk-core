@@ -115,12 +115,25 @@ export function shiftAnchor(scale: TimelineScale, anchor: DayIndex, direction: -
   return addMonthsClamped(anchor, (scale === "year" ? 12 : 1) * direction);
 }
 
-export function dayToX(day: DayIndex, win: TimelineWindow, scale: TimelineScale): number {
-  return (day - win.from) * SCALE_CONFIG[scale].pxPerDay;
+/**
+ * 每日像素。传了 `px` 就用「可视宽度 ÷ 天数」的结果（Fit-to-Window），
+ * 否则退回该尺度在配置里的基准值（jsdom 里量不到宽度时走这条）。
+ */
+export function perDayPx(scale: TimelineScale, px?: number): number {
+  return px !== undefined && px > 0 ? px : SCALE_CONFIG[scale].pxPerDay;
 }
 
-export function canvasWidth(win: TimelineWindow, scale: TimelineScale): number {
-  return (win.to - win.from + 1) * SCALE_CONFIG[scale].pxPerDay;
+export function dayToX(
+  day: DayIndex,
+  win: TimelineWindow,
+  scale: TimelineScale,
+  px?: number,
+): number {
+  return (day - win.from) * perDayPx(scale, px);
+}
+
+export function canvasWidth(win: TimelineWindow, scale: TimelineScale, px?: number): number {
+  return (win.to - win.from + 1) * perDayPx(scale, px);
 }
 
 export type Tick = {
@@ -143,8 +156,8 @@ export type TimelineTicks = {
 
 const WEEKDAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"];
 
-function pushMonthGroups(target: Tick[], win: TimelineWindow, scale: TimelineScale) {
-  const px = SCALE_CONFIG[scale].pxPerDay;
+function pushMonthGroups(target: Tick[], win: TimelineWindow, scale: TimelineScale, px: number) {
+
   for (let day = win.from; day <= win.to; day += 1) {
     const c = civilFromDays(day);
     if (c.day !== 1 && day !== win.from) continue;
@@ -152,7 +165,7 @@ function pushMonthGroups(target: Tick[], win: TimelineWindow, scale: TimelineSca
       c.month === 12 ? daysFromCivil(c.year + 1, 1, 1) : daysFromCivil(c.year, c.month + 1, 1);
     target.push({
       day,
-      left: dayToX(day, win, scale),
+      left: dayToX(day, win, scale, px),
       width: (Math.min(next, win.to + 1) - day) * px,
       label: `${c.year} 年 ${c.month} 月`,
       isToday: false,
@@ -161,20 +174,25 @@ function pushMonthGroups(target: Tick[], win: TimelineWindow, scale: TimelineSca
 }
 
 /** 双层刻度。第一层是更大的单位，第二层是当前尺度。 */
-export function buildTicks(win: TimelineWindow, scale: TimelineScale, today: DayIndex): TimelineTicks {
-  const px = SCALE_CONFIG[scale].pxPerDay;
+export function buildTicks(
+  win: TimelineWindow,
+  scale: TimelineScale,
+  today: DayIndex,
+  pxPerDayOverride?: number,
+): TimelineTicks {
+  const px = perDayPx(scale, pxPerDayOverride);
   const tier1: Tick[] = [];
   const tier2: Tick[] = [];
   const firstYear = civilFromDays(win.from).year;
   const lastYear = civilFromDays(win.to).year;
 
   if (scale === "day") {
-    pushMonthGroups(tier1, win, scale);
+    pushMonthGroups(tier1, win, scale, px);
     for (let day = win.from; day <= win.to; day += 1) {
       const c = civilFromDays(day);
       tier2.push({
         day,
-        left: dayToX(day, win, scale),
+        left: dayToX(day, win, scale, px),
         width: px,
         label: String(c.day),
         sub: WEEKDAY_LABELS[weekdayIndex(day)] ?? "",
@@ -201,7 +219,7 @@ export function buildTicks(win: TimelineWindow, scale: TimelineScale, today: Day
       const end = Math.min(next, win.to + 1);
       tier2.push({
         day,
-        left: dayToX(day, win, scale),
+        left: dayToX(day, win, scale, px),
         width: (end - day) * px,
         label: `${c.month} 月`,
         isToday: c.year === civilFromDays(today).year && c.month === civilFromDays(today).month,
@@ -290,17 +308,19 @@ export function rowGeometry(
   today: DayIndex,
   timeZone: string | null | undefined,
   scale: TimelineScale,
+  pxOverride?: number,
 ): TimelineRowGeometry {
   const cfg = SCALE_CONFIG[scale];
+  const px = perDayPx(scale, pxOverride);
   const span = win.to - win.from;
-  const total = canvasWidth(win, scale);
+  const total = canvasWidth(win, scale, px);
   const model = barModel(order, win, today, timeZone);
 
   const start = parseDayKey(order.plannedStartDate);
   const delivery = parseDayKey(order.plannedDeliveryDate);
   const terminal = order.status !== "active";
 
-  const pctToX = (pct: number) => (pct / 100) * span * cfg.pxPerDay;
+  const pctToX = (pct: number) => (pct / 100) * span * px;
 
   let band: TimelineBand | null = null;
   if (model.band) {
@@ -308,7 +328,7 @@ export function rowGeometry(
     const suppressForYear = scale === "year" && singleDay;
     if (!suppressForYear) {
       const rawLeft = pctToX(model.band.leftPct);
-      const rawRight = pctToX(model.band.leftPct + model.band.widthPct) + cfg.pxPerDay;
+      const rawRight = pctToX(model.band.leftPct + model.band.widthPct) + px;
       const left = Math.max(0, Math.min(total, rawLeft));
       const right = Math.max(0, Math.min(total, rawRight));
       band = {
@@ -376,7 +396,7 @@ export function visibleRange(
   scrollLeft: number,
   viewportWidth: number,
 ): TimelineWindow {
-  const px = SCALE_CONFIG[scale].pxPerDay;
+  const px = perDayPx(scale);
   if (!viewportWidth) return { from: win.from, to: win.to };
   const from = Math.min(win.to, win.from + Math.floor(scrollLeft / px));
   const rawTo = win.from + Math.ceil((scrollLeft + viewportWidth) / px) - 1;
@@ -485,7 +505,7 @@ export function anchorFromViewport(
   viewportWidth: number,
 ): DayIndex {
   const centerPx = scrollLeft + viewportWidth / 2;
-  const day = win.from + Math.round(centerPx / SCALE_CONFIG[scale].pxPerDay);
+  const day = win.from + Math.round(centerPx / perDayPx(scale));
   return Math.max(win.from, Math.min(win.to, day));
 }
 

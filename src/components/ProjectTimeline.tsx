@@ -24,6 +24,7 @@ import {
   hasLargerSpan,
   hasSmallerSpan,
   spanWindow,
+  perDayPx,
   stepSpan,
   visibleRange,
   type TimelineScale,
@@ -167,8 +168,15 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
     () => (effectiveAnchor === null ? null : spanWindow(scale, effectiveAnchor, span)),
     [scale, effectiveAnchor, span],
   );
+  /** Fit-to-Window：每日像素 = 可视宽度 ÷ 窗口天数；量不到宽度时退回配置基准。 */
+  const fitPx = useMemo(() => {
+    if (win === null || viewport <= 0) return undefined;
+    const days = win.to - win.from + 1;
+    return days > 0 ? viewport / days : undefined;
+  }, [win, viewport]);
+
   const ticks = useMemo(
-    () => (win === null || today === null ? null : buildTicks(win, scale, today)),
+    () => (win === null || today === null ? null : buildTicks(win, scale, today, fitPx)),
     [win, scale, today],
   );
   const split = useMemo(
@@ -183,7 +191,7 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
     if (centerOn === null || win === null || viewport === 0) return;
     const node = scrollerRef.current;
     if (!node) return;
-    const x = dayToX(centerOn, win, scale) + SCALE_CONFIG[scale].pxPerDay / 2;
+    const x = dayToX(centerOn, win, scale, fitPx) + perDayPx(scale, fitPx) / 2;
     node.scrollLeft = Math.max(0, x - viewport * centerRatio);
     setScrollLeft(node.scrollLeft);
     setCenterOn(null);
@@ -284,8 +292,8 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
     );
   }
 
-  const total = canvasWidth(win, scale);
-  const todayX = dayToX(today, win, scale) + SCALE_CONFIG[scale].pxPerDay / 2;
+  const total = canvasWidth(win, scale, fitPx);
+  const todayX = dayToX(today, win, scale, fitPx) + perDayPx(scale, fitPx) / 2;
   const todayInside = today >= win.from && today <= win.to;
   const visible = visibleRange(win, scale, scrollLeft, viewport);
   // 只要现存订单里存在终态、且当前没有可见订单，就说明"活动订单已全部结束"。
@@ -357,7 +365,6 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
           {" · "}
           {SCALE_CONFIG[scale].label}尺度 · 时间线 {split.scheduled.length} 单 · 完全未排期{" "}
           {split.unscheduled.length} 单 · 共 {orders.length} 单
-
         </p>
         <ul className="timeline-legend" aria-label="排期状态图例">
           {LEGEND.map((item) => (
@@ -419,7 +426,7 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
           <div className="timeline-info-col">
             <div className="timeline-corner">订单 / 客户 / 阶段</div>
             {split.scheduled.map((order) => {
-              const geo = rowGeometry(order, win, today, timezone, scale);
+              const geo = rowGeometry(order, win, today, timezone, scale, fitPx);
               const tone = toneOf(order, geo.terminal, geo.invalidRange);
               const sub = [
                 order.clientName,
@@ -506,7 +513,7 @@ export function ProjectTimeline({ nowIso }: { nowIso?: string }) {
 
               <div className="timeline-rows">
                 {split.scheduled.map((order) => {
-                  const geo = rowGeometry(order, win, today, timezone, scale);
+                  const geo = rowGeometry(order, win, today, timezone, scale, fitPx);
                   const tone = toneOf(order, geo.terminal, geo.invalidRange);
                   const singleDay =
                     order.plannedStartDate !== null &&
