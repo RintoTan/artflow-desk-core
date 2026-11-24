@@ -152,3 +152,15 @@ pub fn finance_refund_void(
     let mut conn = state.env.open_db()?;
     finance::void_refund(&mut conn, &input)
 }
+
+// ---------------------------------------------------------------- FIN-05
+
+/// 财务统计：只读聚合。前端不重算任何一条财务规则。
+#[tauri::command]
+pub fn finance_stats_report(
+    state: State<'_, AppState>,
+    range: crate::domain::stats::StatsRange,
+) -> AppResult<crate::domain::finance_stats::FinanceStatsReport> {
+    let conn = state.env.open_db()?;
+    crate::domain::finance_stats::report(&conn, range)
+}

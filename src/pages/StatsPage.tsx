@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
+
+import FinanceStatsPanel from "../components/FinanceStatsPanel";
 import { save } from "@tauri-apps/plugin-dialog";
 
 import { placeTooltip, type TooltipPlacement } from "../components/TitleTooltip";
@@ -65,6 +67,37 @@ export default function StatsPage() {
   const [params, setParams] = useSearchParams();
   const range = (params.get("range") as StatsRangeKey | null) ?? "thisMonth";
   const focus = params.get("focus");
+  // 默认仍是原来的业务统计；财务统计是一个独立视图，与业务统计不混排。
+  const tab: "business" | "finance" = params.get("tab") === "finance" ? "finance" : "business";
+  const switchTab = (next: "business" | "finance") => {
+    const query = new URLSearchParams(params);
+    if (next === "finance") query.set("tab", "finance");
+    else query.delete("tab");
+    setParams(query, { replace: true });
+  };
+  // tab 条做成函数：提前 return 之后 TS 会把 tab 收窄，直接比较会报错。
+  const tabBar = (active: "business" | "finance") => (
+    <div className="segmented" role="tablist" aria-label="统计类型">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={active === "business"}
+        className={`filter-chip${active === "business" ? " filter-chip-active" : ""}`}
+        onClick={() => switchTab("business")}
+      >
+        业务统计
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={active === "finance"}
+        className={`filter-chip${active === "finance" ? " filter-chip-active" : ""}`}
+        onClick={() => switchTab("finance")}
+      >
+        财务统计
+      </button>
+    </div>
+  );
 
   const [report, setReport] = useState<StatsReport | null>(null);
   const [events, setEvents] = useState<CompletedEventRow[]>([]);
@@ -197,6 +230,21 @@ export default function StatsPage() {
   // 两排时每排只有 6 个月，但仍要列够宽才逐柱标数字
   const everyBar = labelsEveryBar(perRow) && columnWidth >= EVERY_BAR_MIN_COLUMN;
 
+  if (tab === "finance") {
+    return (
+      <section className="panel stats-overview">
+        <header className="stats-toolbar">
+          <div className="stats-heading">
+            <h1 className="page-title">数据统计</h1>
+            <p className="muted">只统计真实资金流动：到账按收款日、退款按退款日，取消单不计入金额。</p>
+          </div>
+          <div className="stats-tools">{tabBar("finance")}</div>
+        </header>
+        <FinanceStatsPanel range={range} onRangeChange={switchRange} />
+      </section>
+    );
+  }
+
   return (
     <>
       <section className="panel stats-overview">
@@ -209,6 +257,7 @@ export default function StatsPage() {
             </p>
           </div>
           <div className="stats-tools">
+            {tabBar("business")}
             <div className="segmented" role="group" aria-label="统计范围">
               {RANGES.map((item) => (
                 <button

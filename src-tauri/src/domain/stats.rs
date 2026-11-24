@@ -107,7 +107,11 @@ fn event_month(occurred_at: &str, tz: Tz) -> AppResult<String> {
     Ok(month_key(date))
 }
 
-pub fn report(conn: &Connection, range: StatsRange) -> AppResult<StatsReport> {
+/// 统计页共用的月份窗口，返回 `(from_month, to_month)`，格式 `YYYY-MM`。
+///
+/// 财务统计与业务统计必须用同一套窗口算法——否则同一页面上两块数据会按不同
+/// 月份边界切分，用户看到的「近 6 个月」会有两个含义。
+pub(crate) fn month_window(conn: &Connection, range: StatsRange) -> AppResult<(String, String)> {
     let tz: Tz = settings::working_timezone(conn)?;
     let today = timezone::local_today(tz);
     let current_month = month_key(today);
@@ -145,7 +149,15 @@ pub fn report(conn: &Connection, range: StatsRange) -> AppResult<StatsReport> {
         }
     };
 
-    let months = month_range(&from_month, &current_month)?;
+    Ok((from_month, current_month))
+}
+
+pub fn report(conn: &Connection, range: StatsRange) -> AppResult<StatsReport> {
+    let tz: Tz = settings::working_timezone(conn)?;
+    let today = timezone::local_today(tz);
+    let current_month = month_key(today);
+    let (from_month, to_month) = month_window(conn, range)?;
+    let months = month_range(&from_month, &to_month)?;
     let index: std::collections::HashMap<&str, usize> = months
         .iter()
         .enumerate()

@@ -28,6 +28,7 @@ const APPROVED: &[&str] = &[
     "finance_refund_create",
     "finance_refund_update",
     "finance_refund_void",
+    "finance_stats_report",
     "list_orders",
     "get_order",
     "order_archive",

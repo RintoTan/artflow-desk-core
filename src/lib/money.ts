@@ -15,10 +15,11 @@ export function formatCents(cents: number | null | undefined): string | null {
   return `${negative ? "-" : ""}${whole}.${fraction}`;
 }
 
-/** 分 → 「¥ 1,000.00」；未知返回「—」，不是「¥ 0.00」。 */
+/** 分 → 「¥ 1,000.00」；未知返回「—」，不是「¥ 0.00」。负数写成「-¥ 53.00」。 */
 export function formatYuan(cents: number | null | undefined): string {
   const text = formatCents(cents);
-  return text === null ? "—" : `¥ ${text}`;
+  if (text === null) return "—";
+  return text.startsWith("-") ? `-¥ ${text.slice(1)}` : `¥ ${text}`;
 }
 
 /** 分 → 输入框文本（不带货币符号、去掉无意义的 .00）。 */

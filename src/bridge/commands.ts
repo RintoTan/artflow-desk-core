@@ -1110,3 +1110,102 @@ export const refundsApi = {
   void: (input: { id: string; reason: string }) =>
     invoke<RefundView>("finance_refund_void", { input }),
 };
+
+// ---------------------------------------------------------------- FIN-05
+
+export type MoneyTotals = {
+  grossReceivedCents: number;
+  feeTotalCents: number;
+  netReceivedCents: number;
+  refundTotalCents: number;
+  /** 净到账 − 退款；可以为负。 */
+  netRetainedCents: number;
+};
+
+export type FinanceCurrentSnapshot = {
+  remainingCents: number;
+  overReceivedCents: number;
+  unrecordedOrders: number;
+  unknownAmountOrders: number;
+  planMismatchOrders: number;
+};
+
+export type MonthCashFlow = {
+  month: string;
+  grossReceivedCents: number;
+  feeTotalCents: number;
+  netReceivedCents: number;
+  refundTotalCents: number;
+  netRetainedCents: number;
+};
+
+export type YearNetReceived = {
+  year: string;
+  grossReceivedCents: number;
+  feeTotalCents: number;
+  netReceivedCents: number;
+};
+
+export type ExpectedMonth = { month: string; amountCents: number; count: number };
+
+export type ExpectedReceipts = {
+  overdueCents: number;
+  overdueCount: number;
+  months: ExpectedMonth[];
+  unscheduledCents: number;
+  unscheduledCount: number;
+  beyondCents: number;
+  beyondCount: number;
+  noPlanOrders: number;
+};
+
+export type PlatformRow = {
+  platformName: string | null;
+  count: number;
+  grossReceivedCents: number;
+  feeTotalCents: number;
+  netReceivedCents: number;
+};
+
+export type MethodRow = {
+  method: string | null;
+  count: number;
+  grossReceivedCents: number;
+  feeTotalCents: number;
+  netReceivedCents: number;
+};
+
+export type OrderTypeRow = {
+  orderType: string | null;
+  orders: number;
+  orderAmountCents: number;
+  unknownAmountOrders: number;
+  grossReceivedCents: number;
+  feeTotalCents: number;
+  netReceivedCents: number;
+  refundTotalCents: number;
+  netRetainedCents: number;
+};
+
+export type FinanceStatsReport = {
+  range: string;
+  timezone: string;
+  fromMonth: string;
+  toMonth: string;
+  lifetime: MoneyTotals;
+  current: FinanceCurrentSnapshot;
+  period: MoneyTotals;
+  monthly: MonthCashFlow[];
+  annual: YearNetReceived[];
+  expected: ExpectedReceipts;
+  byPlatform: PlatformRow[];
+  byMethod: MethodRow[];
+  byOrderType: OrderTypeRow[];
+  basis: string[];
+};
+
+export const financeStatsApi = {
+  /** 一次请求拿全部财务统计；前端不重算任何金额。 */
+  report: (range: string) =>
+    invoke<FinanceStatsReport>("finance_stats_report", { range }),
+};

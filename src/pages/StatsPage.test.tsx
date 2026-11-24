@@ -41,12 +41,57 @@ const completedFn = vi.fn(async (): Promise<CompletedEventRow[]> => []);
 const exportSummary = vi.fn(async () => ({ path: "/tmp/s.csv", rows: 2, bytes: 100 }));
 const saveDialog = vi.fn(async () => null as string | null);
 
+const financeReportFn = vi.fn(async () => ({
+  range: "thisMonth",
+  timezone: "Asia/Shanghai",
+  fromMonth: "2026-11",
+  toMonth: "2026-11",
+  lifetime: {
+    grossReceivedCents: 0,
+    feeTotalCents: 0,
+    netReceivedCents: 0,
+    refundTotalCents: 0,
+    netRetainedCents: 0,
+  },
+  current: {
+    remainingCents: 0,
+    overReceivedCents: 0,
+    unrecordedOrders: 0,
+    unknownAmountOrders: 0,
+    planMismatchOrders: 0,
+  },
+  period: {
+    grossReceivedCents: 0,
+    feeTotalCents: 0,
+    netReceivedCents: 0,
+    refundTotalCents: 0,
+    netRetainedCents: 0,
+  },
+  monthly: [],
+  annual: [],
+  expected: {
+    overdueCents: 0,
+    overdueCount: 0,
+    months: [],
+    unscheduledCents: 0,
+    unscheduledCount: 0,
+    beyondCents: 0,
+    beyondCount: 0,
+    noPlanOrders: 0,
+  },
+  byPlatform: [],
+  byMethod: [],
+  byOrderType: [],
+  basis: ["口径"],
+}));
+
 vi.mock("../bridge/commands", async () => {
   const actual = await vi.importActual<typeof import("../bridge/commands")>(
     "../bridge/commands",
   );
   return {
     ...actual,
+    financeStatsApi: { report: financeReportFn },
     statsApi: {
       report: reportFn,
       completedEvents: completedFn,
@@ -74,6 +119,7 @@ async function setup(initial = "/stats") {
 describe("数据统计", () => {
   beforeEach(() => {
     reportFn.mockClear();
+    financeReportFn.mockClear();
     exportSummary.mockClear();
     saveDialog.mockClear();
   });
@@ -184,5 +230,23 @@ describe("数据统计", () => {
     );
     await setup();
     expect(screen.getByText("这个区间内还没有任何事件。")).toBeInTheDocument();
+  });
+
+  it("默认进入业务统计，不加载财务统计", async () => {
+    await setup();
+    const business = screen.getByRole("tab", { name: "业务统计" });
+    expect(business.getAttribute("aria-selected")).toBe("true");
+    expect(financeReportFn).not.toHaveBeenCalled();
+  });
+
+  it("切到财务统计后单独加载财务数据，业务统计的接口不再重复请求", async () => {
+    const user = userEvent.setup();
+    await setup();
+    const callsBefore = reportFn.mock.calls.length;
+    await user.click(screen.getByRole("tab", { name: "财务统计" }));
+
+    await waitFor(() => expect(financeReportFn).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("累计（全部历史）")).toBeInTheDocument();
+    expect(reportFn.mock.calls.length).toBe(callsBefore);
   });
 });
