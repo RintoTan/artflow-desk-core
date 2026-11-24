@@ -416,6 +416,34 @@ SELECT COUNT(*) FROM orders WHERE stage_template_id = ?   -- 不过滤 deleted_a
 
 第 7 步的「读一张附件」是必需的：asset 协议 scope 是**运行时按当前代际授权**（`lib.rs:290`，刻意不使用 `generations/*` 通配），换根后不重新授权，界面所有图片会变裂图。
 
+### 7.5 实施记录（DEV-0.1.1-05）
+
+迁移范围的最终口径，比 §7.4 第 4 步写得更完整：
+
+| 复制 | 不复制 |
+| --- | --- |
+| `environment.json`（原样，内容不含路径） | `logs/`（本来就不在数据根内） |
+| `state/`（`active.json`、`highwater.sqlite`、`backup.json`） | `.write.lock`（到目标根重新创建并取锁） |
+| `generations/` **全部代际**，保留原 UUID | `root.json`（引导指针，不属于载荷） |
+| `backups/` 全部文件，含 `.tmp` 与迁移前快照 | `recovery/state.json`（存在即拒绝迁移） |
+| `recovery/failed-restore-*`（诊断证据） | |
+| `.qa-root`（仅 QA 环境，内容与场景一致） | |
+
+只复制活动代际会让用户重置前的历史数据留在旧盘上——那看起来就是"数据丢了"，
+所以这里明确要求全代际复制，`tests/storage_migrate.rs` 用"删掉非活动代际的库必须
+导致迁移失败"这条区分度测试守住它。
+
+根指针位置（稳定引导目录，不随数据根移动）：
+
+- 正式：`app_data_dir/root.json`
+- QA：`app_data_dir/.root-pointers/{scenario}/root.json`
+
+指针内容是 `{ dataRoot, updatedAt }`，写入走临时文件 + fsync + rename。指针损坏、
+目标盘离线一律硬失败，**不回落默认根**；切回默认位置只删指针，不合并两份数据。
+
+目标根在迁移开始时必须为空（非空直接拒绝），这样失败后的清理不会误删用户自己的文件。
+
+
 ## 8. 单实例与退出（Q4 已裁定）
 
 | 平台 | 关窗 | 最小化 | 二次启动 |
@@ -430,6 +458,15 @@ SELECT COUNT(*) FROM orders WHERE stage_template_id = ?   -- 不过滤 deleted_a
 1. 关窗 → 前端守卫（未保存修改）→ `confirm_close` → `gate.allow()` → 退出；现有 `should_block_exit` 已符合该语义，不需要改判据。
 2. 二次启动激活：macOS Unix socket / Windows 命名管道发 `activate`，主进程 `show + set_focus`。
 3. **补 Windows 锁身份校验**：`infra/lock.rs` 的 `file_identity()` 在非 unix 返回 `None`，`verify()` 恒通过，双写防护在 Windows 失效。改用 `GetFileInformationByHandle` 的卷序号 + 文件索引。
+
+### 8.1 实施记录（DEV-0.1.1-05）
+
+- 通道位置固定在应用数据目录（`app_data_dir/.instance`），不随数据根迁移；
+  Windows 用由该路径哈希出的管道名，正式与 QA 天然隔离。
+- 第二实例：拿锁失败且能联系上已有实例 → 发 `activate` → 进程以 0 退出，不建第二个窗口；
+  联系不上（例如锁文件被替换）才按错误处理并弹出启动失败说明。
+- 锁身份：Unix `dev + ino`，Windows `GetFileInformationByHandle` 的卷序号 + 文件索引。
+  取锁时拿不到身份也视为不可信，`verify()` 不再有"恒通过"的分支。
 
 ## 9. 存储用量统计（Q6）
 

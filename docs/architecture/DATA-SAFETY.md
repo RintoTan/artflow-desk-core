@@ -51,6 +51,20 @@ QA 版使用独立 identifier，并在其根目录下按场景再分一层：
 - 切换前写 `recovery/state.json`，异常退出后可据此判断「上次操作没走完」。
 - 恢复/升级失败时，`active.json` 仍指向旧代际 → **现有数据不受影响**。
 
+## 2.1 自定义存储位置（DEV-0.1.1-05）
+
+数据根可以被迁移到任意本地目录。迁移搬的是**整个数据环境**：`environment.json`、
+`state/`、`generations/`（全部代际）、`backups/`（含 `.tmp`）、`recovery/failed-restore-*`、
+以及 QA 环境下的 `.qa-root`。日志不在数据根内，不参与迁移。
+
+引导指针 `root.json` 固定在应用数据目录（QA 为 `.root-pointers/{scenario}/root.json`），
+内容 `{ dataRoot, updatedAt }`，原子写入。指针损坏或目标盘离线时**拒绝启动**，
+不会静默回落到默认位置——那会让人对着空库以为数据丢了。
+
+迁移前会先写一份安全快照到旧根 `backups/`，复制后逐个文件校验 SHA-256，
+每个代际都要过 `integrity_check` 与 `foreign_key_check`，并实际读一张附件。
+旧根永远不会被自动删除。
+
 ## 3. 数据库迁移
 
 - 迁移链 append-only：只允许新增 `vN → vN+1`，不允许改写历史迁移文件。

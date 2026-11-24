@@ -153,6 +153,21 @@
 
 **自动化**：`tests/data_reset.rs` 13 例（选项与组合、空库校验、指针不切、编号不丢、白名单、日志不越界、隔离区边界、失败跳过与重试）。**原生未验收**。
 
+## 三之六、DEV-0.1.1-05 自定义位置与单实例
+
+| 能力 | 实现要点 |
+| --- | --- |
+| 根指针 | `app_data_dir/root.json`（QA：`.root-pointers/{scenario}/root.json`），临时文件 + fsync + rename；损坏或目标离线即拒启 |
+| 迁移范围 | `environment.json`、`state/`、**全部 generations**、`backups/`（含 `.tmp`）、`recovery/failed-restore-*`、QA `.qa-root` |
+| 不迁移 | `logs/`、`.write.lock`、`root.json`、`recovery/state.json`（存在即拒绝迁移） |
+| 校验 | 文件数、总字节、逐文件 SHA-256、每个代际 `integrity_check` + `foreign_key_check`、真实读一张附件 |
+| 失败回滚 | 指针恢复/删除 + 目标侧半成品清理；旧根始终可用 |
+| 单实例 | macOS Unix socket / Windows 命名管道；第二实例请已有窗口到前台后退出 |
+| 锁身份 | Unix `dev+ino`；Windows `GetFileInformationByHandle` 卷序号 + 文件索引 |
+
+**自动化**：`tests/storage_migrate.rs` 11 例、`tests/lock.rs` 13 例（含 3 例身份校验）。
+**NOT RUN**：Windows 真机（命名管道与文件索引均未在实机运行）、macOS 双进程激活端到端、原生迁移全流程。
+
 ## 四、已知问题
 
 ### 已修复（v0.1.1，含 WP-01 批次）
