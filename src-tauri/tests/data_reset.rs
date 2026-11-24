@@ -574,3 +574,103 @@ fn a_failed_reset_does_not_touch_platforms() {
     let platforms = platforms_of(&ctx.env.layout().generation_db(&before_pointer));
     assert_eq!(platforms.len(), 1, "失败的整次重置不应动到平台配置");
 }
+
+// ------------------------- C4：平台回填中途失败时的原子性（故障注入）
+
+/// 这条测试回答的是 FIN-01.1 报告里唯一留成 PARTIAL 的问题：
+/// 快照写失败能证明「重置会失败」，但证明不了「平台回填写到一半失败时，
+/// 已经写进新代际的那几行会不会跟着留下」。
+///
+/// 注入点只在 debug 构建里存在（`__arm_platform_backfill_failure`），
+/// 通过真实的 `reset::run` 全路径触发，不 mock、不绕开 reset_business。
+#[cfg(debug_assertions)]
+#[test]
+fn platform_backfill_failure_midway_aborts_the_whole_reset() {
+    let ctx = Ctx::new();
+    let log = tempfile::tempdir().unwrap();
+
+    let order = ctx.create_order("会被清掉的订单");
+    seed_platform(&ctx, "p-a", "米画师", Some(500), 0, 0);
+    seed_platform(&ctx, "p-b", "画加", None, 0, 1);
+    seed_platform(&ctx, "p-c", "私信", Some(0), 1, 2);
+
+    let before_pointer = pointer(&ctx);
+    let before_generations = generation_ids(&ctx);
+    let before_platforms =
+        platforms_of(&ctx.env.layout().generation_db(&before_pointer));
+
+    // 让第 2 条 INSERT 失败：第 1 条已经写进新代际，之后整步必须回滚。
+    reset::__arm_platform_backfill_failure(1);
+    let report = reset::run(&ctx.env, &ctx.hw, log.path(), &input(&["business"]));
+    let progress = reset::__platform_backfill_progress();
+    reset::__disarm_platform_backfill_failure();
+
+    // ① 注入确实在写入之后才失败——这是「部分回填」的直接证据。
+    assert_eq!(progress, 1, "应当先成功写入 1 条，再让第 2 条失败");
+
+    // ② 整次重置失败，且失败原因能被识别为平台回填。
+    let report = report.expect("重置本身不该 panic，应以逐项结果返回失败");
+    assert_eq!(report.overall, "all_failed");
+    assert_eq!(report.new_generation, None, "失败的重置不得报出新代际");
+    let business = report
+        .items
+        .iter()
+        .find(|i| i.option == "business")
+        .expect("缺少业务数据项");
+    assert_eq!(business.status, "failed");
+    // 失败原因在 `reason`（`detail` 只给成功项）。
+    let reason = business.reason.clone().unwrap_or_default();
+    assert!(
+        reason.contains("平台配置回填失败"),
+        "失败原因必须能定位到平台回填，实际：{reason}"
+    );
+
+    // ③ 指针没动，也没有多出半成品代际。
+    assert_eq!(pointer(&ctx), before_pointer, "失败时不得切换指针");
+    assert_eq!(
+        generation_ids(&ctx),
+        before_generations,
+        "半成品新代际必须被清理"
+    );
+
+    // ④ 旧代际的平台配置一个字节都没变（含 NULL/0 区别与两个时间戳）。
+    let after_platforms = platforms_of(&ctx.env.layout().generation_db(&before_pointer));
+    assert_eq!(after_platforms, before_platforms);
+    assert_eq!(after_platforms.len(), 3);
+    assert_eq!(after_platforms[1].2, None, "NULL 费率不得被写成 0");
+    assert_eq!(after_platforms[2].2, Some(0), "明确的 0% 必须还是 0");
+    assert_eq!(after_platforms[2].3, 1, "归档状态必须保留");
+    assert!(after_platforms
+        .iter()
+        .all(|p| p.5 == PLATFORM_CREATED && p.6 == PLATFORM_UPDATED));
+
+    // ⑤ 原始业务数据没有受损。
+    let conn = ctx.conn();
+    let orders: i64 = conn.query_row("SELECT COUNT(*) FROM orders", [], |r| r.get(0)).unwrap();
+    assert_eq!(orders, 1);
+    let order_still: i64 = conn
+        .query_row("SELECT COUNT(*) FROM orders WHERE id = ?1", [&order], |r| r.get(0))
+        .unwrap();
+    assert_eq!(order_still, 1);
+    let integrity: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0)).unwrap();
+    assert_eq!(integrity, "ok");
+}
+
+/// 对照组：不注入时，同样的三行平台必须完整搬过去。
+/// 没有这一条，上面那条「失败」可能只是因为回填本来就跑不通。
+#[test]
+fn the_same_platform_set_succeeds_without_injection() {
+    let ctx = Ctx::new();
+    let log = tempfile::tempdir().unwrap();
+    seed_platform(&ctx, "p-a", "米画师", Some(500), 0, 0);
+    seed_platform(&ctx, "p-b", "画加", None, 0, 1);
+    seed_platform(&ctx, "p-c", "私信", Some(0), 1, 2);
+
+    let report = reset::run(&ctx.env, &ctx.hw, log.path(), &input(&["business"])).unwrap();
+    assert_eq!(report.overall, "all_ok");
+    let db = ctx
+        .env
+        .layout()
+        .generation_db(report.new_generation.as_ref().unwrap());
+    assert_eq!(platforms_of(&db).len(), 3);
+}

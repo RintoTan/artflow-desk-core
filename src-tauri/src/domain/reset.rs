@@ -311,7 +311,12 @@ fn backfill_platforms(conn: &mut Connection, rows: &[PlatformRow]) -> AppResult<
         return Ok(());
     }
     let tx = conn.transaction()?;
-    for row in rows {
+    for (index, row) in rows.iter().enumerate() {
+        #[cfg(debug_assertions)]
+        if fault::should_fail(index) {
+            // 故障注入只存在于 debug 构建；release 里连这个分支都没有。
+            return Err(AppError::db("平台配置回填失败（测试注入）"));
+        }
         tx.execute(
             "INSERT INTO payment_platforms
                (id, name, fee_rate_bp, archived, sort_position, created_at, updated_at)
@@ -325,10 +330,77 @@ fn backfill_platforms(conn: &mut Connection, rows: &[PlatformRow]) -> AppResult<
                 row.created_at,
                 row.updated_at
             ],
-        )?;
+        )
+        // 回填失败必须能被人看懂是哪一步坏了：把 SQL 错误包进上下文，
+        // 否则用户只看到一句 "CHECK constraint failed"。
+        .map_err(|e| AppError::db(format!("平台配置回填失败（{e}）")))?;
+        #[cfg(debug_assertions)]
+        fault::note_inserted();
     }
     tx.commit()?;
     Ok(())
+}
+
+/// 仅用于测试的故障注入点。
+///
+/// 为什么需要：回填失败是「整次重置必须失败且不切指针」这条约束的唯一未验证分支，
+/// 而新旧代际 schema 相同，构造不出「旧合法、新非法」的数据。这里用一个**只在
+/// debug 构建里存在**的线程内计数器，让第 N 次 INSERT 直接返回错误。
+///
+/// 边界：release 构建里整个 `fault` 模块与调用点都被编掉，不存在可在生产环境打开的
+/// 开关；不新增命令、不新增字段、不改变正常路径的任何行为。
+#[cfg(debug_assertions)]
+mod fault {
+    use std::cell::Cell;
+
+    thread_local! {
+        /// None = 未启用；Some(n) = 第 n 次 INSERT 失败。
+        static FAIL_AFTER: Cell<Option<usize>> = const { Cell::new(None) };
+        /// 本次注入已成功写入的条数，供测试断言「确实部分写入过」。
+        static INSERTED: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub fn arm(after: usize) {
+        FAIL_AFTER.with(|cell| cell.set(Some(after)));
+        INSERTED.with(|cell| cell.set(0));
+    }
+
+    pub fn disarm() {
+        FAIL_AFTER.with(|cell| cell.set(None));
+        INSERTED.with(|cell| cell.set(0));
+    }
+
+    pub fn should_fail(index: usize) -> bool {
+        FAIL_AFTER.with(|cell| cell.get() == Some(index))
+    }
+
+    pub fn note_inserted() {
+        INSERTED.with(|cell| cell.set(cell.get() + 1));
+    }
+
+    pub fn inserted() -> usize {
+        INSERTED.with(|cell| cell.get())
+    }
+}
+
+/// 供集成测试启用/关闭注入。`#[doc(hidden)]` + debug-only：不是 API。
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn __arm_platform_backfill_failure(after: usize) {
+    fault::arm(after);
+}
+
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn __disarm_platform_backfill_failure() {
+    fault::disarm();
+}
+
+/// 本次注入已经成功写入多少条平台配置（用来证明「部分写入后才失败」）。
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn __platform_backfill_progress() -> usize {
+    fault::inserted()
 }
 
 fn backfill(conn: &mut Connection, prefs: &Prefs, now: &str) -> AppResult<()> {
