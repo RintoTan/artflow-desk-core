@@ -39,3 +39,13 @@ path = "src/bin/minidesk_probe.rs"
 [[bin]]
 name = "attachments-probe"
 path = "src/bin/attachments_probe.rs"
+
+# Windows 的锁身份校验需要 GetFileInformationByHandle（卷序号 + 文件索引）。
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Pipes",
+    "Win32_System_IO",
+] }

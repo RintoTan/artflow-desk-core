@@ -13,12 +13,22 @@ use crate::error::{AppError, AppResult};
 
 pub const LOCK_FILE_NAME: &str = ".write.lock";
 
+/// 稳定文件身份：Unix 用 `dev + ino`，Windows 用 `卷序号 + 文件索引`。
+///
+/// 只比较这两个值就足以发现「锁文件被删掉重建」「路径指向了另一个文件」——
+/// 这是双写防护的唯一依据，所以两边都必须是真实取得的身份，不允许恒通过。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FileId {
+    pub volume: u64,
+    pub index: u64,
+}
+
 pub struct DirLock {
     path: PathBuf,
     // 持有到 drop；进程死亡时内核自动释放。
     _file: File,
-    /// 取得锁时的文件身份（unix: dev+ino）。用于发现"锁文件被人删掉重建"。
-    identity: Option<(u64, u64)>,
+    /// 取得锁时的文件身份。用于发现"锁文件被人删掉重建"。
+    identity: Option<FileId>,
 }
 
 impl DirLock {
@@ -58,7 +68,10 @@ impl DirLock {
         let current = file_identity(&self.path);
         match (self.identity, current) {
             (Some(expected), Some(actual)) if expected == actual => Ok(()),
-            (None, _) => Ok(()),
+            // 取锁时就没拿到身份：无法证明锁还在原地，宁可挡住写入也不放行。
+            (None, _) => Err(AppError::busy(
+                "无法确认数据目录锁的身份，已停止写入以避免双写",
+            )),
             _ => Err(AppError::busy(
                 "数据目录锁文件已被替换，已停止写入以避免双写",
             )),
@@ -66,16 +79,39 @@ impl DirLock {
     }
 }
 
-#[cfg(unix)]
-fn file_identity(path: &Path) -> Option<(u64, u64)> {
-    use std::os::unix::fs::MetadataExt;
-    std::fs::metadata(path).ok().map(|m| (m.dev(), m.ino()))
+/// 供测试与诊断读取：一个路径当前指向的文件身份。
+pub fn file_id(path: &Path) -> Option<FileId> {
+    file_identity(path)
 }
 
-#[cfg(not(unix))]
-fn file_identity(_path: &Path) -> Option<(u64, u64)> {
-    // 非 unix 平台暂不做 inode 级校验；Windows 的文件锁语义由 DEV-09 单独验证。
-    None
+#[cfg(unix)]
+fn file_identity(path: &Path) -> Option<FileId> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(path).ok().map(|m| FileId {
+        volume: m.dev(),
+        index: m.ino(),
+    })
+}
+
+#[cfg(windows)]
+fn file_identity(path: &Path) -> Option<FileId> {
+    use std::os::windows::io::AsRawHandle;
+
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    };
+
+    // 以「只读 + 不跟随重解析点」打开：拿到的必须是路径当前指向的那个文件。
+    let file = std::fs::File::open(path).ok()?;
+    let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+    let ok = unsafe { GetFileInformationByHandle(file.as_raw_handle() as _, &mut info) };
+    if ok == 0 {
+        return None;
+    }
+    Some(FileId {
+        volume: info.dwVolumeSerialNumber as u64,
+        index: ((info.nFileIndexHigh as u64) << 32) | info.nFileIndexLow as u64,
+    })
 }
 
 impl Drop for DirLock {

@@ -5,6 +5,7 @@ mod common;
 use std::fs;
 use std::process::{Command, Stdio};
 
+use minidesk::infra::lock::{file_id, FileId};
 use minidesk::store::environment::Environment;
 
 const PROBE: &str = env!("CARGO_BIN_EXE_minidesk-probe");
@@ -168,4 +169,40 @@ fn concurrent_writers_leave_data_intact() {
     assert_eq!(count, 1, "锁竞争不得损坏数据");
     let integrity: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0)).unwrap();
     assert_eq!(integrity, "ok");
+}
+
+/// 锁身份必须是「真实取得的文件身份」，不是恒通过的占位值。
+/// Windows 走 GetFileInformationByHandle（卷序号 + 文件索引），Unix 走 dev + ino。
+#[test]
+fn file_identity_distinguishes_files_and_replacements() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.lock");
+    let b = dir.path().join("b.lock");
+    fs::write(&a, b"").unwrap();
+    fs::write(&b, b"").unwrap();
+
+    let id_a = file_id(&a).expect("必须取得文件身份");
+    let id_a_again = file_id(&a).expect("必须取得文件身份");
+    assert_eq!(id_a, id_a_again, "同一个文件两次读取身份必须一致");
+    assert_ne!(id_a, file_id(&b).unwrap(), "不同文件身份必须不同");
+
+    // 删掉再建：路径没变，但已经是一个新文件。
+    fs::remove_file(&a).unwrap();
+    fs::write(&a, b"").unwrap();
+    let rebuilt = file_id(&a).unwrap();
+    assert_ne!(rebuilt, id_a, "替换后的文件身份必须与原来不同");
+}
+
+#[test]
+fn missing_lock_file_has_no_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(file_id(&dir.path().join("nope.lock")), None);
+}
+
+#[test]
+fn lock_identity_is_reported_for_the_live_lock() {
+    let (_dir, root) = setup();
+    let _env = common::open(&root);
+    let id: FileId = file_id(&root.join(".write.lock")).expect("锁文件必须有身份");
+    assert!(id.index != 0 || id.volume != 0, "身份不能是全零占位");
 }
