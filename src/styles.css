@@ -8518,3 +8518,152 @@ dl.stat-row {
   line-height: 1.7;
   word-break: break-all;
 }
+
+/* ---------------------------------------------------- 接单平台（FIN-02） */
+/*
+ * 平台列表是最普通的两列信息 + 操作条。刻意不加卡片、不加阴影：
+ * 它在设置页里和「数据维护」同级，不应该比上面的主题设置更抢眼。
+ */
+.platform-panel h3.platform-group-title {
+  margin: 18px 0 8px;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: none;
+  color: var(--text-muted);
+}
+
+.platform-toolbar {
+  margin: 14px 0 4px;
+}
+
+.platform-empty {
+  margin: 14px 0 4px;
+  padding: 14px 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+
+.platform-empty p {
+  margin: 0 0 6px;
+}
+
+.platform-empty p:last-child {
+  margin-bottom: 0;
+}
+
+.platform-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.platform-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 96px auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+.platform-row + .platform-row {
+  border-top-color: var(--border);
+}
+
+.platform-row:hover {
+  background: var(--accent-soft);
+}
+
+.platform-row.is-archived {
+  color: var(--text-muted);
+}
+
+.platform-row.is-dragging {
+  opacity: 0.55;
+}
+
+.platform-row.is-drop-target {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.platform-grip {
+  cursor: grab;
+  color: var(--text-faint);
+  user-select: none;
+  text-align: center;
+  line-height: 1;
+}
+
+.platform-grip.is-disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.platform-row.is-dragging .platform-grip {
+  cursor: grabbing;
+}
+
+.platform-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.platform-rate {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.platform-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.platform-form {
+  margin: 14px 0 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 12px;
+}
+
+.platform-form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.platform-danger {
+  color: var(--danger);
+}
+
+.platform-danger:hover:not(:disabled) {
+  border-color: var(--danger);
+}
+
+@media (max-width: 720px) {
+  .platform-row {
+    grid-template-columns: 22px minmax(0, 1fr);
+    row-gap: 6px;
+  }
+
+  .platform-rate {
+    text-align: left;
+    grid-column: 2;
+  }
+
+  .platform-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}

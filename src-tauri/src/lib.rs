@@ -180,7 +180,14 @@ fn build_app() -> Result<tauri::App, String> {
             commands::theme::ui_theme_get,
             commands::theme::ui_theme_set,
             commands::app_icon::ui_icon_get,
-            commands::app_icon::ui_icon_set
+            commands::app_icon::ui_icon_set,
+            commands::finance::finance_platform_list,
+            commands::finance::finance_platform_create,
+            commands::finance::finance_platform_update,
+            commands::finance::finance_platform_archive,
+            commands::finance::finance_platform_restore,
+            commands::finance::finance_platform_reorder,
+            commands::finance::finance_platform_delete
         ])
         .build(tauri::generate_context!())
         .map_err(|e| format!("构建应用失败：{e}"))

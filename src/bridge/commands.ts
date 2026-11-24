@@ -906,3 +906,41 @@ export const trashApi = {
   cleanupStatus: () => invoke<PurgeCleanupStatus>("trash_cleanup_status"),
   retryCleanup: () => invoke<PurgeCleanupStatus>("trash_retry_cleanup"),
 };
+
+// ---------------------------------------------------------------- FIN-02
+
+export type PlatformView = {
+  id: string;
+  name: string;
+  /** null = 未配置费率；0 = 明确零费率。两者不可混淆。 */
+  feeRateBp: number | null;
+  archived: boolean;
+  sortPosition: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DeletePlatformReport = {
+  id: string;
+  name: string;
+  /** 因删除平台而失去关联的收款流水数；这些流水的快照仍然保留。 */
+  detachedPayments: number;
+};
+
+/**
+ * 费率一律以**用户输入的原文**送到后端换算（`"1.25"` → 125bp）。
+ * 前端只负责展示，不重复实现一套可能漂移的解析。
+ */
+export const financeApi = {
+  platforms: () => invoke<PlatformView[]>("finance_platform_list"),
+  createPlatform: (input: { name: string; feeRate: string | null }) =>
+    invoke<PlatformView>("finance_platform_create", { input }),
+  updatePlatform: (input: { id: string; name: string; feeRate: string | null }) =>
+    invoke<PlatformView>("finance_platform_update", { input }),
+  archivePlatform: (id: string) => invoke<PlatformView>("finance_platform_archive", { id }),
+  restorePlatform: (id: string) => invoke<PlatformView>("finance_platform_restore", { id }),
+  reorderPlatforms: (ids: string[]) =>
+    invoke<PlatformView[]>("finance_platform_reorder", { ids }),
+  deletePlatform: (id: string) =>
+    invoke<DeletePlatformReport>("finance_platform_delete", { id }),
+};

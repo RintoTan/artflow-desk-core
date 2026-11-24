@@ -3,6 +3,7 @@ pub mod backup;
 pub mod attachments;
 pub mod clients;
 pub mod diag;
+pub mod finance;
 pub mod maintenance;
 pub mod orders;
 pub mod preferences;

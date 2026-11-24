@@ -14,5 +14,6 @@ pub mod templates;
 pub mod trash;
 pub mod workflow;
 pub mod export;
+pub mod finance;
 pub mod fixture;
 pub mod stats;

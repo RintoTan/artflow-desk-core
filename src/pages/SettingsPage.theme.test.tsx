@@ -19,6 +19,8 @@ vi.mock("../bridge/commands", async () => {
   );
   return {
     ...actual,
+    // 平台面板会自己拉一次数据；这里给空列表，别让它把设置页的 alert 搞成两个。
+    financeApi: { ...actual.financeApi, platforms: async () => [] },
     api: {
       storageStatus: async () => ({
         root: "/data/root",

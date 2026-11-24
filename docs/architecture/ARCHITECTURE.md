@@ -107,6 +107,16 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 - **v11 补强（FIN-01.1）**：三表改 `STRICT`（`INTEGER` 只是亲和性，`1.5` 会被存成 REAL 而 CHECK 照样通过）；主键显式 `NOT NULL`（rowid 表的 TEXT 主键历史上允许 NULL）；名称要求「已 trim」；日期加 `date(x) IS x` 抓 `2026-02-31` 这类溢出（SQLite 会把它归一化成 3 月 3 日）；`platform_id` 有值时必须有 `platform_name` 快照。
 - **同订单不变量**：`payment_records.schedule_id` 指向的计划必须与 `payment_records.order_id` 同单。用触发器而不是复合外键——复合键的 `ON DELETE SET NULL` 会连 `order_id` 一起置空，把「删计划、留流水」这条已冻结语义弄坏。三个触发器覆盖流水 INSERT、流水 UPDATE、以及「已挂流水的计划改挂订单」。
 - **v11 必须先断言三表为空**：`PRAGMA foreign_keys` 在事务内是 no-op，三表互相引用时删父表会触发子表 `SET NULL` 并静默抹掉关联。非空则整步中止，不搬迁、不改数据。
+### 平台配置（FIN-02）
+
+- 入口：设置 → 财务设置 → 接单平台与手续费；命令统一在 `commands::finance::*`，规则在 `domain::finance`。
+- **只有一个 `archived` 状态**，不设 `enabled`：停用即归档，可恢复；归档平台仍占用名称（唯一索引不带 `archived` 条件），所以新建同名平台会被拒，并按「同名在用 / 同名已归档」给两种不同的提示。
+- **名称在 Rust 侧 `trim()`**（覆盖全角空格等 Unicode 空白），数据库的 `name = trim(name)` 只认 ASCII 空格，两层是互补而不是重复。
+- **费率原文由界面送进后端换算**：`domain::finance::parse_fee_rate` 只做整数运算，空串 → NULL、`0`/`0.00` → 0、`1.25` → 125；前端不另写一套解析。展示走 `format_fee_rate`。
+- 排序：只接受「当前全部正常平台」的一个排列，集合不匹配就拒绝（而不是宽容地只改交集）；整体在一个 `IMMEDIATE` 事务里完成。
+- 删除只删配置行；`payment_records.platform_id` 按 `SET NULL` 断开，名称/费率/手续费快照不受影响，返回值里带 `detachedPayments` 让界面说清楚影响了几笔。
+- 时间戳：用户动作（编辑/归档/恢复/排序）更新 `updated_at`；`created_at` 从不动。与 C-3 的「重置搬运两个都保留」是两套语义。
+
 - 索引：`payment_records_schedule(schedule_id)` 服务「按计划聚合已收」，`payment_records_received(received_on)` 服务月度现金流扫描（复合索引第二列不能单独用）。
 
 ### 迁移链
