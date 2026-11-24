@@ -297,6 +297,8 @@ SELECT COUNT(*) FROM orders WHERE stage_template_id = ?   -- 不过滤 deleted_a
 | **日志** | `logs/` 轮转文件 | 就地删除 | 不勾选 |
 | **附件隔离区** | 活动代际 `attachments/quarantine/` | 就地删除，**必须提示「清理后将失去崩溃恢复的比对线索」** | 不勾选 |
 
+**退款随业务数据清空**：`refund_records` 记录的是某笔委托的资金流出，属于委托记录，业务数据重置时随新代际归零，不回填、不搬运。永久删除订单时 `purge_order_rows` 会显式删掉该订单的退款、收款与计划（退款先删，再删收款）。
+
 **例外：平台配置不进业务数据包（FIN-01.1）**。`payment_platforms` 是接单渠道与默认费率的工具配置，不是某一笔委托的数据；重置业务数据后**逐行搬运到新代际**，字段与两个时间戳一律原样（`created_at` 保持最初创建时间，`updated_at` 保持最后一次真实修改时间——重置是维护动作，不是用户改了费率）。`payment_schedules` / `payment_records` 属于委托记录，随业务数据清空，不回填。
 
 **业务数据包内部不可拆分**，理由：`orders.client_id` 依赖客户、`attachments` 依赖订单、`order_events` 依赖订单、`stage_template_steps` 依赖模板、`client_tag_link` 依赖客户与标签。允许用户勾掉其中一项，等于允许制造悬挂引用。

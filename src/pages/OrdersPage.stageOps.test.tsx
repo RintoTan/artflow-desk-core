@@ -260,7 +260,9 @@ describe("订单详情的阶段操作入口", () => {
     await user.click(screen.getByRole("button", { name: "取消订单…" }));
     const dialog = await screen.findByRole("alertdialog");
     expect(within(dialog).getByText("取消这张订单？")).toBeTruthy();
-    expect(within(dialog).getByRole("button", { name: "确认取消订单" })).toBeTruthy();
+    const confirm = within(dialog).getByRole("button", { name: "确认取消订单" }) as HTMLButtonElement;
+    expect(confirm).toBeTruthy();
+    expect(confirm.disabled).toBe(true);
 
     await user.click(within(dialog).getByRole("button", { name: "保留订单" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -274,11 +276,18 @@ describe("订单详情的阶段操作入口", () => {
 
     await user.click(screen.getByRole("button", { name: "取消订单…" }));
     const dialog = await screen.findByRole("alertdialog");
+    // 必须先回答「有没有退钱」，按钮才可用。
+    await user.click(within(dialog).getByLabelText("没有退款"));
     await user.click(within(dialog).getByRole("button", { name: "确认取消订单" }));
 
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]?.kind).toBe("cancel");
-    expect(calls[0]?.input).toMatchObject({ orderId: "o1", expectedRevision: 1 });
+    expect(calls[0]?.input).toMatchObject({
+      orderId: "o1",
+      expectedRevision: 1,
+      refundDecision: "none",
+      refunds: [],
+    });
   });
 
   it("超长阶段名不把确认按钮挤出对话框", async () => {

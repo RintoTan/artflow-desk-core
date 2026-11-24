@@ -82,6 +82,7 @@ BEGIN
   WHERE (SELECT kind FROM payment_schedules WHERE id = NEW.schedule_id) IS NOT NEW.kind;
 END;
 
+
 -- 4) 已经挂了流水的计划不能改类型：否则历史流水的分类会被回头改写。
 --    没挂流水的计划仍然可以改（用户配错了计划本来就该能改）。
 CREATE TRIGGER payment_schedules_kind_locked
@@ -91,6 +92,105 @@ BEGIN
   SELECT RAISE(ABORT, '该付款计划已有收款流水，不能修改类型')
   WHERE EXISTS (SELECT 1 FROM payment_records WHERE schedule_id = OLD.id);
 END;
+
+-- 5) 退款记录：真实资金流出，独立成表。
+--    不能写成负数收款，也不能用「作废原收款」冒充退款：那是三件不同的事。
+CREATE TABLE refund_records (
+  id                TEXT NOT NULL PRIMARY KEY,
+  order_id          TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  -- 允许为空：历史订单可能压根没录过收款，但退款确实发生了。
+  payment_record_id TEXT REFERENCES payment_records(id) ON DELETE SET NULL,
+  amount_cents      INTEGER NOT NULL CHECK (amount_cents > 0),
+  refunded_on       TEXT NOT NULL CHECK (refunded_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+                                          AND date(refunded_on) IS refunded_on),
+  method            TEXT CHECK (method IS NULL
+                                OR method IN ('wechat', 'alipay', 'bank', 'cash', 'other')),
+  note              TEXT,
+  voided_at         TEXT,
+  void_reason       TEXT,
+  request_id        TEXT UNIQUE,
+  created_at        TEXT NOT NULL,
+  -- 作废必须成对：没时间就没原因，有时间就必须有原因。
+  CHECK ((voided_at IS NULL AND void_reason IS NULL)
+      OR (voided_at IS NOT NULL AND length(trim(void_reason)) > 0))
+) STRICT;
+
+CREATE INDEX refund_records_order ON refund_records(order_id, refunded_on);
+CREATE INDEX refund_records_payment ON refund_records(payment_record_id);
+CREATE INDEX refund_records_date ON refund_records(refunded_on);
+
+-- 6) 退款必须和它关联的原收款属于同一张订单。
+CREATE TRIGGER refund_records_same_order_insert
+BEFORE INSERT ON refund_records
+WHEN NEW.payment_record_id IS NOT NULL
+ AND EXISTS (SELECT 1 FROM payment_records WHERE id = NEW.payment_record_id)
+BEGIN
+  SELECT RAISE(ABORT, '退款与原收款不属于同一订单')
+  WHERE (SELECT order_id FROM payment_records WHERE id = NEW.payment_record_id)
+        IS NOT NEW.order_id;
+END;
+
+CREATE TRIGGER refund_records_same_order_update
+BEFORE UPDATE OF payment_record_id, order_id ON refund_records
+WHEN NEW.payment_record_id IS NOT NULL
+ AND EXISTS (SELECT 1 FROM payment_records WHERE id = NEW.payment_record_id)
+BEGIN
+  SELECT RAISE(ABORT, '退款与原收款不属于同一订单')
+  WHERE (SELECT order_id FROM payment_records WHERE id = NEW.payment_record_id)
+        IS NOT NEW.order_id;
+END;
+
+-- 7) 作废的收款不能挂退款；累计有效退款不能超过原收款金额。
+CREATE TRIGGER refund_records_payment_valid_insert
+BEFORE INSERT ON refund_records
+WHEN NEW.payment_record_id IS NOT NULL
+ AND EXISTS (SELECT 1 FROM payment_records WHERE id = NEW.payment_record_id)
+BEGIN
+  SELECT RAISE(ABORT, '不能关联已作废的收款记录')
+  WHERE (SELECT voided_at FROM payment_records WHERE id = NEW.payment_record_id) IS NOT NULL;
+  SELECT RAISE(ABORT, '累计退款超过原收款金额')
+  WHERE NEW.voided_at IS NULL
+    AND (SELECT amount_cents FROM payment_records WHERE id = NEW.payment_record_id)
+        < NEW.amount_cents + COALESCE((
+              SELECT SUM(amount_cents) FROM refund_records
+               WHERE payment_record_id = NEW.payment_record_id AND voided_at IS NULL), 0);
+END;
+
+CREATE TRIGGER refund_records_payment_valid_update
+BEFORE UPDATE OF payment_record_id, amount_cents, voided_at ON refund_records
+WHEN NEW.payment_record_id IS NOT NULL
+ AND EXISTS (SELECT 1 FROM payment_records WHERE id = NEW.payment_record_id)
+BEGIN
+  SELECT RAISE(ABORT, '不能关联已作废的收款记录')
+  WHERE NEW.voided_at IS NULL
+    AND (SELECT voided_at FROM payment_records WHERE id = NEW.payment_record_id) IS NOT NULL;
+  SELECT RAISE(ABORT, '累计退款超过原收款金额')
+  WHERE NEW.voided_at IS NULL
+    AND (SELECT amount_cents FROM payment_records WHERE id = NEW.payment_record_id)
+        < NEW.amount_cents + COALESCE((
+              SELECT SUM(amount_cents) FROM refund_records
+               WHERE payment_record_id = NEW.payment_record_id
+                 AND voided_at IS NULL AND id IS NOT NEW.id), 0);
+END;
+
+-- 8) 作废不可逆：已经作废的退款不能被「恢复」成有效。
+CREATE TRIGGER refund_records_void_irreversible
+BEFORE UPDATE OF voided_at ON refund_records
+WHEN OLD.voided_at IS NOT NULL AND NEW.voided_at IS NULL
+BEGIN
+  SELECT RAISE(ABORT, '已作废的退款记录不能恢复');
+END;
+
+-- 9) 有有效退款的收款不能被作废：否则退款就挂在一笔「不存在的收款」上了。
+CREATE TRIGGER payment_records_void_blocked_by_refunds
+BEFORE UPDATE OF voided_at ON payment_records
+WHEN OLD.voided_at IS NULL AND NEW.voided_at IS NOT NULL
+BEGIN
+  SELECT RAISE(ABORT, '该收款已有退款记录，不能作废')
+  WHERE EXISTS (SELECT 1 FROM refund_records
+                 WHERE payment_record_id = OLD.id AND voided_at IS NULL);
+END;
+
 "#,
     )?;
 
@@ -99,6 +199,12 @@ END;
         "payment_records_kind_match_insert",
         "payment_records_kind_match_update",
         "payment_schedules_kind_locked",
+        "refund_records_same_order_insert",
+        "refund_records_same_order_update",
+        "refund_records_payment_valid_insert",
+        "refund_records_payment_valid_update",
+        "refund_records_void_irreversible",
+        "payment_records_void_blocked_by_refunds",
     ] {
         let found: i64 = tx.query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name = ?1",

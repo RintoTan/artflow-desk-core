@@ -123,3 +123,32 @@ pub fn finance_payment_fee_quote(
 ) -> AppResult<finance::FeeQuote> {
     finance::quote(amount_cents, fee_rate_bp)
 }
+
+// ---------------------------------------------------------------- 退款
+
+#[tauri::command]
+pub fn finance_refund_create(
+    state: State<'_, AppState>,
+    input: finance::RefundInput,
+) -> AppResult<finance::RefundView> {
+    let mut conn = state.env.open_db()?;
+    finance::create_refund(&mut conn, &input)
+}
+
+#[tauri::command]
+pub fn finance_refund_update(
+    state: State<'_, AppState>,
+    input: finance::UpdateRefundInput,
+) -> AppResult<finance::RefundView> {
+    let mut conn = state.env.open_db()?;
+    finance::update_refund(&mut conn, &input)
+}
+
+#[tauri::command]
+pub fn finance_refund_void(
+    state: State<'_, AppState>,
+    input: finance::VoidRefundInput,
+) -> AppResult<finance::RefundView> {
+    let mut conn = state.env.open_db()?;
+    finance::void_refund(&mut conn, &input)
+}

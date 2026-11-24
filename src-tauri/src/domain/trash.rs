@@ -677,6 +677,8 @@ fn purge_order_rows(
     tx.execute("DELETE FROM order_events WHERE order_id = ?1", [order_id])?;
     tx.execute("DELETE FROM order_stages WHERE order_id = ?1", [order_id])?;
     // 财务三表：流水先于计划删（流水对计划是 SET NULL，顺序换了会白写两次）。
+    // 退款先删：它对收款是 SET NULL，对订单是 CASCADE，显式删与既有风格一致。
+    tx.execute("DELETE FROM refund_records WHERE order_id = ?1", [order_id])?;
     tx.execute("DELETE FROM payment_records WHERE order_id = ?1", [order_id])?;
     tx.execute("DELETE FROM payment_schedules WHERE order_id = ?1", [order_id])?;
     let removed = tx.execute("DELETE FROM orders WHERE id = ?1", [order_id])?;

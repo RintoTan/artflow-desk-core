@@ -509,6 +509,14 @@ pub struct OrderFinanceView {
     pub gross_received_cents: i64,
     pub fee_total_cents: i64,
     pub net_received_cents: i64,
+    pub refunds: Vec<RefundView>,
+    pub voided_refunds: Vec<RefundView>,
+    /// 有效退款合计（未作废）。
+    pub refund_total_cents: i64,
+    /// 净到账 − 实际退款。允许为负：负数说明退款超过已记录到账，要提示而不是截断。
+    pub net_retained_cents: i64,
+    /// 订单已取消：财务只读，但退款仍可补录。
+    pub cancelled: bool,
     /// 订单金额未知时为 None——不能拿 0 冒充「已结清」。
     pub remaining_cents: Option<i64>,
     pub over_received_cents: i64,
@@ -1065,7 +1073,8 @@ fn plan_mode(items: &[PlanItemView]) -> &'static str {
 /// 订单财务全景。所有数字都是现算的，表里没有「已收」「待收」这类字段。
 pub fn snapshot(conn: &Connection, order_id: &str) -> AppResult<OrderFinanceView> {
     let order = order_money(conn, order_id)?;
-    ensure_finance_open(&order)?;
+    // 取消单仍然可以读：用户要看自己的历史收款与退款。写入才拦。
+    let cancelled = order.status == "cancelled";
     let tz = settings::working_timezone(conn)?;
     let today = timezone::local_today(tz);
 
@@ -1126,6 +1135,11 @@ pub fn snapshot(conn: &Connection, order_id: &str) -> AppResult<OrderFinanceView
     let (voided_records, records): (Vec<_>, Vec<_>) =
         all_records.into_iter().partition(|r| r.voided_at.is_some());
 
+    let all_refunds = refunds_of(conn, order_id)?;
+    let (voided_refunds, refunds): (Vec<_>, Vec<_>) =
+        all_refunds.into_iter().partition(|r| r.voided_at.is_some());
+    let refund_total_cents: i64 = refunds.iter().map(|r| r.amount_cents).sum();
+
     let gross_received_cents: i64 = records.iter().map(|r| r.amount_cents).sum();
     let fee_total_cents: i64 = records.iter().map(|r| r.fee_cents).sum();
     let plan_total_cents: i64 = items.iter().map(|i| i.amount_cents).sum();
@@ -1144,6 +1158,11 @@ pub fn snapshot(conn: &Connection, order_id: &str) -> AppResult<OrderFinanceView
         gross_received_cents,
         fee_total_cents,
         net_received_cents: gross_received_cents - fee_total_cents,
+        refunds,
+        voided_refunds,
+        refund_total_cents,
+        net_retained_cents: gross_received_cents - fee_total_cents - refund_total_cents,
+        cancelled,
         remaining_cents: order
             .amount_cents
             .map(|total| (total - gross_received_cents).max(0)),
@@ -1163,4 +1182,272 @@ fn all_records_is_empty(conn: &Connection, order_id: &str) -> AppResult<bool> {
         |r| r.get(0),
     )?;
     Ok(rows == 0)
+}
+
+// ======================================================================
+// 退款：真实资金流出，独立成表
+//
+// 三件事必须分清：
+// - **作废**：原收款录错了，这笔钱从来没进来。
+// - **退款**：钱确实进来了，后来又退回去了。
+// - 因此退款不能写成负数流水，也不能拿「作废原收款」冒充。
+// ======================================================================
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefundView {
+    pub id: String,
+    pub order_id: String,
+    pub payment_record_id: Option<String>,
+    pub amount_cents: i64,
+    pub refunded_on: String,
+    pub method: Option<String>,
+    pub note: Option<String>,
+    pub voided_at: Option<String>,
+    pub void_reason: Option<String>,
+    pub created_at: String,
+    /// 未关联原收款：系统核验不了「还能退多少」，界面必须提示。
+    pub unmatched: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefundInput {
+    pub order_id: String,
+    /// 可选。历史订单可能根本没录过收款，但退款确实发生了。
+    pub payment_record_id: Option<String>,
+    pub amount_cents: i64,
+    pub refunded_on: String,
+    pub method: Option<String>,
+    pub note: Option<String>,
+    pub request_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateRefundInput {
+    pub id: String,
+    pub payment_record_id: Option<String>,
+    pub amount_cents: i64,
+    pub refunded_on: String,
+    pub method: Option<String>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoidRefundInput {
+    pub id: String,
+    pub reason: String,
+}
+
+const REFUND_COLUMNS: &str = "id, order_id, payment_record_id, amount_cents, refunded_on,
+     method, note, voided_at, void_reason, created_at";
+
+fn refund_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RefundView> {
+    let payment_record_id: Option<String> = row.get("payment_record_id")?;
+    Ok(RefundView {
+        id: row.get("id")?,
+        order_id: row.get("order_id")?,
+        unmatched: payment_record_id.is_none(),
+        payment_record_id,
+        amount_cents: row.get("amount_cents")?,
+        refunded_on: row.get("refunded_on")?,
+        method: row.get("method")?,
+        note: row.get("note")?,
+        voided_at: row.get("voided_at")?,
+        void_reason: row.get("void_reason")?,
+        created_at: row.get("created_at")?,
+    })
+}
+
+fn refunds_of(conn: &Connection, order_id: &str) -> AppResult<Vec<RefundView>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {REFUND_COLUMNS} FROM refund_records
+          WHERE order_id = ?1
+          ORDER BY refunded_on DESC, created_at DESC, id DESC"
+    ))?;
+    let rows = stmt.query_map([order_id], refund_row)?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+fn load_refund(conn: &Connection, id: &str) -> AppResult<RefundView> {
+    conn.query_row(
+        &format!("SELECT {REFUND_COLUMNS} FROM refund_records WHERE id = ?1"),
+        [id],
+        refund_row,
+    )
+    .optional()?
+    .ok_or_else(|| AppError::not_found("退款记录不存在"))
+}
+
+/// 退款日期：真实、不得晚于今天。历史补录不设下限。
+fn refund_date(conn: &Connection, raw: &str) -> AppResult<String> {
+    let parsed = timezone::parse_calendar_date(raw)?;
+    let tz = settings::working_timezone(conn)?;
+    if parsed > timezone::local_today(tz) {
+        return Err(AppError::invalid("退款日期不能晚于今天"));
+    }
+    Ok(parsed.format("%Y-%m-%d").to_string())
+}
+
+fn clean_payment_link(raw: &Option<String>) -> Option<String> {
+    raw.as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+/// 退款额度校验：`原收款金额 − 其它有效退款合计` 就是还能退的上限。
+///
+/// `skip_id` 用于编辑时把自己排除掉。数据库有同样的触发器，
+/// 这里先算一遍只是为了给出可读的中文错误。
+fn assert_refundable(
+    conn: &Connection,
+    payment_id: &str,
+    order_id: &str,
+    amount_cents: i64,
+    skip_id: Option<&str>,
+) -> AppResult<()> {
+    let (owner, paid, voided): (String, i64, Option<String>) = conn
+        .query_row(
+            "SELECT order_id, amount_cents, voided_at FROM payment_records WHERE id = ?1",
+            [payment_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?
+        .ok_or_else(|| AppError::not_found("关联的收款记录不存在"))?;
+    if owner != order_id {
+        return Err(AppError::invalid("退款与原收款不属于同一订单"));
+    }
+    if voided.is_some() {
+        return Err(AppError::conflict("不能关联已作废的收款记录"));
+    }
+    let already: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(amount_cents), 0) FROM refund_records
+          WHERE payment_record_id = ?1 AND voided_at IS NULL AND id IS NOT ?2",
+        params![payment_id, skip_id.unwrap_or("")],
+        |r| r.get(0),
+    )?;
+    if already + amount_cents > paid {
+        return Err(AppError::invalid(format!(
+            "累计退款超过原收款金额（可退 {} 元，本次 {} 元）",
+            yuan(paid - already),
+            yuan(amount_cents)
+        )));
+    }
+    Ok(())
+}
+
+/// 单条退款的校验 + 写入。可在事务内复用（订单取消时与取消同事务）。
+pub fn insert_refund(conn: &Connection, input: &RefundInput) -> AppResult<RefundView> {
+    visibility::require_visible_order(conn, &input.order_id)?;
+    check_amount(input.amount_cents)?;
+    let refunded_on = refund_date(conn, &input.refunded_on)?;
+    let method = clean_method(&input.method)?;
+    let note = clean_note(&input.note)?;
+    let request_id = clean_request_id(&input.request_id)?;
+
+    if let Some(rid) = &request_id {
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT id FROM refund_records WHERE request_id = ?1",
+                [rid],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(id) = existing {
+            return load_refund(conn, &id);
+        }
+    }
+
+    let payment_record_id = clean_payment_link(&input.payment_record_id);
+    if let Some(pid) = &payment_record_id {
+        assert_refundable(conn, pid, &input.order_id, input.amount_cents, None)?;
+    }
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = timezone::now_timestamp();
+    conn.execute(
+        "INSERT INTO refund_records
+           (id, order_id, payment_record_id, amount_cents, refunded_on,
+            method, note, request_id, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            id,
+            input.order_id,
+            payment_record_id,
+            input.amount_cents,
+            refunded_on,
+            method,
+            note,
+            request_id,
+            now
+        ],
+    )?;
+    load_refund(conn, &id)
+}
+
+pub fn create_refund(conn: &mut Connection, input: &RefundInput) -> AppResult<RefundView> {
+    insert_refund(conn, input)
+}
+
+pub fn update_refund(conn: &mut Connection, input: &UpdateRefundInput) -> AppResult<RefundView> {
+    let current = load_refund(conn, &input.id)?;
+    if current.voided_at.is_some() {
+        return Err(AppError::conflict("已作废的退款记录不能再修改"));
+    }
+    visibility::require_visible_order(conn, &current.order_id)?;
+    check_amount(input.amount_cents)?;
+    let refunded_on = refund_date(conn, &input.refunded_on)?;
+    let method = clean_method(&input.method)?;
+    let note = clean_note(&input.note)?;
+
+    let payment_record_id = clean_payment_link(&input.payment_record_id);
+    if let Some(pid) = &payment_record_id {
+        assert_refundable(
+            conn,
+            pid,
+            &current.order_id,
+            input.amount_cents,
+            Some(&current.id),
+        )?;
+    }
+
+    conn.execute(
+        "UPDATE refund_records
+            SET payment_record_id = ?1, amount_cents = ?2, refunded_on = ?3,
+                method = ?4, note = ?5
+          WHERE id = ?6",
+        params![
+            payment_record_id,
+            input.amount_cents,
+            refunded_on,
+            method,
+            note,
+            current.id
+        ],
+    )?;
+    load_refund(conn, &current.id)
+}
+
+pub fn void_refund(conn: &mut Connection, input: &VoidRefundInput) -> AppResult<RefundView> {
+    let current = load_refund(conn, &input.id)?;
+    if current.voided_at.is_some() {
+        return Err(AppError::conflict("该退款记录已经作废"));
+    }
+    visibility::require_visible_order(conn, &current.order_id)?;
+    let reason = input.reason.trim();
+    if reason.is_empty() {
+        return Err(AppError::invalid("作废原因不能为空"));
+    }
+    if reason.chars().count() > 500 {
+        return Err(AppError::invalid("作废原因过长"));
+    }
+    let now = timezone::now_timestamp();
+    conn.execute(
+        "UPDATE refund_records SET voided_at = ?1, void_reason = ?2 WHERE id = ?3",
+        params![now, reason, current.id],
+    )?;
+    load_refund(conn, &current.id)
 }

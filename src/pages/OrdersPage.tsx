@@ -13,6 +13,7 @@ import {
 import FilterMenu from "../components/FilterMenu";
 import OrderTable from "../components/OrderTable";
 import ActionMenu from "../components/ActionMenu";
+import CancelOrderDialog, { type CancelOrderPayload } from "../components/CancelOrderDialog";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { ScheduleOverview } from "../components/ScheduleOverview";
 import { TruncatedTitle } from "../components/TitleTooltip";
@@ -1804,39 +1805,21 @@ export default function OrdersPage() {
         </div>
       </ConfirmDialog>
 
-      <ConfirmDialog
+      <CancelOrderDialog
         open={cancelOpen}
-        title="取消这张订单？"
-        danger
-        confirmLabel="确认取消订单"
-        cancelLabel="保留订单"
+        orderId={detail?.id ?? null}
+        orderCode={detail?.code ?? ""}
+        orderTitle={detail?.title ?? ""}
+        currentStageTitle={detail?.currentStageTitle ?? null}
+        expectedRevision={detail?.revision ?? 0}
         busy={busy}
+        newRequestId={() => newRequestId("cancel")}
         onCancel={() => setCancelOpen(false)}
-        onConfirm={async () => {
-          if (!detail) return;
+        onConfirm={async (payload: CancelOrderPayload) => {
           setCancelOpen(false);
-          await runLifecycle("订单已取消", (o) =>
-            api.cancelOrder({
-              orderId: o.id,
-              expectedRevision: o.revision,
-              requestId: newRequestId("cancel"),
-            }),
-          );
+          await runLifecycle("订单已取消", () => api.cancelOrder(payload));
         }}
-      >
-        {detail && (
-          <div className="stage-adjust">
-            <p>
-              <strong>{detail.code}</strong>「{detail.title}」会退出活动队列，制作流程被锁定；
-              当前阶段「{detail.currentStageTitle ?? "—"}」、开工记录与历史事件都会保留。
-            </p>
-            <p className="muted">
-              取消后普通资料仍可编辑；需要恢复时用「重新打开」，订单会排到队列末尾。
-              这一步不会删除任何数据。
-            </p>
-          </div>
-        )}
-      </ConfirmDialog>
+      />
 
       <ConfirmDialog
         open={stagePanel !== null}

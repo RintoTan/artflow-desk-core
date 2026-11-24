@@ -422,7 +422,23 @@ export const api = {
   reworkStage: (input: ReworkInput) => invoke<OrderView>("rework_stage", { input }),
   skipStage: (input: SkipInput) => invoke<OrderView>("skip_stage", { input }),
   completeOrder: (input: LifecycleInput) => invoke<OrderView>("complete_order", { input }),
-  cancelOrder: (input: LifecycleInput) => invoke<OrderView>("cancel_order", { input }),
+  /**
+   * 取消订单。`refundDecision` 必填：不允许由前端替用户猜「有没有退钱」。
+   * `record` 时 `refunds` 至少一笔，后端会在同一事务里写入。
+   */
+  cancelOrder: (input: {
+    orderId: string;
+    expectedRevision: number;
+    requestId: string | null;
+    refundDecision: "none" | "record";
+    refunds: Array<{
+      paymentRecordId: string | null;
+      amountCents: number;
+      refundedOn: string;
+      method: string | null;
+      note: string | null;
+    }>;
+  }) => invoke<OrderView>("cancel_order", { input }),
   reopenOrder: (input: LifecycleInput) => invoke<OrderView>("reopen_order", { input }),
 
   backupStatus: () => invoke<BackupStatus>("backup_status"),
@@ -1048,4 +1064,42 @@ export const paymentsApi = {
       "finance_payment_fee_quote",
       { amountCents, feeRateBp },
     ),
+};
+
+export type RefundView = {
+  id: string;
+  orderId: string;
+  /** null = 未关联原收款，系统核验不了可退款余额。 */
+  paymentRecordId: string | null;
+  amountCents: number;
+  refundedOn: string;
+  method: string | null;
+  note: string | null;
+  voidedAt: string | null;
+  voidReason: string | null;
+  createdAt: string;
+  unmatched: boolean;
+};
+
+export const refundsApi = {
+  create: (input: {
+    orderId: string;
+    paymentRecordId: string | null;
+    amountCents: number;
+    refundedOn: string;
+    method: string | null;
+    note: string | null;
+    requestId: string | null;
+  }) => invoke<RefundView>("finance_refund_create", { input }),
+  update: (input: {
+    id: string;
+    paymentRecordId: string | null;
+    amountCents: number;
+    refundedOn: string;
+    method: string | null;
+    note: string | null;
+  }) => invoke<RefundView>("finance_refund_update", { input }),
+  /** 退款错误时作废；不可恢复、不可物理删除。 */
+  void: (input: { id: string; reason: string }) =>
+    invoke<RefundView>("finance_refund_void", { input }),
 };

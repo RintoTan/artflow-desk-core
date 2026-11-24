@@ -797,10 +797,11 @@ fn a_cancelled_order_is_closed_to_finance_until_restored() {
         lifecycle::cancel_order(&mut conn, common::lifecycle_input(&ctx.load(&order))).unwrap();
     }
 
+    // 取消后仍然可以看：用户需要查阅自己的历史收款与退款。
     let conn = ctx.conn();
-    let err = finance::snapshot(&conn, &order).unwrap_err();
-    assert_eq!(err.code, "CONFLICT");
-    assert!(err.message.contains("已取消"), "{err:?}");
+    let view = finance::snapshot(&conn, &order).unwrap();
+    assert!(view.cancelled);
+    assert_eq!(view.records.len(), 1, "历史收款保留可读");
 
     let err = record(&ctx, &order, None, "full", 100, &today(&ctx), None, 0).unwrap_err();
     assert!(err.message.contains("已取消"), "{err:?}");

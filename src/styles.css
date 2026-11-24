@@ -8667,3 +8667,43 @@ dl.stat-row {
     flex-wrap: wrap;
   }
 }
+
+/* ------------------------------------------- 取消订单时的退款录入（FIN-03） */
+.cancel-decision {
+  margin: 14px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.cancel-decision legend {
+  padding: 0 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.refund-rows {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.refund-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.hint-error {
+  color: var(--danger);
+}
+
+@media (max-width: 720px) {
+  .refund-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

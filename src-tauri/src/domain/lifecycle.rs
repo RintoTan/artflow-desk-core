@@ -7,6 +7,7 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBe
 use serde::Serialize;
 
 use crate::domain::events::{self, NewEvent};
+use crate::domain::finance;
 use crate::domain::orders::{self, OrderView};
 use crate::domain::queue;
 use crate::error::{AppError, AppResult};
@@ -675,17 +676,51 @@ pub fn complete_order(conn: &mut Connection, input: LifecycleInput) -> AppResult
     Ok(view)
 }
 
-pub fn cancel_order(conn: &mut Connection, input: LifecycleInput) -> AppResult<OrderView> {
+/// 取消订单时可以同时记录真实退款。
+///
+/// 退款必须与取消在**同一个事务**里：不能出现「订单已取消但退款没记上」，
+/// 也不能出现「退款记了但订单还是活动状态」。
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelOrderInput {
+    pub order_id: String,
+    pub expected_revision: i64,
+    pub request_id: Option<String>,
+    /// `none` = 没有实际退款；`record` = 有退款，必须至少给一笔。
+    /// 不设默认值：替用户猜「有没有退钱」是这类数据最不该有的默认。
+    pub refund_decision: String,
+    pub refunds: Vec<CancelRefundDraft>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelRefundDraft {
+    pub payment_record_id: Option<String>,
+    pub amount_cents: i64,
+    pub refunded_on: String,
+    pub method: Option<String>,
+    pub note: Option<String>,
+}
+
+fn base_of(input: &CancelOrderInput) -> LifecycleInput {
+    LifecycleInput {
+        order_id: input.order_id.clone(),
+        expected_revision: input.expected_revision,
+        request_id: input.request_id.clone(),
+    }
+}
+
+/// 事务内的取消本体。返回 `(订单视图, 本次是否真的执行了取消)`。
+///
+/// 第二个返回值用来处理幂等重放：同一个 request_id 第二次进来时不能再补一遍退款。
+fn cancel_in_tx(tx: &Transaction<'_>, input: &LifecycleInput) -> AppResult<(OrderView, bool)> {
     let request_id = clean_request_id(&input.request_id)?;
-    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    visibility::require_visible_order(&tx, &input.order_id)?;
-    if already_applied(&tx, &input.order_id, &request_id)? {
-        let view = orders::load(&tx, &input.order_id)?;
-        tx.commit()?;
-        return Ok(view);
+    visibility::require_visible_order(tx, &input.order_id)?;
+    if already_applied(tx, &input.order_id, &request_id)? {
+        return Ok((orders::load(tx, &input.order_id)?, false));
     }
 
-    let facts = load_facts(&tx, &input.order_id)?;
+    let facts = load_facts(tx, &input.order_id)?;
     assert_revision(&facts, input.expected_revision)?;
     if !capabilities(&facts).can_cancel {
         return Err(AppError::invalid("只有活动订单可以取消"));
@@ -708,7 +743,7 @@ pub fn cancel_order(conn: &mut Connection, input: LifecycleInput) -> AppResult<O
         .find(|(sid, _)| Some(sid) == facts.current_stage_id.as_ref())
         .cloned();
     events::append(
-        &tx,
+        tx,
         &input.order_id,
         &NewEvent {
             kind: events::CANCELLED,
@@ -721,9 +756,53 @@ pub fn cancel_order(conn: &mut Connection, input: LifecycleInput) -> AppResult<O
             ..Default::default()
         },
     )?;
-    bump_queue_revision(&tx)?;
+    bump_queue_revision(tx)?;
 
-    let view = orders::load(&tx, &input.order_id)?;
+    Ok((orders::load(tx, &input.order_id)?, true))
+}
+
+/// 不带退款的取消（内部与测试用）。界面统一走 [`cancel_order_with_refunds`]。
+pub fn cancel_order(conn: &mut Connection, input: LifecycleInput) -> AppResult<OrderView> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let (view, _) = cancel_in_tx(&tx, &input)?;
+    tx.commit()?;
+    Ok(view)
+}
+
+/// 界面入口：先按用户选择校验退款，再在同一事务里取消 + 写退款。
+pub fn cancel_order_with_refunds(
+    conn: &mut Connection,
+    input: CancelOrderInput,
+) -> AppResult<OrderView> {
+    let decision = input.refund_decision.trim();
+    if decision != "none" && decision != "record" {
+        return Err(AppError::invalid("请先选择取消时是否发生退款"));
+    }
+    if decision == "none" && !input.refunds.is_empty() {
+        return Err(AppError::invalid("选择了没有退款，却提交了退款记录"));
+    }
+    if decision == "record" && input.refunds.is_empty() {
+        return Err(AppError::invalid("选择了有退款，至少要填一笔退款金额"));
+    }
+
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let (view, applied) = cancel_in_tx(&tx, &base_of(&input))?;
+    if applied {
+        for draft in &input.refunds {
+            finance::insert_refund(
+                &tx,
+                &finance::RefundInput {
+                    order_id: input.order_id.clone(),
+                    payment_record_id: draft.payment_record_id.clone(),
+                    amount_cents: draft.amount_cents,
+                    refunded_on: draft.refunded_on.clone(),
+                    method: draft.method.clone(),
+                    note: draft.note.clone(),
+                    request_id: None,
+                },
+            )?;
+        }
+    }
     tx.commit()?;
     Ok(view)
 }

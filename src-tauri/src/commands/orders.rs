@@ -134,9 +134,12 @@ pub fn complete_order(state: State<'_, AppState>, input: LifecycleInput) -> AppR
 }
 
 #[tauri::command]
-pub fn cancel_order(state: State<'_, AppState>, input: LifecycleInput) -> AppResult<OrderView> {
+pub fn cancel_order(
+    state: State<'_, AppState>,
+    input: crate::domain::lifecycle::CancelOrderInput,
+) -> AppResult<OrderView> {
     let mut conn = state.env.open_db()?;
-    lifecycle::cancel_order(&mut conn, input)
+    lifecycle::cancel_order_with_refunds(&mut conn, input)
 }
 
 #[tauri::command]
