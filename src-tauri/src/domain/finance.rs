@@ -17,7 +17,7 @@ use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
-use crate::store::timezone;
+use crate::store::{settings, timezone, visibility};
 
 pub const NAME_MAX_CHARS: usize = 40;
 pub const RATE_MAX_BP: i64 = 10_000;
@@ -386,4 +386,781 @@ mod tests {
         assert_eq!(normalize_name(&"字".repeat(40)).unwrap().chars().count(), 40);
         assert!(normalize_name(&"字".repeat(41)).is_err());
     }
+}
+
+// ======================================================================
+// FIN-03：付款计划与实际收款
+//
+// 「计划」是预期，「流水」是事实。这一节的全部派生结果都只在读取时算，
+// 不写回数据库：净到账、待收、计划状态、逾期都是查询结果，不是字段。
+// ======================================================================
+
+pub const KIND_FULL: &str = "full";
+pub const KIND_DEPOSIT: &str = "deposit";
+pub const KIND_INSTALLMENT: &str = "installment";
+pub const KIND_FINAL: &str = "final";
+
+const METHODS: [&str; 5] = ["wechat", "alipay", "bank", "cash", "other"];
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanItemInput {
+    /// 有 id = 更新已有计划项；没有 = 新建。
+    pub id: Option<String>,
+    pub kind: String,
+    pub amount_cents: i64,
+    pub expected_date: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavePlanInput {
+    pub order_id: String,
+    /// 空数组 = 清空全部付款计划（允许）。
+    pub items: Vec<PlanItemInput>,
+    /// 删除有流水的计划项时需要显式确认，否则整个保存被拒。
+    pub confirm_detach: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRecordInput {
+    pub order_id: String,
+    pub schedule_id: Option<String>,
+    pub kind: String,
+    pub amount_cents: i64,
+    pub received_on: String,
+    pub platform_id: Option<String>,
+    pub fee_cents: i64,
+    pub method: Option<String>,
+    pub note: Option<String>,
+    pub request_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateRecordInput {
+    pub id: String,
+    pub schedule_id: Option<String>,
+    pub kind: String,
+    pub amount_cents: i64,
+    pub received_on: String,
+    pub platform_id: Option<String>,
+    pub fee_cents: i64,
+    pub method: Option<String>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoidRecordInput {
+    pub id: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentRecordView {
+    pub id: String,
+    pub order_id: String,
+    pub schedule_id: Option<String>,
+    pub kind: String,
+    pub amount_cents: i64,
+    pub received_on: String,
+    pub platform_id: Option<String>,
+    pub platform_name: Option<String>,
+    pub fee_rate_bp: Option<i64>,
+    pub fee_cents: i64,
+    /// 派生值：`amount_cents - fee_cents`，不落库。
+    pub net_cents: i64,
+    pub method: Option<String>,
+    pub note: Option<String>,
+    pub voided_at: Option<String>,
+    pub void_reason: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanItemView {
+    pub id: String,
+    pub kind: String,
+    pub amount_cents: i64,
+    pub expected_date: Option<String>,
+    pub sort_position: i64,
+    pub received_cents: i64,
+    pub outstanding_cents: i64,
+    /// `unpaid` / `partial` / `settled` / `overdue`
+    pub status: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderFinanceView {
+    pub order_id: String,
+    pub order_amount_cents: Option<i64>,
+    /// `none` / `full` / `deposit_final` / `installment` / `mixed`
+    pub plan_mode: &'static str,
+    pub plan_items: Vec<PlanItemView>,
+    pub plan_total_cents: i64,
+    pub plan_matches_order: bool,
+    pub records: Vec<PaymentRecordView>,
+    pub voided_records: Vec<PaymentRecordView>,
+    pub gross_received_cents: i64,
+    pub fee_total_cents: i64,
+    pub net_received_cents: i64,
+    /// 订单金额未知时为 None——不能拿 0 冒充「已结清」。
+    pub remaining_cents: Option<i64>,
+    pub over_received_cents: i64,
+    /// 既没有计划也没有流水：系统不知道客户付过没有，界面要说「未记录收款信息」。
+    pub unrecorded: bool,
+    pub has_records_without_plan: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeeQuote {
+    pub amount_cents: i64,
+    pub fee_rate_bp: Option<i64>,
+    /// 费率未知时为 None：不替用户猜一个 0。
+    pub suggested_fee_cents: Option<i64>,
+}
+
+struct OrderMoney {
+    amount_cents: Option<i64>,
+    status: String,
+}
+
+fn order_money(conn: &Connection, order_id: &str) -> AppResult<OrderMoney> {
+    conn.query_row(
+        "SELECT amount_cents, status FROM orders_visible WHERE id = ?1",
+        [order_id],
+        |row| {
+            Ok(OrderMoney {
+                amount_cents: row.get(0)?,
+                status: row.get(1)?,
+            })
+        },
+    )
+    .optional()?
+    .ok_or_else(|| AppError::not_found("订单不存在或已在回收站"))
+}
+
+/// 取消单不进财务：读取报错，写入拒绝。
+///
+/// 之所以读取也报错而不是返回一堆 0，是因为 0 会被读成「一分没收」，
+/// 而实际情况是「这笔委托不算钱了」。含糊比拒绝更危险。
+fn ensure_finance_open(order: &OrderMoney) -> AppResult<()> {
+    if order.status == "cancelled" {
+        return Err(AppError::conflict(
+            "订单已取消，不参与财务统计；如需修正历史收款，请先恢复订单",
+        ));
+    }
+    Ok(())
+}
+
+/// 与订单创建同一套幂等语义：去空白、空的当没有、过长拒绝。
+fn clean_request_id(raw: &Option<String>) -> AppResult<Option<String>> {
+    match raw.as_deref().map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(value) if value.chars().count() > 120 => Err(AppError::invalid("请求标识过长")),
+        Some(value) => Ok(Some(value.to_string())),
+    }
+}
+
+fn normalize_kind(raw: &str) -> AppResult<String> {
+    let kind = raw.trim();
+    match kind {
+        KIND_FULL | KIND_DEPOSIT | KIND_INSTALLMENT | KIND_FINAL => Ok(kind.to_string()),
+        _ => Err(AppError::invalid("不支持的收款类型")),
+    }
+}
+
+fn clean_method(raw: &Option<String>) -> AppResult<Option<String>> {
+    match raw.as_deref().map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(value) if METHODS.contains(&value) => Ok(Some(value.to_string())),
+        Some(_) => Err(AppError::invalid("不支持的收款方式")),
+    }
+}
+
+fn clean_note(raw: &Option<String>) -> AppResult<Option<String>> {
+    match raw.as_deref().map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(value) if value.chars().count() > 500 => Err(AppError::invalid("备注过长")),
+        Some(value) => Ok(Some(value.to_string())),
+    }
+}
+
+/// 到账日期：必须是真实日历日期，且不能是未来。
+///
+/// 「未来到账」不是笔误就是猜的，两者都不该进账。过去日期一律放行——
+/// 补录历史收款是正常需求，不设人为下限。
+fn record_date(conn: &Connection, raw: &str) -> AppResult<String> {
+    let parsed = timezone::parse_calendar_date(raw)?;
+    let tz = settings::working_timezone(conn)?;
+    let today = timezone::local_today(tz);
+    if parsed > today {
+        return Err(AppError::invalid("收款日期不能晚于今天"));
+    }
+    Ok(parsed.format("%Y-%m-%d").to_string())
+}
+
+/// 预计收款日期：同样要求真实存在，但过去和未来都行。
+fn expected_date(raw: &Option<String>) -> AppResult<Option<String>> {
+    match raw.as_deref().map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(value) => Ok(Some(
+            timezone::parse_calendar_date(value)?.format("%Y-%m-%d").to_string(),
+        )),
+    }
+}
+
+fn check_amount(amount_cents: i64) -> AppResult<()> {
+    if amount_cents <= 0 {
+        return Err(AppError::invalid("金额必须大于 0"));
+    }
+    Ok(())
+}
+
+fn check_fee(amount_cents: i64, fee_cents: i64) -> AppResult<()> {
+    if fee_cents < 0 {
+        return Err(AppError::invalid("手续费不能为负数"));
+    }
+    if fee_cents > amount_cents {
+        return Err(AppError::invalid("手续费不能超过本笔收款金额"));
+    }
+    Ok(())
+}
+
+/// 预计手续费：`amount × rate / 10000`，整数四舍五入（半分远离零）。
+pub fn suggest_fee(amount_cents: i64, fee_rate_bp: Option<i64>) -> AppResult<Option<i64>> {
+    let Some(rate) = fee_rate_bp else {
+        return Ok(None);
+    };
+    if !(0..=RATE_MAX_BP).contains(&rate) {
+        return Err(AppError::invalid("手续费率超出范围"));
+    }
+    check_amount(amount_cents)?;
+    let value = (amount_cents as i128 * rate as i128 + 5_000) / 10_000;
+    i64::try_from(value)
+        .map(Some)
+        .map_err(|_| AppError::invalid("手续费计算溢出"))
+}
+
+pub fn quote(amount_cents: i64, fee_rate_bp: Option<i64>) -> AppResult<FeeQuote> {
+    Ok(FeeQuote {
+        amount_cents,
+        fee_rate_bp,
+        suggested_fee_cents: suggest_fee(amount_cents, fee_rate_bp)?,
+    })
+}
+
+fn record_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PaymentRecordView> {
+    let amount_cents: i64 = row.get("amount_cents")?;
+    let fee_cents: i64 = row.get("fee_cents")?;
+    Ok(PaymentRecordView {
+        id: row.get("id")?,
+        order_id: row.get("order_id")?,
+        schedule_id: row.get("schedule_id")?,
+        kind: row.get("kind")?,
+        amount_cents,
+        received_on: row.get("received_on")?,
+        platform_id: row.get("platform_id")?,
+        platform_name: row.get("platform_name")?,
+        fee_rate_bp: row.get("fee_rate_bp")?,
+        fee_cents,
+        net_cents: amount_cents - fee_cents,
+        method: row.get("method")?,
+        note: row.get("note")?,
+        voided_at: row.get("voided_at")?,
+        void_reason: row.get("void_reason")?,
+        created_at: row.get("created_at")?,
+    })
+}
+
+const RECORD_COLUMNS: &str = "id, order_id, schedule_id, kind, amount_cents, received_on,
+     platform_id, platform_name, fee_rate_bp, fee_cents, method, note,
+     voided_at, void_reason, created_at";
+
+fn load_record(conn: &Connection, id: &str) -> AppResult<PaymentRecordView> {
+    conn.query_row(
+        &format!("SELECT {RECORD_COLUMNS} FROM payment_records WHERE id = ?1"),
+        [id],
+        record_row,
+    )
+    .optional()?
+    .ok_or_else(|| AppError::not_found("收款记录不存在"))
+}
+
+/// 平台快照：名称与费率都是**写入当时**的值，之后平台改名/改费率/归档都不回改历史。
+fn platform_snapshot(
+    conn: &Connection,
+    platform_id: &Option<String>,
+) -> AppResult<(Option<String>, Option<String>, Option<i64>)> {
+    let Some(id) = platform_id.as_deref().map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok((None, None, None));
+    };
+    let platform = load(conn, id)?;
+    if platform.archived {
+        return Err(AppError::conflict("该平台已归档，不能用于新收款"));
+    }
+    Ok((Some(platform.id), Some(platform.name), platform.fee_rate_bp))
+}
+
+fn assert_schedule_usable(conn: &Connection, schedule_id: &str, order_id: &str, kind: &str) -> AppResult<()> {
+    let row: Option<(String, String)> = conn
+        .query_row(
+            "SELECT order_id, kind FROM payment_schedules WHERE id = ?1",
+            [schedule_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let (schedule_order, schedule_kind) =
+        row.ok_or_else(|| AppError::not_found("付款计划不存在"))?;
+    if schedule_order != order_id {
+        return Err(AppError::invalid("收款流水与付款计划不属于同一订单"));
+    }
+    if schedule_kind != kind {
+        return Err(AppError::invalid("收款类型与付款计划类型不一致"));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------- 付款计划
+
+fn clean_schedule_id(raw: &Option<String>) -> Option<String> {
+    raw.as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+pub fn save_plan(conn: &mut Connection, input: &SavePlanInput) -> AppResult<OrderFinanceView> {
+    visibility::require_visible_order(conn, &input.order_id)?;
+    let order = order_money(conn, &input.order_id)?;
+    ensure_finance_open(&order)?;
+
+    // 1) 结构校验：全款 1 项 / 定金+尾款 2 项 / 分期 ≥2 项 / 空 = 清空。
+    let mut kinds = Vec::with_capacity(input.items.len());
+    for item in &input.items {
+        kinds.push(normalize_kind(&item.kind)?);
+        check_amount(item.amount_cents)?;
+    }
+    if !kinds.is_empty() {
+        let full = kinds.iter().filter(|k| *k == KIND_FULL).count();
+        let deposit = kinds.iter().filter(|k| *k == KIND_DEPOSIT).count();
+        let final_count = kinds.iter().filter(|k| *k == KIND_FINAL).count();
+        let installment = kinds.iter().filter(|k| *k == KIND_INSTALLMENT).count();
+        let valid = (kinds.len() == 1 && full == 1)
+            || (kinds.len() == 2 && deposit == 1 && final_count == 1)
+            || (installment == kinds.len() && kinds.len() >= 2);
+        if !valid {
+            return Err(AppError::invalid(
+                "付款计划只能是「全款」「定金 + 尾款」或「至少两期分期」",
+            ));
+        }
+    }
+
+    // 2) 金额校验：有订单总额才能建计划，且合计必须严格相等。
+    if !input.items.is_empty() {
+        let total = order
+            .amount_cents
+            .filter(|value| *value > 0)
+            .ok_or_else(|| AppError::invalid("订单金额未填写，无法建立付款计划"))?;
+        let sum: i64 = input.items.iter().map(|i| i.amount_cents).sum();
+        if sum != total {
+            let diff = sum - total;
+            return Err(AppError::invalid(format!(
+                "付款计划合计 {} 元与订单总额 {} 元不一致（相差 {} 元）",
+                yuan(sum),
+                yuan(total),
+                yuan(diff.abs())
+            )));
+        }
+    }
+
+    let mut dates = Vec::with_capacity(input.items.len());
+    for item in &input.items {
+        dates.push(expected_date(&item.expected_date)?);
+    }
+
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    // 3) 与库内现状比对，算出要删/要改/要建。
+    let existing: Vec<String> = {
+        let mut stmt = tx.prepare("SELECT id FROM payment_schedules WHERE order_id = ?1")?;
+        let rows = stmt
+            .query_map([&input.order_id], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
+    let mut seen = std::collections::HashSet::new();
+    for item in &input.items {
+        if let Some(id) = &item.id {
+            if !seen.insert(id.as_str()) {
+                return Err(AppError::invalid("付款计划里出现了重复的计划项"));
+            }
+            if !existing.iter().any(|e| e == id) {
+                return Err(AppError::invalid("付款计划项不属于该订单"));
+            }
+        }
+    }
+    let keep: Vec<&str> = input
+        .items
+        .iter()
+        .filter_map(|i| i.id.as_deref())
+        .collect();
+    let to_delete: Vec<&str> = existing
+        .iter()
+        .map(String::as_str)
+        .filter(|id| !keep.contains(id))
+        .collect();
+
+    let mut detached = 0_i64;
+    for id in &to_delete {
+        detached += tx.query_row(
+            "SELECT COUNT(*) FROM payment_records WHERE schedule_id = ?1",
+            [id],
+            |r| r.get::<_, i64>(0),
+        )?;
+    }
+    if detached > 0 && !input.confirm_detach {
+        return Err(AppError::conflict(format!(
+            "有 {detached} 笔收款流水关联在将被移除的计划上，确认解除关联后才能保存（流水不会被删除）"
+        )));
+    }
+    for (item, kind) in input.items.iter().zip(kinds.iter()) {
+        let Some(id) = &item.id else { continue };
+        let current: String = tx.query_row(
+            "SELECT kind FROM payment_schedules WHERE id = ?1",
+            [id],
+            |r| r.get(0),
+        )?;
+        if &current != kind {
+            let linked: i64 = tx.query_row(
+                "SELECT COUNT(*) FROM payment_records WHERE schedule_id = ?1",
+                [id],
+                |r| r.get::<_, i64>(0),
+            )?;
+            if linked > 0 {
+                return Err(AppError::conflict(
+                    "该付款计划已有收款流水，不能修改类型；请移除后再新建",
+                ));
+            }
+        }
+    }
+
+    let now = timezone::now_timestamp();
+    for id in &to_delete {
+        tx.execute("DELETE FROM payment_schedules WHERE id = ?1", [id])?;
+    }
+    for (index, (item, kind)) in input.items.iter().zip(kinds.iter()).enumerate() {
+        let date = dates.get(index).cloned().flatten();
+        match &item.id {
+            Some(id) => {
+                tx.execute(
+                    "UPDATE payment_schedules
+                        SET kind = ?1, amount_cents = ?2, expected_date = ?3, sort_position = ?4
+                      WHERE id = ?5",
+                    params![kind, item.amount_cents, date, index as i64, id],
+                )?;
+            }
+            None => {
+                tx.execute(
+                    "INSERT INTO payment_schedules
+                       (id, order_id, kind, amount_cents, expected_date, sort_position, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![
+                        uuid::Uuid::new_v4().to_string(),
+                        input.order_id,
+                        kind,
+                        item.amount_cents,
+                        date,
+                        index as i64,
+                        now
+                    ],
+                )?;
+            }
+        }
+    }
+    tx.commit()?;
+    snapshot(conn, &input.order_id)
+}
+
+fn yuan(cents: i64) -> String {
+    format!("{}.{:02}", cents / 100, (cents % 100).abs())
+}
+
+// ---------------------------------------------------------------- 收款流水
+
+pub fn create_record(
+    conn: &mut Connection,
+    input: &CreateRecordInput,
+) -> AppResult<PaymentRecordView> {
+    visibility::require_visible_order(conn, &input.order_id)?;
+    let order = order_money(conn, &input.order_id)?;
+    ensure_finance_open(&order)?;
+    check_amount(input.amount_cents)?;
+    check_fee(input.amount_cents, input.fee_cents)?;
+    let kind = normalize_kind(&input.kind)?;
+    let received_on = record_date(conn, &input.received_on)?;
+    let method = clean_method(&input.method)?;
+    let note = clean_note(&input.note)?;
+    let request_id = clean_request_id(&input.request_id)?;
+
+    if let Some(rid) = &request_id {
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT id FROM payment_records WHERE request_id = ?1",
+                [rid],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(id) = existing {
+            // 同一请求重放：返回原记录，不重复记账。
+            return load_record(conn, &id);
+        }
+    }
+
+    let schedule_id = clean_schedule_id(&input.schedule_id);
+    if let Some(sid) = &schedule_id {
+        assert_schedule_usable(conn, sid, &input.order_id, &kind)?;
+    }
+    let (platform_id, platform_name, fee_rate_bp) = platform_snapshot(conn, &input.platform_id)?;
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = timezone::now_timestamp();
+    conn.execute(
+        "INSERT INTO payment_records
+           (id, order_id, schedule_id, kind, amount_cents, received_on,
+            platform_id, platform_name, fee_rate_bp, fee_cents, method, note,
+            request_id, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+        params![
+            id,
+            input.order_id,
+            schedule_id,
+            kind,
+            input.amount_cents,
+            received_on,
+            platform_id,
+            platform_name,
+            fee_rate_bp,
+            input.fee_cents,
+            method,
+            note,
+            request_id,
+            now
+        ],
+    )?;
+    load_record(conn, &id)
+}
+
+pub fn update_record(
+    conn: &mut Connection,
+    input: &UpdateRecordInput,
+) -> AppResult<PaymentRecordView> {
+    let current = load_record(conn, &input.id)?;
+    if current.voided_at.is_some() {
+        return Err(AppError::conflict("已作废的收款记录不能再修改"));
+    }
+    visibility::require_visible_order(conn, &current.order_id)?;
+    let order = order_money(conn, &current.order_id)?;
+    ensure_finance_open(&order)?;
+
+    check_amount(input.amount_cents)?;
+    check_fee(input.amount_cents, input.fee_cents)?;
+    let kind = normalize_kind(&input.kind)?;
+    let received_on = record_date(conn, &input.received_on)?;
+    let method = clean_method(&input.method)?;
+    let note = clean_note(&input.note)?;
+
+    let schedule_id = clean_schedule_id(&input.schedule_id);
+    if let Some(sid) = &schedule_id {
+        assert_schedule_usable(conn, sid, &current.order_id, &kind)?;
+    }
+
+    // 平台没换就沿用原快照，换了才重新取一次——绝不因为平台后来改了费率
+    // 就把历史流水的费率改掉。
+    let new_platform = clean_schedule_id(&input.platform_id);
+    let (platform_id, platform_name, fee_rate_bp) = match (new_platform, &current.platform_id) {
+        (None, _) => (None, None, None),
+        (Some(id), Some(old)) if &id == old => (
+            current.platform_id.clone(),
+            current.platform_name.clone(),
+            current.fee_rate_bp,
+        ),
+        (Some(id), _) => platform_snapshot(conn, &Some(id))?,
+    };
+
+    conn.execute(
+        "UPDATE payment_records
+            SET schedule_id = ?1, kind = ?2, amount_cents = ?3, received_on = ?4,
+                platform_id = ?5, platform_name = ?6, fee_rate_bp = ?7,
+                fee_cents = ?8, method = ?9, note = ?10
+          WHERE id = ?11",
+        params![
+            schedule_id,
+            kind,
+            input.amount_cents,
+            received_on,
+            platform_id,
+            platform_name,
+            fee_rate_bp,
+            input.fee_cents,
+            method,
+            note,
+            current.id
+        ],
+    )?;
+    load_record(conn, &current.id)
+}
+
+pub fn void_record(
+    conn: &mut Connection,
+    input: &VoidRecordInput,
+) -> AppResult<PaymentRecordView> {
+    let current = load_record(conn, &input.id)?;
+    if current.voided_at.is_some() {
+        return Err(AppError::conflict("该收款记录已经作废"));
+    }
+    visibility::require_visible_order(conn, &current.order_id)?;
+    let order = order_money(conn, &current.order_id)?;
+    ensure_finance_open(&order)?;
+
+    let reason = input.reason.trim();
+    if reason.is_empty() {
+        return Err(AppError::invalid("作废原因不能为空"));
+    }
+    if reason.chars().count() > 500 {
+        return Err(AppError::invalid("作废原因过长"));
+    }
+
+    let now = timezone::now_timestamp();
+    conn.execute(
+        "UPDATE payment_records SET voided_at = ?1, void_reason = ?2 WHERE id = ?3",
+        params![now, reason, current.id],
+    )?;
+    load_record(conn, &current.id)
+}
+
+// ------------------------------------------------------------ 读取模型
+
+fn plan_mode(items: &[PlanItemView]) -> &'static str {
+    if items.is_empty() {
+        return "none";
+    }
+    let has = |kind: &str| items.iter().any(|i| i.kind == kind);
+    if items.len() == 1 && has(KIND_FULL) {
+        "full"
+    } else if items.len() == 2 && has(KIND_DEPOSIT) && has(KIND_FINAL) {
+        "deposit_final"
+    } else if items.iter().all(|i| i.kind == KIND_INSTALLMENT) {
+        "installment"
+    } else {
+        "mixed"
+    }
+}
+
+/// 订单财务全景。所有数字都是现算的，表里没有「已收」「待收」这类字段。
+pub fn snapshot(conn: &Connection, order_id: &str) -> AppResult<OrderFinanceView> {
+    let order = order_money(conn, order_id)?;
+    ensure_finance_open(&order)?;
+    let tz = settings::working_timezone(conn)?;
+    let today = timezone::local_today(tz);
+
+    // 计划项 + 每项已收（只算未作废流水）。
+    let items: Vec<PlanItemView> = {
+        let mut stmt = conn.prepare(
+            "SELECT s.id, s.kind, s.amount_cents, s.expected_date, s.sort_position,
+                    COALESCE((
+                      SELECT SUM(r.amount_cents) FROM payment_records r
+                       WHERE r.schedule_id = s.id AND r.voided_at IS NULL
+                    ), 0)
+               FROM payment_schedules s
+              WHERE s.order_id = ?1
+              ORDER BY s.sort_position ASC, s.created_at ASC, s.id ASC",
+        )?;
+        let rows = stmt.query_map([order_id], |row| {
+            let amount: i64 = row.get(2)?;
+            let received: i64 = row.get(5)?;
+            let expected: Option<String> = row.get(3)?;
+            let settled = received >= amount;
+            let overdue = !settled
+                && expected
+                    .as_deref()
+                    .and_then(|d| timezone::parse_calendar_date(d).ok())
+                    .is_some_and(|date| date < today);
+            let status = if overdue {
+                "overdue"
+            } else if settled {
+                "settled"
+            } else if received == 0 {
+                "unpaid"
+            } else {
+                "partial"
+            };
+            Ok(PlanItemView {
+                id: row.get(0)?,
+                kind: row.get(1)?,
+                amount_cents: amount,
+                expected_date: expected,
+                sort_position: row.get(4)?,
+                received_cents: received,
+                outstanding_cents: (amount - received).max(0),
+                status,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+
+    let all_records: Vec<PaymentRecordView> = {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {RECORD_COLUMNS} FROM payment_records
+              WHERE order_id = ?1
+              ORDER BY received_on DESC, created_at DESC, id DESC"
+        ))?;
+        let rows = stmt.query_map([order_id], record_row)?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    let (voided_records, records): (Vec<_>, Vec<_>) =
+        all_records.into_iter().partition(|r| r.voided_at.is_some());
+
+    let gross_received_cents: i64 = records.iter().map(|r| r.amount_cents).sum();
+    let fee_total_cents: i64 = records.iter().map(|r| r.fee_cents).sum();
+    let plan_total_cents: i64 = items.iter().map(|i| i.amount_cents).sum();
+    let plan_is_empty = items.is_empty();
+    let mode = plan_mode(&items);
+
+    Ok(OrderFinanceView {
+        order_id: order_id.to_string(),
+        order_amount_cents: order.amount_cents,
+        plan_mode: mode,
+        plan_items: items,
+        plan_total_cents,
+        plan_matches_order: order.amount_cents == Some(plan_total_cents) && plan_total_cents > 0,
+        records,
+        voided_records,
+        gross_received_cents,
+        fee_total_cents,
+        net_received_cents: gross_received_cents - fee_total_cents,
+        remaining_cents: order
+            .amount_cents
+            .map(|total| (total - gross_received_cents).max(0)),
+        over_received_cents: order
+            .amount_cents
+            .map(|total| (gross_received_cents - total).max(0))
+            .unwrap_or(0),
+        unrecorded: plan_is_empty && all_records_is_empty(conn, order_id)?,
+        has_records_without_plan: plan_total_cents == 0 && gross_received_cents > 0,
+    })
+}
+
+fn all_records_is_empty(conn: &Connection, order_id: &str) -> AppResult<bool> {
+    let rows: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM payment_records WHERE order_id = ?1",
+        [order_id],
+        |r| r.get(0),
+    )?;
+    Ok(rows == 0)
 }

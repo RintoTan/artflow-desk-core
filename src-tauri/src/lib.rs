@@ -187,7 +187,13 @@ fn build_app() -> Result<tauri::App, String> {
             commands::finance::finance_platform_archive,
             commands::finance::finance_platform_restore,
             commands::finance::finance_platform_reorder,
-            commands::finance::finance_platform_delete
+            commands::finance::finance_platform_delete,
+            commands::finance::finance_order_snapshot,
+            commands::finance::finance_payment_plan_save,
+            commands::finance::finance_payment_record_create,
+            commands::finance::finance_payment_record_update,
+            commands::finance::finance_payment_record_void,
+            commands::finance::finance_payment_fee_quote
         ])
         .build(tauri::generate_context!())
         .map_err(|e| format!("构建应用失败：{e}"))

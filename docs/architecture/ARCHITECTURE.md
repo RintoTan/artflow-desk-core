@@ -60,7 +60,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | `bridge/commands.ts` | 命令类型与 `api` 封装，**invoke 的唯一出口** |
 | `styles.css` | 原生 CSS + 设计令牌（Arctic Blue） |
 
-## 数据模型（schema v11）
+## 数据模型（schema v12）
 
 > 删除、回收站、数据重置与存储位置迁移的详细设计与实现约束见 [DATA-LIFECYCLE.md](DATA-LIFECYCLE.md)（已实施并验收）。
 
@@ -107,6 +107,18 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 - **v11 补强（FIN-01.1）**：三表改 `STRICT`（`INTEGER` 只是亲和性，`1.5` 会被存成 REAL 而 CHECK 照样通过）；主键显式 `NOT NULL`（rowid 表的 TEXT 主键历史上允许 NULL）；名称要求「已 trim」；日期加 `date(x) IS x` 抓 `2026-02-31` 这类溢出（SQLite 会把它归一化成 3 月 3 日）；`platform_id` 有值时必须有 `platform_name` 快照。
 - **同订单不变量**：`payment_records.schedule_id` 指向的计划必须与 `payment_records.order_id` 同单。用触发器而不是复合外键——复合键的 `ON DELETE SET NULL` 会连 `order_id` 一起置空，把「删计划、留流水」这条已冻结语义弄坏。三个触发器覆盖流水 INSERT、流水 UPDATE、以及「已挂流水的计划改挂订单」。
 - **v11 必须先断言三表为空**：`PRAGMA foreign_keys` 在事务内是 no-op，三表互相引用时删父表会触发子表 `SET NULL` 并静默抹掉关联。非空则整步中止，不搬迁、不改数据。
+### 付款计划与实际收款（FIN-03）
+
+- **计划记预期，流水记事实**。`payment_schedules` 只说明「应收多少、什么时候收」；`payment_records` 只说明「实际到了多少」。建了 ¥300 定金计划不等于收到 ¥300。
+- **派生不落库**：净到账 `amount - fee`、计划已收/未收/状态、逾期、订单已收/待收/超额，全部在 `domain::finance::snapshot` 里现算。表里没有 `paid_status` / `remaining_cents` / `net_cents` 这类字段。
+- **状态**：`unpaid` / `partial` / `settled` / `overdue`。零宽限期——`expected_date < 今天` 且未收齐即逾期，当天不算；只看未作废流水。逾期只影响财务提示，不动订单状态、阶段与队列。
+- **D1 类型一致**：流水挂计划时必须同 `kind`。v12 用三条触发器兜底（INSERT、UPDATE、以及「已挂流水的计划不许改类型」）；领域层先给可读消息。外键的 `SET NULL` 不受影响。
+- **D2 计划总额**：有订单总额才能建计划，且合计必须**严格相等**。订单金额后续被改小/改大时，计划不会被自动改动，但读取会 `planMatchesOrder = false`，再次保存计划必须重新对齐。
+- **D4 完成与收款独立**：完成的订单照样能记、改、作废收款；未收齐不会把订单拉回制作中。
+- **取消单**：财务读写都被拒（读取也报错而不是返回 0，否则会被读成「一分没收」）。恢复订单后原数据重新参与计算。
+- **作废不可逆**：只写 `voided_at` / `void_reason`，金额与快照不变，不物理删除；作废后计划状态会回落。
+- **日期**：`received_on` 必须是真实日历日期且不能晚于今天（补录历史可以）；`expected_date` 同样要真实，过去未来都允许。
+
 ### 平台配置（FIN-02）
 
 - 入口：设置 → 财务设置 → 接单平台与手续费；命令统一在 `commands::finance::*`，规则在 `domain::finance`。
@@ -121,7 +133,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 
 ### 迁移链
 
-`APP_SCHEMA_VERSION = 11`，迁移 append-only：只允许新增 `vN → vN+1`，不允许改写历史迁移文件。
+`APP_SCHEMA_VERSION = 12`，迁移 append-only：只允许新增 `vN → vN+1`，不允许改写历史迁移文件。
 
 | 版本 | 内容 |
 | --- | --- |
@@ -132,6 +144,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | v8 | `orders` / `clients` 增加 `deleted_at`、`deleted_batch` 与部分索引；新增 `orders_visible` / `orders_trashed` / `clients_visible` 视图 |
 | v9 | `orders` 增加 `archived_at` 与部分索引；**重建两个订单视图**（SQLite 的 `SELECT *` 在建视图时冻结列清单）。归档只影响「订单信息」页普通列表的归属，其余查询口径不变 |
 | v10 | 新增 `payment_platforms` / `payment_schedules` / `payment_records` 三表与索引；**不改 `orders`**、不建视图、不写任何种子数据或历史流水 |
+| v12 | 新增三条触发器约束「流水类型 = 计划类型」；迁移前自检历史数据，发现跨类型关联即中止 |
 | v11 | 三张财务表重建为 `STRICT`，补主键 `NOT NULL`、名称 trim、日期真实性、平台名快照约束，新增同订单关联三触发器与两个查询索引；迁移前断言三表为空，非空中止 |
 
 ## 关键机制

@@ -21,9 +21,10 @@ pub mod v8;
 pub mod v9;
 pub mod v10;
 pub mod v11;
+pub mod v12;
 
 /// 当前程序支持的最高 schema 版本。
-pub const APP_SCHEMA_VERSION: i64 = 11;
+pub const APP_SCHEMA_VERSION: i64 = 12;
 
 pub struct Migration {
     pub version: i64,
@@ -88,6 +89,11 @@ pub fn production() -> Vec<Migration> {
             version: 11,
             name: "v11_finance_integrity",
             apply: v11::apply,
+        },
+        Migration {
+            version: 12,
+            name: "v12_payment_kind_match",
+            apply: v12::apply,
         },
     ]
 }

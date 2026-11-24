@@ -68,3 +68,58 @@ pub fn finance_platform_delete(
     let conn = state.env.open_db()?;
     finance::delete(&conn, &id)
 }
+
+// ---------------------------------------------------------------- FIN-03
+
+#[tauri::command]
+pub fn finance_order_snapshot(
+    state: State<'_, AppState>,
+    order_id: String,
+) -> AppResult<finance::OrderFinanceView> {
+    let conn = state.env.open_db()?;
+    finance::snapshot(&conn, &order_id)
+}
+
+#[tauri::command]
+pub fn finance_payment_plan_save(
+    state: State<'_, AppState>,
+    input: finance::SavePlanInput,
+) -> AppResult<finance::OrderFinanceView> {
+    let mut conn = state.env.open_db()?;
+    finance::save_plan(&mut conn, &input)
+}
+
+#[tauri::command]
+pub fn finance_payment_record_create(
+    state: State<'_, AppState>,
+    input: finance::CreateRecordInput,
+) -> AppResult<finance::PaymentRecordView> {
+    let mut conn = state.env.open_db()?;
+    finance::create_record(&mut conn, &input)
+}
+
+#[tauri::command]
+pub fn finance_payment_record_update(
+    state: State<'_, AppState>,
+    input: finance::UpdateRecordInput,
+) -> AppResult<finance::PaymentRecordView> {
+    let mut conn = state.env.open_db()?;
+    finance::update_record(&mut conn, &input)
+}
+
+#[tauri::command]
+pub fn finance_payment_record_void(
+    state: State<'_, AppState>,
+    input: finance::VoidRecordInput,
+) -> AppResult<finance::PaymentRecordView> {
+    let mut conn = state.env.open_db()?;
+    finance::void_record(&mut conn, &input)
+}
+
+#[tauri::command]
+pub fn finance_payment_fee_quote(
+    amount_cents: i64,
+    fee_rate_bp: Option<i64>,
+) -> AppResult<finance::FeeQuote> {
+    finance::quote(amount_cents, fee_rate_bp)
+}

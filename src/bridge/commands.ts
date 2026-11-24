@@ -944,3 +944,108 @@ export const financeApi = {
   deletePlatform: (id: string) =>
     invoke<DeletePlatformReport>("finance_platform_delete", { id }),
 };
+
+// ---------------------------------------------------------------- FIN-03
+
+export type PaymentRecordView = {
+  id: string;
+  orderId: string;
+  scheduleId: string | null;
+  kind: "full" | "deposit" | "installment" | "final";
+  amountCents: number;
+  receivedOn: string;
+  platformId: string | null;
+  platformName: string | null;
+  feeRateBp: number | null;
+  feeCents: number;
+  /** 派生值，后端算好：amountCents - feeCents */
+  netCents: number;
+  method: string | null;
+  note: string | null;
+  voidedAt: string | null;
+  voidReason: string | null;
+  createdAt: string;
+};
+
+export type PlanItemView = {
+  id: string;
+  kind: "full" | "deposit" | "installment" | "final";
+  amountCents: number;
+  expectedDate: string | null;
+  sortPosition: number;
+  receivedCents: number;
+  outstandingCents: number;
+  status: "unpaid" | "partial" | "settled" | "overdue";
+};
+
+/** 订单财务全景。全部由后端派生，没有任何「已收」「待收」落库字段。 */
+export type OrderFinanceView = {
+  orderId: string;
+  orderAmountCents: number | null;
+  planMode: "none" | "full" | "deposit_final" | "installment" | "mixed";
+  planItems: PlanItemView[];
+  planTotalCents: number;
+  planMatchesOrder: boolean;
+  records: PaymentRecordView[];
+  voidedRecords: PaymentRecordView[];
+  grossReceivedCents: number;
+  feeTotalCents: number;
+  netReceivedCents: number;
+  /** 订单金额未知时为 null：不能拿 0 表示「已结清」。 */
+  remainingCents: number | null;
+  overReceivedCents: number;
+  /** 既无计划也无流水：界面必须说「未记录收款信息」，而不是「未收款 0」。 */
+  unrecorded: boolean;
+  hasRecordsWithoutPlan: boolean;
+};
+
+export type PlanItemInput = {
+  id?: string | null;
+  kind: PlanItemView["kind"];
+  amountCents: number;
+  expectedDate: string | null;
+};
+
+export type CreateRecordInput = {
+  orderId: string;
+  scheduleId: string | null;
+  kind: PaymentRecordView["kind"];
+  amountCents: number;
+  receivedOn: string;
+  platformId: string | null;
+  feeCents: number;
+  method: string | null;
+  note: string | null;
+  requestId: string | null;
+};
+
+export type UpdateRecordInput = {
+  id: string;
+  scheduleId: string | null;
+  kind: PaymentRecordView["kind"];
+  amountCents: number;
+  receivedOn: string;
+  platformId: string | null;
+  feeCents: number;
+  method: string | null;
+  note: string | null;
+};
+
+export const paymentsApi = {
+  snapshot: (orderId: string) =>
+    invoke<OrderFinanceView>("finance_order_snapshot", { orderId }),
+  savePlan: (input: { orderId: string; items: PlanItemInput[]; confirmDetach: boolean }) =>
+    invoke<OrderFinanceView>("finance_payment_plan_save", { input }),
+  createRecord: (input: CreateRecordInput) =>
+    invoke<PaymentRecordView>("finance_payment_record_create", { input }),
+  updateRecord: (input: UpdateRecordInput) =>
+    invoke<PaymentRecordView>("finance_payment_record_update", { input }),
+  voidRecord: (input: { id: string; reason: string }) =>
+    invoke<PaymentRecordView>("finance_payment_record_void", { input }),
+  /** 预估手续费；费率为 null 时返回 null，界面必须让用户自己填实际手续费。 */
+  quoteFee: (amountCents: number, feeRateBp: number | null) =>
+    invoke<{ amountCents: number; feeRateBp: number | null; suggestedFeeCents: number | null }>(
+      "finance_payment_fee_quote",
+      { amountCents, feeRateBp },
+    ),
+};
