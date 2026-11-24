@@ -168,6 +168,29 @@
 **自动化**：`tests/storage_migrate.rs` 11 例、`tests/lock.rs` 13 例（含 3 例身份校验）。
 **NOT RUN**：Windows 真机（命名管道与文件索引均未在实机运行）、macOS 双进程激活端到端、原生迁移全流程。
 
+## 三之七、DEV-0.1.1-06 双平台验收（进行中）
+
+自动化全部通过，**实机层为零**：本机无法投递原生鼠标键盘（TCC 拒绝），Windows 无机器、无产物、无 CI。
+
+| 层 | 结果 |
+| --- | --- |
+| Rust | 505 passed / 0 failed |
+| Vitest | 74 文件 / 768 passed |
+| tsc / build | PASS / PASS |
+| macOS QA 包 | 15:21:07 构建并安装，`data root resolved → env ready → ui ready` 正常 |
+| macOS 原生 UI | **0 项确认**（13 项既有 + 本轮 UX-02/04/05、ORDER-01、DEV-04/05 界面） |
+| Windows | **BLOCKED**：`cargo xwin` 缺 `llvm-rc`，仓库无 CI，本轮禁止推送 |
+
+**发布阻断项**
+
+1. Windows 真机 B/C 组全部未执行，且当前没有可安装的 Windows 产物。
+2. macOS 原生界面项未人工走查。
+3. 迁移端到端与两条失败路径（空间不足、指针切换失败）未在真机验证。
+4. 安装包未签名、未公证（`adhoc, linker-signed`）。
+5. 正式包仍内置 3 个开发 CLI（`attachments-probe` / `minidesk-probe` / `qa_seed`，13.5 MB）。
+
+验收矩阵与清单在工作区 `DEV-06/`，本条只记录结论。
+
 ## 四、已知问题
 
 ### 已修复（v0.1.1，含 WP-01 批次）
