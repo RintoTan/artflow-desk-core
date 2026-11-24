@@ -1404,6 +1404,14 @@ pub fn update_refund(conn: &mut Connection, input: &UpdateRefundInput) -> AppRes
     let note = clean_note(&input.note)?;
 
     let payment_record_id = clean_payment_link(&input.payment_record_id);
+    // 已关联的退款不能改回「未关联」：解绑就丢掉了原收款的金额上限，
+    // 之后再把金额调大就绕过了「累计退款不超过原收款」的保护。
+    // 允许更换关联对象（下面仍会按新对象重新校验上限），但必须始终有一个对象。
+    if current.payment_record_id.is_some() && payment_record_id.is_none() {
+        return Err(AppError::conflict(
+            "已关联原收款的退款不能解除关联，只能更换为同一订单的其他有效收款",
+        ));
+    }
     if let Some(pid) = &payment_record_id {
         assert_refundable(
             conn,

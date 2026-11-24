@@ -908,3 +908,34 @@ fn fee_quotes_are_integer_and_unknown_rates_stay_unknown() {
     assert_eq!(finance::suggest_fee(10_100, Some(500)).unwrap(), Some(505), "505 分");
     assert_eq!(finance::suggest_fee(1, Some(10_000)).unwrap(), Some(1), "100% 等于全额");
 }
+
+// ------------------------------- FIN-04 补测：无流水的计划项切换
+
+/// 切换计划模式时，旧计划项被删、新项被建，且不需要「解除关联」确认——
+/// 因为没有流水会被牵连。这条之前只有实现说明，没有测试。
+#[test]
+fn switching_plan_mode_without_payments_needs_no_detach_confirmation() {
+    let ctx = Ctx::new();
+    let order = order_with_amount(&ctx, "AF-2026-0939", 100_000);
+    let first = save(&ctx, &order, plan(100_000, "deposit_final"), false).unwrap();
+    let old_ids: Vec<String> = first.plan_items.iter().map(|i| i.id.clone()).collect();
+
+    // 不传 confirmDetach，也应该能直接换成三期
+    let switched = save(&ctx, &order, plan(100_000, "installment"), false).unwrap();
+    assert_eq!(switched.plan_mode, "installment");
+    assert_eq!(switched.plan_items.len(), 3);
+    for item in &switched.plan_items {
+        assert!(
+            !old_ids.contains(&item.id),
+            "模式切换后旧计划项应当被替换，而不是被复用"
+        );
+    }
+    // 旧行确实没了
+    let conn = ctx.conn();
+    for id in old_ids {
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM payment_schedules WHERE id = ?1", [&id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 0, "旧计划项 {id} 应被删除");
+    }
+}

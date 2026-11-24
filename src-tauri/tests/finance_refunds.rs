@@ -682,3 +682,133 @@ fn a_completed_order_can_still_be_refunded() {
     refund(&ctx, &o, None, 5_000, &today(&ctx)).expect("完成订单之后仍可能退钱");
     assert_eq!(ctx.load(&o).status, "complete");
 }
+
+// ============================== FIN-04.1：已关联退款不能解绑
+
+/// 「解绑」曾经只有界面在拦。绕过界面直接调命令，就能把已关联的退款改回未关联，
+/// 之后再把金额调大，就绕开了「累计退款不超过原收款」的保护。
+#[test]
+fn a_linked_refund_cannot_be_unlinked() {
+    let ctx = Ctx::new();
+    let o = order(&ctx, "AF-2026-1101", 100_000);
+    let p = payment(&ctx, &o, 30_000);
+    let r = refund(&ctx, &o, Some(&p), 10_000, &today(&ctx)).unwrap();
+
+    let mut conn = ctx.conn();
+    let err = finance::update_refund(
+        &mut conn,
+        &UpdateRefundInput {
+            id: r.id.clone(),
+            payment_record_id: None,
+            amount_cents: 10_000,
+            refunded_on: today(&ctx),
+            method: None,
+            note: None,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err.code, "CONFLICT");
+    assert!(err.message.contains("不能解除关联"), "{err:?}");
+
+    // 一条数据都没变
+    let view = snap(&ctx, &o);
+    assert_eq!(view.refunds[0].payment_record_id.as_deref(), Some(p.as_str()));
+    assert_eq!(view.refunds[0].amount_cents, 10_000);
+
+    // 但把金额调大是允许的（仍在原收款上限内），说明拦的是「解绑」不是「修改」
+    let bigger = finance::update_refund(
+        &mut conn,
+        &UpdateRefundInput {
+            id: r.id,
+            payment_record_id: Some(p),
+            amount_cents: 20_000,
+            refunded_on: today(&ctx),
+            method: None,
+            note: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(bigger.amount_cents, 20_000);
+}
+
+#[test]
+fn a_linked_refund_can_move_to_another_receipt_of_the_same_order() {
+    let ctx = Ctx::new();
+    let o = order(&ctx, "AF-2026-1102", 100_000);
+    let first = payment(&ctx, &o, 30_000);
+    let second = payment(&ctx, &o, 50_000);
+    let r = refund(&ctx, &o, Some(&first), 25_000, &today(&ctx)).unwrap();
+
+    let mut conn = ctx.conn();
+    // 换到第二笔：金额仍在它的上限内
+    let moved = finance::update_refund(
+        &mut conn,
+        &UpdateRefundInput {
+            id: r.id.clone(),
+            payment_record_id: Some(second.clone()),
+            amount_cents: 25_000,
+            refunded_on: today(&ctx),
+            method: None,
+            note: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(moved.payment_record_id.as_deref(), Some(second.as_str()));
+
+    // 换回第一笔时金额超上限 → 拒绝，而且不能借机解绑
+    let err = finance::update_refund(
+        &mut conn,
+        &UpdateRefundInput {
+            id: r.id,
+            payment_record_id: Some(first),
+            amount_cents: 40_000,
+            refunded_on: today(&ctx),
+            method: None,
+            note: None,
+        },
+    )
+    .unwrap_err();
+    assert!(err.message.contains("累计退款超过"), "{err:?}");
+}
+
+#[test]
+fn an_unlinked_refund_can_still_be_linked_later_and_unlinked_again() {
+    // 未关联 → 关联 是允许的；关联之后就不能再解绑。
+    let ctx = Ctx::new();
+    let o = order(&ctx, "AF-2026-1103", 100_000);
+    let p = payment(&ctx, &o, 30_000);
+    let r = refund(&ctx, &o, None, 10_000, &today(&ctx)).unwrap();
+    assert!(r.unmatched);
+
+    let mut conn = ctx.conn();
+    let linked = finance::update_refund(
+        &mut conn,
+        &UpdateRefundInput {
+            id: r.id.clone(),
+            payment_record_id: Some(p.clone()),
+            amount_cents: 10_000,
+            refunded_on: today(&ctx),
+            method: None,
+            note: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(linked.payment_record_id.as_deref(), Some(p.as_str()));
+
+    assert_eq!(
+        finance::update_refund(
+            &mut conn,
+            &UpdateRefundInput {
+                id: r.id,
+                payment_record_id: None,
+                amount_cents: 10_000,
+                refunded_on: today(&ctx),
+                method: None,
+                note: None,
+            },
+        )
+        .unwrap_err()
+        .code,
+        "CONFLICT"
+    );
+}
