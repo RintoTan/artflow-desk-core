@@ -311,9 +311,10 @@ fn backfill_platforms(conn: &mut Connection, rows: &[PlatformRow]) -> AppResult<
         return Ok(());
     }
     let tx = conn.transaction()?;
-    for (index, row) in rows.iter().enumerate() {
+    // release 构建里故障注入被编掉，`_index` 就没人用，前缀下划线避免编译告警。
+    for (_index, row) in rows.iter().enumerate() {
         #[cfg(debug_assertions)]
-        if fault::should_fail(index) {
+        if fault::should_fail(_index) {
             // 故障注入只存在于 debug 构建；release 里连这个分支都没有。
             return Err(AppError::db("平台配置回填失败（测试注入）"));
         }
