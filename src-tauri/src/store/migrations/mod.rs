@@ -19,9 +19,10 @@ pub mod v6;
 pub mod v7;
 pub mod v8;
 pub mod v9;
+pub mod v10;
 
 /// 当前程序支持的最高 schema 版本。
-pub const APP_SCHEMA_VERSION: i64 = 9;
+pub const APP_SCHEMA_VERSION: i64 = 10;
 
 pub struct Migration {
     pub version: i64,
@@ -76,6 +77,11 @@ pub fn production() -> Vec<Migration> {
             version: 9,
             name: "v9_order_archive",
             apply: v9::apply,
+        },
+        Migration {
+            version: 10,
+            name: "v10_finance",
+            apply: v10::apply,
         },
     ]
 }

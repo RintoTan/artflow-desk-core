@@ -172,7 +172,7 @@ fn constructed_v8_backup_restores_end_to_end() {
     let after = common::open(&dir.path().join("dst"));
     let conn = after.open_db().unwrap();
     let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, migrations::APP_SCHEMA_VERSION);
     assert_eq!(counts(&after), (3, 2, 3, 2));
     assert_eq!(restored.summary.orders, 3);
 

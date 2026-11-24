@@ -54,8 +54,8 @@ fn v8_upgrades_to_v9_and_keeps_every_row() {
     };
 
     let env = common::open(&root);
-    assert_eq!(migrations::APP_SCHEMA_VERSION, 9);
-    assert_eq!(user_version(&env), 9);
+    // 老库必须一路升到程序当前支持的最高版本（v10 起不再写死 9）。
+    assert_eq!(user_version(&env), migrations::APP_SCHEMA_VERSION);
     let conn = env.open_db().unwrap();
 
     // 1) 新列存在，老数据落在「未归档」侧。
@@ -147,6 +147,7 @@ fn archiving_does_not_move_the_row_out_of_the_visible_view() {
 fn migration_list_stays_contiguous() {
     let list = migrations::production();
     let versions: Vec<i64> = list.iter().map(|m| m.version).collect();
-    assert_eq!(versions, (1..=9).collect::<Vec<_>>());
-    assert_eq!(list.last().unwrap().name, "v9_order_archive");
+    // 版本号必须从 1 连续到程序支持的最高版本——升版时这条跟着走，不用手改数字。
+    assert_eq!(versions, (1..=migrations::APP_SCHEMA_VERSION).collect::<Vec<_>>());
+    assert_eq!(list.last().unwrap().name, "v10_finance");
 }

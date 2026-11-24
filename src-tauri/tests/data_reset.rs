@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use common::Ctx;
 use minidesk::domain::reset::{self, ResetInput};
 use minidesk::store::environment::open_connection;
+use minidesk::store::migrations;
 use minidesk::store::settings;
 
 fn input(set: &[&str]) -> ResetInput {
@@ -112,14 +113,14 @@ fn business_reset_switches_to_a_fresh_v9_generation_and_keeps_prefs() {
     assert_eq!(report.old_generation, old);
     assert!(Path::new(&report.old_generation_path).exists());
 
-    // 新代际：空业务数据、结构 v9、完整性通过
+    // 新代际：空业务数据、结构等于当前最新版、完整性通过
     let db = ctx.env.layout().generation_db(&new_id);
     let conn = open_connection(&db).unwrap();
     let orders: i64 = conn.query_row("SELECT COUNT(*) FROM orders", [], |r| r.get(0)).unwrap();
     let clients: i64 = conn.query_row("SELECT COUNT(*) FROM clients", [], |r| r.get(0)).unwrap();
     assert_eq!((orders, clients), (0, 0));
     let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, migrations::APP_SCHEMA_VERSION);
     let integrity: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0)).unwrap();
     assert_eq!(integrity, "ok");
 

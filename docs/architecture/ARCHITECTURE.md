@@ -60,7 +60,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | `bridge/commands.ts` | 命令类型与 `api` 封装，**invoke 的唯一出口** |
 | `styles.css` | 原生 CSS + 设计令牌（Arctic Blue） |
 
-## 数据模型（schema v9）
+## 数据模型（schema v10）
 
 > 删除、回收站、数据重置与存储位置迁移的详细设计与实现约束见 [DATA-LIFECYCLE.md](DATA-LIFECYCLE.md)（已实施并验收）。
 
@@ -76,6 +76,9 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | `cleanup_tasks` | 待清理文件（含代际归属） |
 | `clients` / `client_tags` | 客户与标签 |
 | `stage_templates` | 流程模板（保留一个系统默认模板） |
+| `payment_platforms` | 接单/收款平台与默认手续费率（v10） |
+| `payment_schedules` | 付款计划：应收金额、可选预计日期（v10） |
+| `payment_records` | 实际到账流水：金额、到账日、费率与手续费快照（v10） |
 
 ### 软删除与可见性（v8）
 
@@ -92,9 +95,19 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 - 计划日期是纯日历日期；实际发生时间只来自事件（真实时间点 + 时区）。两者不互相覆盖。
 - `order_events` 的 `kind` 是 CHECK 枚举。SQLite 不能改 CHECK，v6（改期）与 v7（跳级）都是「建新表 → 搬迁 → 建索引 → 改名为原表」的重建式迁移，整步在事务里，失败整体回滚。
 
+### 财务三表（v10）
+
+- **计划与流水分开**：`payment_schedules` 描述「应收」，`payment_records` 描述「已收」。一笔计划可以由多笔流水分摊，因此收款状态与净到账都**不落库**：`net = amount_cents - fee_cents`、状态由「计划金额 vs 未作废流水合计」派生。
+- **`orders.amount_cents` 仍是订单总额**，没有第二套总额字段。旧订单迁移后不生成任何计划或流水，界面显示「未记录收款信息」，不显示「未收款 ¥X」。
+- **费率可空，空 ≠ 0**：`fee_rate_bp` 为 `NULL` 表示未配置/未知，`0` 表示用户明确填了 0%。`payment_records.fee_cents` **没有默认值**，实际手续费必须显式写入，避免「没算过」被记成「零手续费」。
+- **快照而非外键**：`platform_name`、`fee_rate_bp`、`fee_cents` 都存当时的值；删平台把 `platform_id` 置空，删计划把 `schedule_id` 置空，两者都**不删除真实流水**。
+- **作废不是退款**：`voided_at` 只标记「这笔录错了」，不作资金流出；系统不建退款表。
+- 约束落在数据库层：金额 `> 0`、`fee_cents <= amount_cents`、费率 `0–10000` bp、日期 `GLOB 'NNNN-NN-NN'`。
+- 新增 `payment_*` 不涉及 `orders` 列，**因此不需要重建可见性视图**；财务查询将来一律 `JOIN orders_visible`，不申请新的 lint 豁免。
+
 ### 迁移链
 
-`APP_SCHEMA_VERSION = 9`，迁移 append-only：只允许新增 `vN → vN+1`，不允许改写历史迁移文件。
+`APP_SCHEMA_VERSION = 10`，迁移 append-only：只允许新增 `vN → vN+1`，不允许改写历史迁移文件。
 
 | 版本 | 内容 |
 | --- | --- |
@@ -104,6 +117,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | v7 | `order_events` 增加 `stage_skipped`、`skipped_stages`、`skip_reason` |
 | v8 | `orders` / `clients` 增加 `deleted_at`、`deleted_batch` 与部分索引；新增 `orders_visible` / `orders_trashed` / `clients_visible` 视图 |
 | v9 | `orders` 增加 `archived_at` 与部分索引；**重建两个订单视图**（SQLite 的 `SELECT *` 在建视图时冻结列清单）。归档只影响「订单信息」页普通列表的归属，其余查询口径不变 |
+| v10 | 新增 `payment_platforms` / `payment_schedules` / `payment_records` 三表与索引；**不改 `orders`**、不建视图、不写任何种子数据或历史流水 |
 
 ## 关键机制
 
