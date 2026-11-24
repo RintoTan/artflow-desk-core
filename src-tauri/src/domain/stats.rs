@@ -188,8 +188,14 @@ pub fn report(conn: &Connection, range: StatsRange) -> AppResult<StatsReport> {
     }
 
     // ---- 金额：按订单创建月份归属，计入其**当前**金额
+    //
+    // 已取消订单不计入金额（C-1）：取消意味着这笔委托没有产生收入，
+    // 留在图里会与「取消单不进任何财务总额」的规则自相矛盾。
+    // 订单数量与取消次数仍照常统计，那是事件视角，不是金额视角。
     {
-        let mut stmt = conn.prepare("SELECT created_at, amount_cents FROM orders_visible")?;
+        let mut stmt = conn.prepare(
+            "SELECT created_at, amount_cents FROM orders_visible WHERE status <> 'cancelled'",
+        )?;
         let rows = stmt
             .query_map([], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?))
@@ -235,7 +241,7 @@ pub fn report(conn: &Connection, range: StatsRange) -> AppResult<StatsReport> {
         basis: vec![
             "新建 / 完成 / 取消按订单生命周期事件次数统计（同一订单再次完成计为第二次）。".into(),
             "完成与取消按事件发生时间归属月份；新建按订单创建事件归属月份。".into(),
-            "委托金额按订单创建月份归属，取该订单当前的记录金额；修改金额会影响创建月份的汇总。".into(),
+            "委托金额按订单创建月份归属，取该订单当前的记录金额；修改金额会影响创建月份的汇总。已取消订单不计入金额（数量与取消次数仍然统计）。".into(),
             "金额未知（未填写）的订单不计入合计，单独计数；金额为 0 元的订单属于已知金额。".into(),
             "月份与日期均按应用内的工作时时区计算；近 6 / 12 个月为包含当前月的自然月区间。".into(),
         ],

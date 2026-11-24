@@ -158,9 +158,9 @@ fn v9_database_upgrades_to_v10_without_touching_business_rows() {
 }
 
 #[test]
-fn fresh_database_lands_on_v10() {
+fn fresh_database_lands_on_latest_schema() {
     let ctx = Ctx::new();
-    assert_eq!(user_version(&ctx.env), 10);
+    assert_eq!(user_version(&ctx.env), migrations::APP_SCHEMA_VERSION);
     let conn = ctx.conn();
     for table in ["payment_platforms", "payment_schedules", "payment_records"] {
         assert!(table_exists(&conn, table), "新库缺少表 {table}");

@@ -220,3 +220,28 @@ fn unknown_amount_is_marked_not_zeroed() {
     assert!(line.ends_with(",是"), "未知金额必须显式标记：{line}");
     assert!(!line.contains(",0.00"), "不得把 NULL 写成 0.00：{line}");
 }
+
+#[test]
+fn monthly_csv_amount_matches_the_page_and_skips_cancelled() {
+    let ctx = Ctx::new();
+    let kept = make_order(&ctx, "保留", Some(10_000), None);
+    let cancelled = make_order(&ctx, "取消", Some(28_850), None);
+    {
+        let mut conn = ctx.conn();
+        minidesk::domain::lifecycle::cancel_order(
+            &mut conn,
+            common::lifecycle_input(&ctx.load(&cancelled)),
+        )
+        .unwrap();
+    }
+
+    let conn = ctx.conn();
+    let report = minidesk::domain::stats::report(&conn, StatsRange::ThisMonth).unwrap();
+    let body = text_of(&export::summary_csv(&conn, StatsRange::ThisMonth).unwrap());
+
+    // 页面与 CSV 必须是同一个数字：100.00，而不是含取消单的 388.50。
+    assert_eq!(report.totals.amount_cents, 10_000);
+    assert!(body.contains("100.00"), "CSV 月度金额应与页面一致：{body}");
+    assert!(!body.contains("388.50"), "CSV 不得把取消单金额算进去");
+    let _ = kept;
+}

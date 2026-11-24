@@ -297,6 +297,8 @@ SELECT COUNT(*) FROM orders WHERE stage_template_id = ?   -- 不过滤 deleted_a
 | **日志** | `logs/` 轮转文件 | 就地删除 | 不勾选 |
 | **附件隔离区** | 活动代际 `attachments/quarantine/` | 就地删除，**必须提示「清理后将失去崩溃恢复的比对线索」** | 不勾选 |
 
+**例外：平台配置不进业务数据包（FIN-01.1）**。`payment_platforms` 是接单渠道与默认费率的工具配置，不是某一笔委托的数据；重置业务数据后**逐行搬运到新代际**，字段与两个时间戳一律原样（`created_at` 保持最初创建时间，`updated_at` 保持最后一次真实修改时间——重置是维护动作，不是用户改了费率）。`payment_schedules` / `payment_records` 属于委托记录，随业务数据清空，不回填。
+
 **业务数据包内部不可拆分**，理由：`orders.client_id` 依赖客户、`attachments` 依赖订单、`order_events` 依赖订单、`stage_template_steps` 依赖模板、`client_tag_link` 依赖客户与标签。允许用户勾掉其中一项，等于允许制造悬挂引用。
 
 ### 6.3 多项同时重置：优先级与最终结果
@@ -307,7 +309,7 @@ SELECT COUNT(*) FROM orders WHERE stage_template_id = ?   -- 不过滤 deleted_a
 | --- | --- | --- | --- |
 | 只勾业务数据 | 清空（新代际） | **原样保留**（回填原 5 项 + 自定义主题） | 不变 |
 | 只勾设置 | 不变 | **恢复默认**（5 项回默认、自定义主题删除、内置主题保留） | 不变 |
-| 两项都勾 | 清空（新代际） | **恢复默认**（不回填，seed 默认即结果） | 各自执行 |
+| 两项都勾 | 清空（新代际） | **恢复默认**（不回填，seed 默认即结果） | 各自执行；**平台配置仍回填** |
 | 两项都不勾 | 不变 | 不变 | 各自执行 |
 
 实现要点：
@@ -321,10 +323,11 @@ SELECT COUNT(*) FROM orders WHERE stage_template_id = ?   -- 不过滤 deleted_a
 
 ```
 1. 快照（pre_restore_snapshot，产物写旧根 backups/）
-2. 读取 5 项设置 + themes 自定义行（是否需要回填见 §6.3）
+2. 读取 5 项设置 + themes 自定义行（是否需要回填见 §6.3）与**全部平台配置**
 3. 建新代际（复用 initialize：建库 → 迁移到最新 → 校验）
 4. 按需回填偏好（INSERT OR REPLACE）
-5. 校验新库：schema 版本、foreign_key_check、偏好条数
+4b. **无条件回填平台配置**（即便同时勾了用户设置）；NULL 费率仍写 NULL，不补 0
+5. 校验新库：schema 版本、foreign_key_check、偏好条数、**平台行数与旧代际一致**
 6. 原子切 active.json
 7. 旧代际保留（Q2），界面告知其路径与占用
 ```

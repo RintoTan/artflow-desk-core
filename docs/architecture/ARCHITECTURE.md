@@ -60,7 +60,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | `bridge/commands.ts` | 命令类型与 `api` 封装，**invoke 的唯一出口** |
 | `styles.css` | 原生 CSS + 设计令牌（Arctic Blue） |
 
-## 数据模型（schema v10）
+## 数据模型（schema v11）
 
 > 删除、回收站、数据重置与存储位置迁移的详细设计与实现约束见 [DATA-LIFECYCLE.md](DATA-LIFECYCLE.md)（已实施并验收）。
 
@@ -104,10 +104,14 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 - **作废不是退款**：`voided_at` 只标记「这笔录错了」，不作资金流出；系统不建退款表。
 - 约束落在数据库层：金额 `> 0`、`fee_cents <= amount_cents`、费率 `0–10000` bp、日期 `GLOB 'NNNN-NN-NN'`。
 - 新增 `payment_*` 不涉及 `orders` 列，**因此不需要重建可见性视图**；财务查询将来一律 `JOIN orders_visible`，不申请新的 lint 豁免。
+- **v11 补强（FIN-01.1）**：三表改 `STRICT`（`INTEGER` 只是亲和性，`1.5` 会被存成 REAL 而 CHECK 照样通过）；主键显式 `NOT NULL`（rowid 表的 TEXT 主键历史上允许 NULL）；名称要求「已 trim」；日期加 `date(x) IS x` 抓 `2026-02-31` 这类溢出（SQLite 会把它归一化成 3 月 3 日）；`platform_id` 有值时必须有 `platform_name` 快照。
+- **同订单不变量**：`payment_records.schedule_id` 指向的计划必须与 `payment_records.order_id` 同单。用触发器而不是复合外键——复合键的 `ON DELETE SET NULL` 会连 `order_id` 一起置空，把「删计划、留流水」这条已冻结语义弄坏。三个触发器覆盖流水 INSERT、流水 UPDATE、以及「已挂流水的计划改挂订单」。
+- **v11 必须先断言三表为空**：`PRAGMA foreign_keys` 在事务内是 no-op，三表互相引用时删父表会触发子表 `SET NULL` 并静默抹掉关联。非空则整步中止，不搬迁、不改数据。
+- 索引：`payment_records_schedule(schedule_id)` 服务「按计划聚合已收」，`payment_records_received(received_on)` 服务月度现金流扫描（复合索引第二列不能单独用）。
 
 ### 迁移链
 
-`APP_SCHEMA_VERSION = 10`，迁移 append-only：只允许新增 `vN → vN+1`，不允许改写历史迁移文件。
+`APP_SCHEMA_VERSION = 11`，迁移 append-only：只允许新增 `vN → vN+1`，不允许改写历史迁移文件。
 
 | 版本 | 内容 |
 | --- | --- |
@@ -118,6 +122,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | v8 | `orders` / `clients` 增加 `deleted_at`、`deleted_batch` 与部分索引；新增 `orders_visible` / `orders_trashed` / `clients_visible` 视图 |
 | v9 | `orders` 增加 `archived_at` 与部分索引；**重建两个订单视图**（SQLite 的 `SELECT *` 在建视图时冻结列清单）。归档只影响「订单信息」页普通列表的归属，其余查询口径不变 |
 | v10 | 新增 `payment_platforms` / `payment_schedules` / `payment_records` 三表与索引；**不改 `orders`**、不建视图、不写任何种子数据或历史流水 |
+| v11 | 三张财务表重建为 `STRICT`，补主键 `NOT NULL`、名称 trim、日期真实性、平台名快照约束，新增同订单关联三触发器与两个查询索引；迁移前断言三表为空，非空中止 |
 
 ## 关键机制
 

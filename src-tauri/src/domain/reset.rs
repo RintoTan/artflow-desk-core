@@ -269,6 +269,68 @@ fn read_prefs(conn: &Connection) -> AppResult<Prefs> {
     })
 }
 
+/// 一条平台配置在代际之间的搬运形态：除 id 外全部原样，两个时间戳都不改。
+struct PlatformRow {
+    id: String,
+    name: String,
+    fee_rate_bp: Option<i64>,
+    archived: i64,
+    sort_position: i64,
+    created_at: String,
+    updated_at: String,
+}
+
+/// 平台是**工具配置**，不是委托记录：业务数据重置后必须留存。
+///
+/// 时间戳原样搬运。重置是数据维护动作，不是用户修改了平台；
+/// 把 `updated_at` 改成重置时刻等于在历史里伪造一次「用户改了费率」。
+fn read_platforms(conn: &Connection) -> AppResult<Vec<PlatformRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, fee_rate_bp, archived, sort_position, created_at, updated_at
+         FROM payment_platforms ORDER BY sort_position, created_at",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(PlatformRow {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                fee_rate_bp: r.get(2)?,
+                archived: r.get(3)?,
+                sort_position: r.get(4)?,
+                created_at: r.get(5)?,
+                updated_at: r.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// 逐行写回新代际。NULL 费率仍然写 NULL——「未配置」不能被补成「0%」。
+fn backfill_platforms(conn: &mut Connection, rows: &[PlatformRow]) -> AppResult<()> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let tx = conn.transaction()?;
+    for row in rows {
+        tx.execute(
+            "INSERT INTO payment_platforms
+               (id, name, fee_rate_bp, archived, sort_position, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                row.id,
+                row.name,
+                row.fee_rate_bp,
+                row.archived,
+                row.sort_position,
+                row.created_at,
+                row.updated_at
+            ],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 fn backfill(conn: &mut Connection, prefs: &Prefs, now: &str) -> AppResult<()> {
     let tx = conn.transaction()?;
     for (key, value) in &prefs.settings {
@@ -338,10 +400,10 @@ fn reset_business(
     // 1) 先保护现有数据。
     backup_create::create(env, highwater, &snapshot)?;
 
-    // 2) 读出偏好（是否回填由调用方决定）。
-    let prefs = {
+    // 2) 读出偏好（是否回填由调用方决定）与平台配置（**总是**回填）。
+    let (prefs, platforms) = {
         let conn = env.open_db()?;
-        read_prefs(&conn)?
+        (read_prefs(&conn)?, read_platforms(&conn)?)
     };
 
     // 3) 新代际：建库 → 迁移到最新 → 填默认 → 校验。
@@ -364,6 +426,14 @@ fn reset_business(
         // 4) 不勾「用户设置」时，把原偏好回填进来（§6.3）。
         if !reset_settings_too {
             backfill(&mut conn, &prefs, now)?;
+        }
+        // 4b) 平台配置无条件回填：即便同时重置了用户设置，平台也必须留下。
+        //     失败即整次重置失败，不切指针（见调用处的清理逻辑）。
+        backfill_platforms(&mut conn, &platforms)?;
+        let platforms_after: i64 =
+            conn.query_row("SELECT COUNT(*) FROM payment_platforms", [], |r| r.get(0))?;
+        if platforms_after != platforms.len() as i64 {
+            return Err(AppError::db("新代际的平台配置数量与旧代际不一致，拒绝切换"));
         }
         // 5) 校验新库。
         validate(&conn)?;

@@ -381,3 +381,38 @@ fn order_list_and_dashboard_agree_on_risk() {
     let m = dashboard::metrics(&conn).unwrap();
     assert_eq!(m.overdue, 1);
 }
+
+// ------------------------------------------------- C-1：取消单不计入金额
+
+/// 取消是「这笔委托没做成」，不是「金额为 0」：金额口径必须整单排除。
+/// 事件口径不受影响——取消次数本身要照常统计。
+#[test]
+fn cancelled_orders_are_excluded_from_every_amount_total() {
+    let ctx = Ctx::new();
+    let kept = make(&ctx, "保留", None, Some(10_000));
+    let cancelled = make(&ctx, "取消", None, Some(28_850));
+    let cancelled_unknown = make(&ctx, "取消且金额未知", None, None);
+
+    let mut conn = ctx.conn();
+    lifecycle::cancel_order(&mut conn, common::lifecycle_input(&ctx.load(&cancelled))).unwrap();
+    lifecycle::cancel_order(&mut conn, common::lifecycle_input(&ctx.load(&cancelled_unknown)))
+        .unwrap();
+
+    let report = stats::report(&conn, StatsRange::All).unwrap();
+    assert_eq!(report.totals.amount_cents, 10_000, "取消单金额不得计入合计");
+    assert_eq!(report.totals.known_orders, 1, "取消单也不该算进「已知金额订单数」");
+    assert_eq!(report.totals.unknown_orders, 0, "取消单的 NULL 金额同样不进未知计数");
+    let total_cancelled: i64 = report.months.iter().map(|b| b.cancelled).sum();
+    assert_eq!(total_cancelled, 2, "取消次数仍按事件统计");
+    let total_created: i64 = report.months.iter().map(|b| b.created).sum();
+    assert_eq!(total_created, 3, "订单数量不受影响");
+
+    // 逐月：本月金额也只剩保留的那一张。
+    let month = minidesk::store::timezone::local_today(common::tz())
+        .format("%Y-%m")
+        .to_string();
+    let bucket = report.months.iter().find(|m| m.month == month).unwrap();
+    assert_eq!(bucket.amount_cents, 10_000);
+    assert_eq!(bucket.cancelled, 2);
+    let _ = kept;
+}

@@ -115,7 +115,7 @@ fn client_stats_count_terminal_orders_and_skip_null_amounts() {
     let done = order_for(&ctx, &c, "已完成但金额未知", None);
     let cancelled = order_for(&ctx, &c, "已取消", Some(5_000));
 
-    // 完成一张、取消一张：都属于"当前关联订单"，也都计入已知金额。
+    // 完成一张、取消一张：两者都计入关联订单数，但取消单不计入金额（C-1）。
     let mut conn = ctx.conn();
     // 完成要求先开工并推进到最后一个阶段：领域规则不允许跳过这些条件。
     lifecycle::start_work(&mut conn, common::lifecycle_input(&ctx.load(&done))).unwrap();
@@ -130,8 +130,8 @@ fn client_stats_count_terminal_orders_and_skip_null_amounts() {
     assert_eq!(view.completed_count, 1);
     assert_eq!(view.active_count, 1);
     assert_eq!(
-        view.known_amount_cents, 15_000,
-        "NULL 金额不计入，也不能当成 0 拉低合计"
+        view.known_amount_cents, 10_000,
+        "NULL 金额不计入，也不能当成 0 拉低合计；已取消订单的金额同样排除"
     );
     assert!(
         view.last_order_at.is_some(),

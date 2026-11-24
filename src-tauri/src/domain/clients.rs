@@ -95,8 +95,10 @@ fn read_one(conn: &Connection, id: &str) -> AppResult<ClientView> {
                 (SELECT COUNT(*) FROM orders_visible o WHERE o.client_id = c.id),
                 (SELECT COUNT(*) FROM orders_visible o WHERE o.client_id = c.id AND o.status = 'active'),
                 (SELECT COUNT(*) FROM orders_visible o WHERE o.client_id = c.id AND o.status = 'complete'),
+                -- 与统计口径一致：取消单不计入客户累计金额（C-1）。
                 (SELECT COALESCE(SUM(o.amount_cents), 0) FROM orders_visible o
-                   WHERE o.client_id = c.id AND o.amount_cents IS NOT NULL),
+                   WHERE o.client_id = c.id AND o.amount_cents IS NOT NULL
+                     AND o.status <> 'cancelled'),
                 (SELECT MAX(o.created_at) FROM orders_visible o WHERE o.client_id = c.id),
                 c.created_at, c.updated_at
          FROM clients_visible c WHERE c.id = ?1",

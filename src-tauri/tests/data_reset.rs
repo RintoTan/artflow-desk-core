@@ -407,3 +407,170 @@ fn retry_only_touches_the_requested_items() {
     assert_eq!(report.overall, "all_ok");
     assert!(!backups.join("a.zip").exists());
 }
+
+// ------------------------------------- C-3：业务数据重置后保留平台配置
+
+const PLATFORM_CREATED: &str = "2026-10-01T03:00:00.000Z";
+const PLATFORM_UPDATED: &str = "2026-11-10T05:30:00.000Z";
+
+fn seed_platform(ctx: &Ctx, id: &str, name: &str, rate: Option<i64>, archived: i64, sort: i64) {
+    let conn = ctx.conn();
+    conn.execute(
+        "INSERT INTO payment_platforms (id, name, fee_rate_bp, archived, sort_position, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![id, name, rate, archived, sort, PLATFORM_CREATED, PLATFORM_UPDATED],
+    )
+    .expect("插入平台失败");
+}
+
+/// 读回新代际的平台表，按 sort_position 排序。
+fn platforms_of(db: &Path) -> Vec<(String, String, Option<i64>, i64, i64, String, String)> {
+    let conn = open_connection(db).unwrap();
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, fee_rate_bp, archived, sort_position, created_at, updated_at
+             FROM payment_platforms ORDER BY sort_position, created_at",
+        )
+        .unwrap();
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    rows
+}
+
+#[test]
+fn business_reset_keeps_platforms_and_their_timestamps() {
+    let ctx = Ctx::new();
+    let log = tempfile::tempdir().unwrap();
+    let order = ctx.create_order("会被清掉的订单");
+
+    seed_platform(&ctx, "p-known", "米画师", Some(500), 0, 0);
+    seed_platform(&ctx, "p-unknown", "画加", None, 0, 1);
+    seed_platform(&ctx, "p-zero", "私信", Some(0), 1, 2);
+    {
+        // 计划与流水必须随业务数据一起清空。
+        let conn = ctx.conn();
+        conn.execute(
+            "INSERT INTO payment_schedules (id, order_id, kind, amount_cents, created_at)
+             VALUES ('s-1', ?1, 'deposit', 30000, '2026-11-01T00:00:00.000Z')",
+            [&order],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO payment_records
+               (id, order_id, schedule_id, kind, amount_cents, received_on, fee_cents, created_at)
+             VALUES ('r-1', ?1, 's-1', 'deposit', 30000, '2026-11-01', 1500, '2026-11-01T00:00:00.000Z')",
+            [&order],
+        )
+        .unwrap();
+    }
+
+    let report = reset::run(&ctx.env, &ctx.hw, log.path(), &input(&["business"])).unwrap();
+    assert_eq!(report.overall, "all_ok");
+    let db = ctx
+        .env
+        .layout()
+        .generation_db(report.new_generation.as_ref().unwrap());
+
+    let platforms = platforms_of(&db);
+    assert_eq!(platforms.len(), 3, "平台配置必须整体保留");
+    assert_eq!(
+        platforms[0],
+        (
+            "p-known".into(),
+            "米画师".into(),
+            Some(500),
+            0,
+            0,
+            PLATFORM_CREATED.into(),
+            PLATFORM_UPDATED.into()
+        ),
+        "字段与两个时间戳都必须原样搬运"
+    );
+    assert_eq!(platforms[1].2, None, "未配置费率必须仍是 NULL，不能补成 0");
+    assert_eq!(platforms[2].2, Some(0), "明确零费率必须仍是 0");
+    assert_eq!(platforms[2].3, 1, "归档状态必须保留");
+
+    let conn = open_connection(&db).unwrap();
+    let schedules: i64 = conn
+        .query_row("SELECT COUNT(*) FROM payment_schedules", [], |r| r.get(0))
+        .unwrap();
+    let records: i64 = conn
+        .query_row("SELECT COUNT(*) FROM payment_records", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!((schedules, records), (0, 0), "计划与流水必须随业务数据清空");
+}
+
+#[test]
+fn resetting_settings_too_still_keeps_platforms() {
+    let ctx = Ctx::new();
+    let log = tempfile::tempdir().unwrap();
+    seed_custom_theme(&ctx);
+    seed_platform(&ctx, "p-1", "米画师", Some(500), 0, 0);
+
+    let report = reset::run(&ctx.env, &ctx.hw, log.path(), &input(&["business", "settings"]))
+        .unwrap();
+    assert_eq!(report.overall, "all_ok");
+    let db = ctx
+        .env
+        .layout()
+        .generation_db(report.new_generation.as_ref().unwrap());
+
+    assert_eq!(platforms_of(&db).len(), 1, "同时重置用户设置也要保留平台");
+    let conn = open_connection(&db).unwrap();
+    let themes: i64 = conn
+        .query_row("SELECT COUNT(*) FROM themes WHERE builtin = 0", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(themes, 0, "用户设置该清的还是要清");
+}
+
+#[test]
+fn settings_only_reset_leaves_platforms_alone() {
+    let ctx = Ctx::new();
+    let log = tempfile::tempdir().unwrap();
+    seed_platform(&ctx, "p-1", "米画师", Some(500), 0, 0);
+    let before = platforms_of(&ctx.env.layout().generation_db(&pointer(&ctx)));
+
+    let report = reset::run(&ctx.env, &ctx.hw, log.path(), &input(&["settings"])).unwrap();
+    assert_eq!(report.overall, "all_ok");
+
+    let after = platforms_of(&ctx.env.layout().generation_db(&pointer(&ctx)));
+    assert_eq!(after, before, "只重置设置时平台表不该被触碰");
+}
+
+#[test]
+fn a_failed_reset_does_not_touch_platforms() {
+    let ctx = Ctx::new();
+    let log = tempfile::tempdir().unwrap();
+    seed_platform(&ctx, "p-1", "米画师", Some(500), 0, 0);
+
+    let backups = ctx.env.layout().backups_dir();
+    fs::create_dir_all(&backups).unwrap();
+    let mut perms = fs::metadata(&backups).unwrap().permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        perms.set_mode(0o500);
+    }
+    fs::set_permissions(&backups, perms).unwrap();
+
+    let before_pointer = pointer(&ctx);
+    let report = reset::run(&ctx.env, &ctx.hw, log.path(), &input(&["business"])).unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut p = fs::metadata(&backups).unwrap().permissions();
+        p.set_mode(0o700);
+        fs::set_permissions(&backups, p).unwrap();
+    }
+
+    assert_eq!(report.overall, "all_failed");
+    assert_eq!(pointer(&ctx), before_pointer, "失败时不得切换指针");
+    let platforms = platforms_of(&ctx.env.layout().generation_db(&before_pointer));
+    assert_eq!(platforms.len(), 1, "失败的整次重置不应动到平台配置");
+}
