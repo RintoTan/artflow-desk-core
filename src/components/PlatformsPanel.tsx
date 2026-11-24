@@ -273,7 +273,7 @@ export default function PlatformsPanel({ onError }: Props) {
               id="platform-name"
               ref={nameRef}
               value={form.name}
-              maxLength={60}
+              maxLength={40}
               placeholder="例如：米画师、画加、私信"
               onChange={(event) => setForm({ ...form, name: event.target.value })}
             />
