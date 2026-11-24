@@ -15,6 +15,7 @@ pub mod trash;
 pub mod workflow;
 pub mod export;
 pub mod finance;
+pub mod finance_clients;
 pub mod finance_stats;
 pub mod fixture;
 pub mod stats;

@@ -769,6 +769,10 @@ export const statsApi = {
   report: (range: StatsRangeKey) => invoke<StatsReport>("stats_report", { range }),
   exportSummary: (input: { path: string; range: StatsRangeKey }) =>
     invoke<ExportResult>("export_summary_csv", { input }),
+  exportFinanceStats: (input: { path: string; range: StatsRangeKey }) =>
+    invoke<ExportResult>("export_finance_stats_csv", { input }),
+  exportPayments: (input: { path: string }) =>
+    invoke<ExportResult>("export_payments_csv", { input }),
   exportOrders: (input: {
     path: string;
     scope: "all" | "filtered";
@@ -1187,6 +1191,22 @@ export type OrderTypeRow = {
   netRetainedCents: number;
 };
 
+export type ClientFinance = {
+  clientId: string;
+  displayName: string;
+  orders: number;
+  orderAmountCents: number;
+  unknownAmountOrders: number;
+  grossReceivedCents: number;
+  feeTotalCents: number;
+  netReceivedCents: number;
+  refundTotalCents: number;
+  netRetainedCents: number;
+  remainingCents: number;
+  overReceivedCents: number;
+  unrecordedOrders: number;
+};
+
 export type FinanceStatsReport = {
   range: string;
   timezone: string;
@@ -1201,10 +1221,15 @@ export type FinanceStatsReport = {
   byPlatform: PlatformRow[];
   byMethod: MethodRow[];
   byOrderType: OrderTypeRow[];
+  /** 客户维度：累计口径，不随日期范围变化。 */
+  byClient: ClientFinance[];
   basis: string[];
 };
 
 export const financeStatsApi = {
+  /** 客户详情里的财务概览：与统计页共用同一份聚合。 */
+  clientSummary: (clientId: string) =>
+    invoke<ClientFinance>("finance_client_summary", { clientId }),
   /** 一次请求拿全部财务统计；前端不重算任何金额。 */
   report: (range: string) =>
     invoke<FinanceStatsReport>("finance_stats_report", { range }),

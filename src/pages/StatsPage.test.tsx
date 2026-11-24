@@ -81,6 +81,7 @@ const financeReportFn = vi.fn(async () => ({
   },
   byPlatform: [],
   byMethod: [],
+  byClient: [],
   byOrderType: [],
   basis: ["口径"],
 }));

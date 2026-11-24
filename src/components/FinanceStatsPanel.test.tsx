@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -87,6 +88,23 @@ function report(over: Partial<FinanceStatsReport> = {}): FinanceStatsReport {
     byMethod: [
       { method: "wechat", count: 1, grossReceivedCents: 100_000, feeTotalCents: 1_000, netReceivedCents: 99_000 },
     ],
+    byClient: [
+      {
+        clientId: "c1",
+        displayName: "客户甲",
+        orders: 1,
+        orderAmountCents: 120_000,
+        unknownAmountOrders: 0,
+        grossReceivedCents: 100_000,
+        feeTotalCents: 1_000,
+        netReceivedCents: 99_000,
+        refundTotalCents: 20_000,
+        netRetainedCents: 79_000,
+        remainingCents: 20_000,
+        overReceivedCents: 0,
+        unrecordedOrders: 0,
+      },
+    ],
     byOrderType: [
       {
         orderType: "插画",
@@ -108,7 +126,11 @@ function report(over: Partial<FinanceStatsReport> = {}): FinanceStatsReport {
 async function setup(payload: FinanceStatsReport, range = "all") {
   reportMock.mockImplementation(async () => payload);
   const onRangeChange = vi.fn();
-  render(<FinanceStatsPanel range={range} onRangeChange={onRangeChange} />);
+  render(
+    <MemoryRouter>
+      <FinanceStatsPanel range={range} onRangeChange={onRangeChange} />
+    </MemoryRouter>,
+  );
   await waitFor(() => expect(reportMock).toHaveBeenCalled());
   return { onRangeChange };
 }
@@ -192,9 +214,15 @@ describe("财务统计面板", () => {
 
     const onRangeChange = vi.fn();
     const { rerender } = render(
-      <FinanceStatsPanel range="all" onRangeChange={onRangeChange} />,
+      <MemoryRouter>
+        <FinanceStatsPanel range="all" onRangeChange={onRangeChange} />
+      </MemoryRouter>,
     );
-    rerender(<FinanceStatsPanel range="last6" onRangeChange={onRangeChange} />);
+    rerender(
+      <MemoryRouter>
+        <FinanceStatsPanel range="last6" onRangeChange={onRangeChange} />
+      </MemoryRouter>,
+    );
     await waitFor(() => expect(screen.getByText("¥ 2.22")).toBeTruthy());
 
     // 旧的慢请求此刻才回来：不许把界面改回 111
@@ -207,15 +235,30 @@ describe("财务统计面板", () => {
   it("请求失败时保留上一份数据并提示", async () => {
     reportMock.mockImplementationOnce(async () => report());
     const onRangeChange = vi.fn();
-    const { rerender } = render(<FinanceStatsPanel range="all" onRangeChange={onRangeChange} />);
+    const { rerender } = render(
+      <MemoryRouter>
+        <FinanceStatsPanel range="all" onRangeChange={onRangeChange} />
+      </MemoryRouter>,
+    );
     await waitFor(() => expect(screen.getAllByText("¥ 1,000.00").length).toBeGreaterThan(0));
 
     reportMock.mockImplementationOnce(async () => {
       throw { code: "DB", message: "数据库操作失败：database is locked" };
     });
     reportMock.mockImplementation(async () => report());
-    rerender(<FinanceStatsPanel range="last6" onRangeChange={onRangeChange} />);
+    rerender(
+      <MemoryRouter>
+        <FinanceStatsPanel range="last6" onRangeChange={onRangeChange} />
+      </MemoryRouter>,
+    );
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
     expect(screen.getAllByText("¥ 1,000.00").length).toBeGreaterThan(0);
+  });
+
+  it("按客户表格用稳定身份显示，并给出累计口径说明", async () => {
+    await setup(report());
+    expect(screen.getByText("按客户（累计）")).toBeTruthy();
+    expect(screen.getByText(/同名客户不会合并/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "客户甲" })).toBeTruthy();
   });
 });

@@ -197,7 +197,10 @@ fn build_app() -> Result<tauri::App, String> {
             commands::finance::finance_refund_create,
             commands::finance::finance_refund_update,
             commands::finance::finance_refund_void,
-            commands::finance::finance_stats_report
+            commands::finance::finance_stats_report,
+            commands::finance::finance_client_summary,
+            commands::stats::export_finance_stats_csv,
+            commands::stats::export_payments_csv
         ])
         .build(tauri::generate_context!())
         .map_err(|e| format!("构建应用失败：{e}"))

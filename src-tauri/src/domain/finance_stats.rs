@@ -142,6 +142,8 @@ pub struct FinanceStatsReport {
     pub by_platform: Vec<PlatformRow>,
     pub by_method: Vec<MethodRow>,
     pub by_order_type: Vec<OrderTypeRow>,
+    /// 客户维度：累计口径，不随日期范围变化。
+    pub by_client: Vec<crate::domain::finance_clients::ClientFinance>,
     pub basis: Vec<String>,
 }
 
@@ -533,6 +535,7 @@ pub fn report(conn: &Connection, range: StatsRange) -> AppResult<FinanceStatsRep
         by_platform: by_platform(conn, &from, &to)?,
         by_method: by_method(conn, &from, &to)?,
         by_order_type: by_order_type(conn, &from, &to)?,
+        by_client: crate::domain::finance_clients::all(conn)?,
         basis: vec![
             "实际到账按收款日期归属月份；退款按退款日期归属，不回填到原收款的月份。".into(),
             "手续费取每笔收款当时记录的实际扣费，不用平台现在的默认费率重算。".into(),

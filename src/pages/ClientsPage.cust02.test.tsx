@@ -129,6 +129,25 @@ vi.mock("../bridge/commands", async () => {
   const actual = await vi.importActual<typeof import("../bridge/commands")>("../bridge/commands");
   return {
     ...actual,
+    financeStatsApi: {
+      ...actual.financeStatsApi,
+      clientSummary: async () => ({
+        clientId: "c0",
+        displayName: "客户",
+        orders: 0,
+        orderAmountCents: 0,
+        unknownAmountOrders: 0,
+        grossReceivedCents: 0,
+        feeTotalCents: 0,
+        netReceivedCents: 0,
+        refundTotalCents: 0,
+        netRetainedCents: 0,
+        remainingCents: 0,
+        overReceivedCents: 0,
+        unrecordedOrders: 0,
+      }),
+    },
+
     clientApi: {
       list: listClients,
       detail: vi.fn(async (id: string) => detailFor(id)),

@@ -212,13 +212,15 @@ fn unknown_amount_is_marked_not_zeroed() {
     let rows = export::collect_orders(&conn, &[], false).unwrap();
     let body = text_of(&export::orders_csv(&conn, &rows, "全部订单").unwrap());
 
-    // 金额列为空、未知列为「是」
+    // 金额列为空、未知列为「是」。
+    // FIN-06 在末尾追加了 13 个财务列，所以这两个字段不再位于行尾。
     let line = body
         .lines()
         .find(|l| l.contains("未知金额"))
         .expect("应有一行");
-    assert!(line.ends_with(",是"), "未知金额必须显式标记：{line}");
-    assert!(!line.contains(",0.00"), "不得把 NULL 写成 0.00：{line}");
+    let cols: Vec<&str> = line.trim_end().split(',').collect();
+    assert_eq!(cols[7], "", "未知金额不能写成 0.00：{line}");
+    assert_eq!(cols[8], "是", "未知金额必须显式标记：{line}");
 }
 
 #[test]

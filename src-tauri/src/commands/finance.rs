@@ -164,3 +164,13 @@ pub fn finance_stats_report(
     let conn = state.env.open_db()?;
     crate::domain::finance_stats::report(&conn, range)
 }
+
+/// 客户维度财务汇总：客户详情与统计页共用同一份聚合。
+#[tauri::command]
+pub fn finance_client_summary(
+    state: State<'_, AppState>,
+    client_id: String,
+) -> AppResult<crate::domain::finance_clients::ClientFinance> {
+    let conn = state.env.open_db()?;
+    crate::domain::finance_clients::summary(&conn, &client_id)
+}

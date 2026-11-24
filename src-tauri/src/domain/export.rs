@@ -146,6 +146,8 @@ pub fn summary_csv(conn: &Connection, range: StatsRange) -> AppResult<Vec<u8>> {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderExportRow {
+    /// 订单 ID：只用于导出时回查财务数据，不写进 CSV。
+    pub id: String,
     pub code: String,
     pub title: String,
     pub client_name: Option<String>,
@@ -197,6 +199,7 @@ pub fn collect_orders(
     type RawRow = (
         String,
         String,
+        String,
         Option<String>,
         String,
         String,
@@ -217,11 +220,12 @@ pub fn collect_orders(
             r.get(6)?,
             r.get(7)?,
             r.get(8)?,
+            r.get(9)?,
         ))
     };
 
     let sql_base = format!(
-        "SELECT o.code, o.title, c.display_name, o.status, o.created_at,
+        "SELECT o.id, o.code, o.title, c.display_name, o.status, o.created_at,
                 o.planned_delivery_date,
                 (SELECT s.title FROM order_stages s
                   WHERE s.order_id = o.id AND s.stage_id = o.current_stage_id),
@@ -245,8 +249,9 @@ pub fn collect_orders(
     Ok(rows
         .into_iter()
         .map(
-            |(code, title, client_name, status, created_at, delivery, stage, amount, deleted_at)| {
+            |(id, code, title, client_name, status, created_at, delivery, stage, amount, deleted_at)| {
                 OrderExportRow {
+                    id,
                     code,
                     title,
                     client_name,
@@ -302,9 +307,25 @@ pub fn orders_csv(
         text("当前阶段"),
         text("金额（元）"),
         text("金额是否未知"),
+        // ---- 以下为财务字段，追加在原有列之后，原有列顺序一律不动 ----
+        text("付款计划模式"),
+        text("计划项数"),
+        text("计划合计（元）"),
+        text("付款计划摘要"),
+        text("实际到账（元）"),
+        text("平台手续费（元）"),
+        text("净到账（元）"),
+        text("实际退款（元）"),
+        text("净留存（元）"),
+        text("待收款（元）"),
+        text("超额收款（元）"),
+        text("收款信息状态"),
+        text("计划匹配状态"),
     ]));
 
     for row in rows {
+        // 与订单详情共用同一份派生结果，避免 CSV 里出现另一套算法。
+        let finance = OrderFinanceCells::build(conn, row)?;
         let amount_cell = match row.amount_cents {
             Some(cents) => Cell::Money(cents),
             None => Cell::Empty,
@@ -328,6 +349,19 @@ pub fn orders_csv(
             },
             amount_cell,
             text(if row.amount_cents.is_none() { "是" } else { "否" }),
+            finance.plan_mode_cell(),
+            finance.plan_items_cell(),
+            finance.plan_total_cell(),
+            finance.plan_summary_cell(),
+            finance.gross_cell(),
+            finance.fee_cell(),
+            finance.net_cell(),
+            finance.refund_cell(),
+            finance.retained_cell(),
+            finance.remaining_cell(),
+            finance.over_cell(),
+            finance.record_state_cell(),
+            finance.plan_match_cell(),
         ]));
     }
 
@@ -377,4 +411,647 @@ pub fn write_file(target: &Path, bytes: &[u8], rows: i64) -> AppResult<ExportRes
         rows,
         bytes: bytes.len() as i64,
     })
+}
+
+// ------------------------------------------------------ FIN-06 财务列
+
+/// 订单 CSV 末尾那 13 列的取值。
+///
+/// 直接复用 `finance::snapshot`：订单详情怎么算，导出就怎么算。
+/// 已取消订单在财务统计里被排除，这里也把金额列留空，只保留状态说明——
+/// 否则 CSV 上会出现一行「已取消」却带着到账金额的数字。
+struct OrderFinanceCells {
+    /// 金额列是否整段留空：已取消（不计入统计）或已进回收站（没有快照可读）。
+    blank: bool,
+    state_text: &'static str,
+    unrecorded: bool,
+    plan_mode: &'static str,
+    plan_items: i64,
+    plan_total: Option<i64>,
+    plan_summary: Option<String>,
+    gross: i64,
+    fee: i64,
+    net: i64,
+    refund: i64,
+    retained: i64,
+    remaining: Option<i64>,
+    over: i64,
+    plan_matches: bool,
+    has_plan: bool,
+}
+
+fn kind_label(kind: &str) -> &'static str {
+    match kind {
+        "full" => "全款",
+        "deposit" => "定金",
+        "installment" => "分期款",
+        "final" => "尾款",
+        _ => "其他",
+    }
+}
+
+fn plan_status_label(status: &str) -> &'static str {
+    match status {
+        "settled" => "已收齐",
+        "partial" => "部分收款",
+        "overdue" => "逾期未收",
+        _ => "未收",
+    }
+}
+
+impl OrderFinanceCells {
+    fn build(conn: &Connection, row: &OrderExportRow) -> AppResult<Self> {
+        // 回收站里的订单不在 `orders_visible` 里，没有可读的财务快照；
+        // 它们在统计里本来也不该出现，所以整段留空并说明原因。
+        if row.deleted {
+            return Ok(Self {
+                blank: true,
+                state_text: "回收站，金额统计排除",
+                unrecorded: false,
+                plan_mode: "未设置",
+                plan_items: 0,
+                plan_total: None,
+                plan_summary: None,
+                gross: 0,
+                fee: 0,
+                net: 0,
+                refund: 0,
+                retained: 0,
+                remaining: None,
+                over: 0,
+                plan_matches: false,
+                has_plan: false,
+            });
+        }
+        let snapshot = crate::domain::finance::snapshot(conn, &row.id)?;
+        let has_plan = !snapshot.plan_items.is_empty();
+        let summary = if has_plan {
+            Some(
+                snapshot
+                    .plan_items
+                    .iter()
+                    .map(|item| {
+                        let when = item
+                            .expected_date
+                            .clone()
+                            .map(|date| date.to_string())
+                            .unwrap_or_else(|| "未安排".to_string());
+                        format!(
+                            "{} ¥{}（{}，{}）",
+                            kind_label(&item.kind),
+                            stats::cents_to_yuan(item.amount_cents),
+                            when,
+                            plan_status_label(item.status)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("；"),
+            )
+        } else {
+            None
+        };
+        Ok(Self {
+            blank: snapshot.cancelled,
+            state_text: if snapshot.cancelled {
+                "已取消，金额统计排除"
+            } else if snapshot.unrecorded {
+                "未记录收款信息"
+            } else {
+                "已有收款记录"
+            },
+            unrecorded: snapshot.unrecorded,
+            plan_mode: match snapshot.plan_mode {
+                "full" => "全款",
+                "deposit_final" => "定金 + 尾款",
+                "installment" => "分期",
+                "mixed" => "混合",
+                _ => "未设置",
+            },
+            plan_items: snapshot.plan_items.len() as i64,
+            plan_total: has_plan.then_some(snapshot.plan_total_cents),
+            plan_summary: summary,
+            gross: snapshot.gross_received_cents,
+            fee: snapshot.fee_total_cents,
+            net: snapshot.net_received_cents,
+            refund: snapshot.refund_total_cents,
+            retained: snapshot.net_retained_cents,
+            remaining: if snapshot.cancelled || snapshot.unrecorded {
+                None
+            } else {
+                snapshot.remaining_cents
+            },
+            over: snapshot.over_received_cents,
+            plan_matches: snapshot.plan_matches_order,
+            has_plan,
+        })
+    }
+
+    fn money(&self, cents: i64) -> Cell {
+        if self.blank {
+            Cell::Empty
+        } else {
+            Cell::Money(cents)
+        }
+    }
+
+    fn plan_mode_cell(&self) -> Cell {
+        if self.blank {
+            Cell::Empty
+        } else {
+            text(self.plan_mode)
+        }
+    }
+
+    fn plan_items_cell(&self) -> Cell {
+        if self.blank || !self.has_plan {
+            Cell::Empty
+        } else {
+            Cell::Integer(self.plan_items)
+        }
+    }
+
+    fn plan_total_cell(&self) -> Cell {
+        match (self.blank, self.plan_total) {
+            (false, Some(cents)) => Cell::Money(cents),
+            _ => Cell::Empty,
+        }
+    }
+
+    fn plan_summary_cell(&self) -> Cell {
+        match (self.blank, &self.plan_summary) {
+            (false, Some(summary)) => text(summary.clone()),
+            _ => Cell::Empty,
+        }
+    }
+
+    fn gross_cell(&self) -> Cell {
+        self.money(self.gross)
+    }
+
+    fn fee_cell(&self) -> Cell {
+        self.money(self.fee)
+    }
+
+    fn net_cell(&self) -> Cell {
+        self.money(self.net)
+    }
+
+    fn refund_cell(&self) -> Cell {
+        self.money(self.refund)
+    }
+
+    fn retained_cell(&self) -> Cell {
+        self.money(self.retained)
+    }
+
+    fn remaining_cell(&self) -> Cell {
+        match (self.blank, self.unrecorded, self.remaining) {
+            (true, _, _) | (_, true, _) => Cell::Empty,
+            (_, _, Some(cents)) => Cell::Money(cents),
+            _ => Cell::Empty,
+        }
+    }
+
+    fn over_cell(&self) -> Cell {
+        match (self.blank, self.unrecorded) {
+            (true, _) | (_, true) => Cell::Empty,
+            _ => Cell::Money(self.over),
+        }
+    }
+
+    fn record_state_cell(&self) -> Cell {
+        text(self.state_text)
+    }
+
+    fn plan_match_cell(&self) -> Cell {
+        if self.blank {
+            Cell::Empty
+        } else if !self.has_plan {
+            text("未设置付款计划")
+        } else if self.plan_matches {
+            text("一致")
+        } else {
+            text("与订单金额不一致")
+        }
+    }
+}
+
+// ------------------------------------------------ FIN-06 财务统计 CSV
+
+fn range_label(range: StatsRange) -> &'static str {
+    match range {
+        StatsRange::ThisMonth => "本月",
+        StatsRange::Last6 => "近 6 个月",
+        StatsRange::Last12 => "近 12 个月",
+        StatsRange::All => "全部",
+    }
+}
+
+/// 财务统计汇总 CSV：分区结构与页面一一对应，金额口径不另算。
+pub fn finance_stats_csv(conn: &Connection, range: StatsRange) -> AppResult<Vec<u8>> {
+    let report = crate::domain::finance_stats::report(conn, range)?;
+    let tz = timezone::parse(&report.timezone).unwrap_or(chrono_tz::Tz::UTC);
+
+    let mut body = String::from(BOM);
+    body.push_str(&line(&[text("ArtFlow miniDesk 财务统计")]));
+    body.push_str(&line(&[text("统计范围"), text(range_label(range))]));
+    body.push_str(&line(&[
+        text("月份区间"),
+        text(format!("{} ~ {}", report.from_month, report.to_month)),
+    ]));
+    body.push_str(&line(&[text("工作时区"), text(report.timezone.clone())]));
+    body.push_str(&line(&[text("币种"), text("CNY")]));
+    body.push_str(&line(&[
+        text("导出时间"),
+        text(timezone::to_local_string(&timezone::now_timestamp(), tz)),
+    ]));
+    body.push_str(&line(&[
+        text("隐私说明"),
+        text("不包含客户联系方式、私人备注、收款备注与任何附件或系统路径"),
+    ]));
+    body.push_str(LINE_ENDING);
+
+    body.push_str(&line(&[text("A. 累计财务（全部历史）")]));
+    body.push_str(&line(&[
+        text("累计实际到账"),
+        Cell::Money(report.lifetime.gross_received_cents),
+    ]));
+    body.push_str(&line(&[
+        text("累计平台手续费"),
+        Cell::Money(report.lifetime.fee_total_cents),
+    ]));
+    body.push_str(&line(&[
+        text("累计净到账"),
+        Cell::Money(report.lifetime.net_received_cents),
+    ]));
+    body.push_str(&line(&[
+        text("累计实际退款"),
+        Cell::Money(report.lifetime.refund_total_cents),
+    ]));
+    body.push_str(&line(&[
+        text("累计净留存"),
+        Cell::Money(report.lifetime.net_retained_cents),
+    ]));
+    body.push_str(LINE_ENDING);
+
+    body.push_str(&line(&[text("B. 当前财务状态")]));
+    body.push_str(&line(&[text("待收款"), Cell::Money(report.current.remaining_cents)]));
+    body.push_str(&line(&[
+        text("超额收款"),
+        Cell::Money(report.current.over_received_cents),
+    ]));
+    body.push_str(&line(&[
+        text("未记录收款信息订单数"),
+        Cell::Integer(report.current.unrecorded_orders),
+    ]));
+    body.push_str(&line(&[
+        text("未知金额订单数"),
+        Cell::Integer(report.current.unknown_amount_orders),
+    ]));
+    body.push_str(&line(&[
+        text("计划与总额不一致订单数"),
+        Cell::Integer(report.current.plan_mismatch_orders),
+    ]));
+    body.push_str(LINE_ENDING);
+
+    body.push_str(&line(&[text("C. 所选区间合计")]));
+    body.push_str(&line(&[text("实际到账"), Cell::Money(report.period.gross_received_cents)]));
+    body.push_str(&line(&[text("平台手续费"), Cell::Money(report.period.fee_total_cents)]));
+    body.push_str(&line(&[text("净到账"), Cell::Money(report.period.net_received_cents)]));
+    body.push_str(&line(&[text("实际退款"), Cell::Money(report.period.refund_total_cents)]));
+    body.push_str(&line(&[text("净留存"), Cell::Money(report.period.net_retained_cents)]));
+    body.push_str(LINE_ENDING);
+
+    body.push_str(&line(&[text("D. 月度现金流")]));
+    body.push_str(&line(&[
+        text("月份"),
+        text("实际到账（元）"),
+        text("平台手续费（元）"),
+        text("净到账（元）"),
+        text("实际退款（元）"),
+        text("净留存（元）"),
+    ]));
+    for month in &report.monthly {
+        body.push_str(&line(&[
+            text(month.month.clone()),
+            Cell::Money(month.gross_received_cents),
+            Cell::Money(month.fee_total_cents),
+            Cell::Money(month.net_received_cents),
+            Cell::Money(month.refund_total_cents),
+            Cell::Money(month.net_retained_cents),
+        ]));
+    }
+    body.push_str(LINE_ENDING);
+
+    body.push_str(&line(&[text("E. 年度净到账")]));
+    body.push_str(&line(&[
+        text("年份"),
+        text("实际到账（元）"),
+        text("平台手续费（元）"),
+        text("净到账（元）"),
+    ]));
+    for year in &report.annual {
+        body.push_str(&line(&[
+            text(year.year.clone()),
+            Cell::Money(year.gross_received_cents),
+            Cell::Money(year.fee_total_cents),
+            Cell::Money(year.net_received_cents),
+        ]));
+    }
+    body.push_str(LINE_ENDING);
+
+    body.push_str(&line(&[text("F. 预计收款")]));
+    body.push_str(&line(&[text("已逾期"), Cell::Money(report.expected.overdue_cents)]));
+    body.push_str(&line(&[
+        text("未安排日期"),
+        Cell::Money(report.expected.unscheduled_cents),
+    ]));
+    body.push_str(&line(&[
+        text("更远期计划"),
+        Cell::Money(report.expected.beyond_cents),
+    ]));
+    body.push_str(&line(&[
+        text("没有付款计划的订单数"),
+        Cell::Integer(report.expected.no_plan_orders),
+    ]));
+    body.push_str(&line(&[text("预计月份"), text("金额（元）"), text("笔数")]));
+    for month in &report.expected.months {
+        body.push_str(&line(&[
+            text(month.month.clone()),
+            Cell::Money(month.amount_cents),
+            Cell::Integer(month.count),
+        ]));
+    }
+    body.push_str(LINE_ENDING);
+
+    body.push_str(&line(&[text("G1. 按接单平台")]));
+    body.push_str(&line(&[
+        text("平台"),
+        text("笔数"),
+        text("实际到账（元）"),
+        text("平台手续费（元）"),
+        text("净到账（元）"),
+    ]));
+    for row in &report.by_platform {
+        body.push_str(&line(&[
+            match &row.platform_name {
+                Some(name) => text(name.clone()),
+                None => text("未记录平台"),
+            },
+            Cell::Integer(row.count),
+            Cell::Money(row.gross_received_cents),
+            Cell::Money(row.fee_total_cents),
+            Cell::Money(row.net_received_cents),
+        ]));
+    }
+    body.push_str(LINE_ENDING);
+
+    body.push_str(&line(&[text("G2. 按付款方式")]));
+    body.push_str(&line(&[
+        text("付款方式"),
+        text("笔数"),
+        text("实际到账（元）"),
+        text("平台手续费（元）"),
+        text("净到账（元）"),
+    ]));
+    for row in &report.by_method {
+        let label = match row.method.as_deref() {
+            Some("wechat") => "微信",
+            Some("alipay") => "支付宝",
+            Some("bank") => "银行卡",
+            Some("cash") => "现金",
+            Some("other") => "其他",
+            _ => "未记录方式",
+        };
+        body.push_str(&line(&[
+            text(label),
+            Cell::Integer(row.count),
+            Cell::Money(row.gross_received_cents),
+            Cell::Money(row.fee_total_cents),
+            Cell::Money(row.net_received_cents),
+        ]));
+    }
+    body.push_str(LINE_ENDING);
+
+    body.push_str(&line(&[text("G3. 按委托类型")]));
+    body.push_str(&line(&[
+        text("委托类型"),
+        text("订单数"),
+        text("订单金额（元）"),
+        text("未知金额订单数"),
+        text("实际到账（元）"),
+        text("平台手续费（元）"),
+        text("实际退款（元）"),
+        text("净留存（元）"),
+    ]));
+    for row in &report.by_order_type {
+        body.push_str(&line(&[
+            match &row.order_type {
+                Some(kind) => text(kind.clone()),
+                None => text("未分类"),
+            },
+            Cell::Integer(row.orders),
+            Cell::Money(row.order_amount_cents),
+            Cell::Integer(row.unknown_amount_orders),
+            Cell::Money(row.gross_received_cents),
+            Cell::Money(row.fee_total_cents),
+            Cell::Money(row.refund_total_cents),
+            Cell::Money(row.net_retained_cents),
+        ]));
+    }
+    body.push_str(LINE_ENDING);
+
+    body.push_str(&line(&[text("G4. 按客户（累计）")]));
+    body.push_str(&line(&[
+        text("客户"),
+        text("订单数"),
+        text("累计委托金额（元）"),
+        text("未知金额订单数"),
+        text("实际到账（元）"),
+        text("平台手续费（元）"),
+        text("净到账（元）"),
+        text("实际退款（元）"),
+        text("净留存（元）"),
+        text("待收款（元）"),
+        text("超额收款（元）"),
+        text("未记录收款信息订单数"),
+    ]));
+    for row in &report.by_client {
+        body.push_str(&line(&[
+            text(row.display_name.clone()),
+            Cell::Integer(row.orders),
+            Cell::Money(row.order_amount_cents),
+            Cell::Integer(row.unknown_amount_orders),
+            Cell::Money(row.gross_received_cents),
+            Cell::Money(row.fee_total_cents),
+            Cell::Money(row.net_received_cents),
+            Cell::Money(row.refund_total_cents),
+            Cell::Money(row.net_retained_cents),
+            Cell::Money(row.remaining_cents),
+            Cell::Money(row.over_received_cents),
+            Cell::Integer(row.unrecorded_orders),
+        ]));
+    }
+    body.push_str(LINE_ENDING);
+
+    body.push_str(&line(&[text("H. 口径说明")]));
+    for note in &report.basis {
+        body.push_str(&line(&[text(note.clone())]));
+    }
+    body.push_str(&line(&[text(
+        "订单总额是合同金额，不等于实际到账；净到账已扣除实际手续费；净留存已扣除实际退款；两者都不是利润。",
+    )]));
+    body.push_str(&line(&[text(
+        "已取消订单不进入任何金额统计；NULL 订单金额不按 0 元处理，单独计数。",
+    )]));
+
+    Ok(body.into_bytes())
+}
+
+/// 收款流水 CSV：原始记录，含作废行。不是统计报表。
+pub fn payments_csv(conn: &Connection) -> AppResult<Vec<u8>> {
+    let tz_name: String = conn
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = 'working_timezone'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or_else(|_| "UTC".to_string());
+    let tz = timezone::parse(&tz_name).unwrap_or(chrono_tz::Tz::UTC);
+
+    let mut body = String::from(BOM);
+    body.push_str(&line(&[text("ArtFlow miniDesk 收款流水")]));
+    body.push_str(&line(&[text("说明"), text("原始记录明细，包含已作废流水；作废流水不进入财务统计")]));
+    body.push_str(&line(&[text("工作时区"), text(tz.name().to_string())]));
+    body.push_str(&line(&[
+        text("导出时间"),
+        text(timezone::to_local_string(&timezone::now_timestamp(), tz)),
+    ]));
+    body.push_str(&line(&[
+        text("隐私说明"),
+        text("不包含客户联系方式、客户备注、订单备注与收款备注"),
+    ]));
+    body.push_str(LINE_ENDING);
+
+    body.push_str(&line(&[
+        text("订单编号"),
+        text("委托名称"),
+        text("客户"),
+        text("订单状态"),
+        text("收款类型"),
+        text("收款日期"),
+        text("收款金额（元）"),
+        text("收款平台"),
+        text("手续费率（%）"),
+        text("实际手续费（元）"),
+        text("净到账（元）"),
+        text("收款方式"),
+        text("关联计划类型"),
+        text("计划预计日期"),
+        text("流水状态"),
+        text("作废日期"),
+        text("作废原因"),
+    ]));
+
+    let mut stmt = conn.prepare(
+        "SELECT o.code, o.title, c.display_name, o.status,
+                r.kind, r.received_on, r.amount_cents, r.platform_name,
+                r.fee_rate_bp, r.fee_cents, r.method,
+                s.kind, s.expected_date,
+                r.voided_at, r.void_reason
+           FROM payment_records r
+           JOIN orders_visible o ON o.id = r.order_id
+           LEFT JOIN clients_visible c ON c.id = o.client_id
+           LEFT JOIN payment_schedules s ON s.id = r.schedule_id
+          ORDER BY r.received_on, o.code, r.created_at",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, Option<String>>(2)?,
+            r.get::<_, String>(3)?,
+            r.get::<_, String>(4)?,
+            r.get::<_, String>(5)?,
+            r.get::<_, i64>(6)?,
+            r.get::<_, Option<String>>(7)?,
+            r.get::<_, Option<i64>>(8)?,
+            r.get::<_, i64>(9)?,
+            r.get::<_, Option<String>>(10)?,
+            r.get::<_, Option<String>>(11)?,
+            r.get::<_, Option<String>>(12)?,
+            r.get::<_, Option<String>>(13)?,
+            r.get::<_, Option<String>>(14)?,
+        ))
+    })?;
+
+    for row in rows {
+        let (
+            code,
+            title,
+            client,
+            status,
+            kind,
+            received_on,
+            amount,
+            platform,
+            rate_bp,
+            fee,
+            method,
+            schedule_kind,
+            expected_date,
+            voided_at,
+            void_reason,
+        ) = row?;
+        let rate_cell = match rate_bp {
+            Some(bp) => Cell::Text(format!("{}.{:02}", bp / 100, bp % 100)),
+            None => Cell::Empty,
+        };
+        body.push_str(&line(&[
+            text(code),
+            text(title),
+            match client {
+                Some(name) => text(name),
+                None => Cell::Empty,
+            },
+            text(status_label(&status)),
+            text(kind_label(&kind)),
+            text(received_on),
+            Cell::Money(amount),
+            match platform {
+                Some(name) => text(name),
+                None => text("未记录平台"),
+            },
+            rate_cell,
+            Cell::Money(fee),
+            Cell::Money(amount - fee),
+            match method.as_deref() {
+                Some("wechat") => text("微信"),
+                Some("alipay") => text("支付宝"),
+                Some("bank") => text("银行卡"),
+                Some("cash") => text("现金"),
+                Some("other") => text("其他"),
+                _ => Cell::Empty,
+            },
+            match schedule_kind {
+                Some(kind) => text(kind_label(&kind)),
+                None => Cell::Empty,
+            },
+            match expected_date {
+                Some(date) => text(date),
+                None => Cell::Empty,
+            },
+            text(if voided_at.is_some() { "已作废" } else { "有效" }),
+            match &voided_at {
+                Some(at) => text(timezone::to_local_string(at, tz)),
+                None => Cell::Empty,
+            },
+            match void_reason {
+                Some(reason) => text(reason),
+                None => Cell::Empty,
+            },
+        ]));
+    }
+
+    Ok(body.into_bytes())
 }

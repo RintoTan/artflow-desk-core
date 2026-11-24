@@ -98,3 +98,38 @@ pub fn export_orders_csv(
     let count = rows.len() as i64;
     export::write_file(PathBuf::from(&input.path).as_path(), &bytes, count)
 }
+
+// ------------------------------------------------------ FIN-06 财务导出
+
+#[tauri::command]
+pub fn export_finance_stats_csv(
+    state: State<'_, AppState>,
+    input: SummaryExportInput,
+) -> AppResult<ExportResult> {
+    let conn = state.env.open_db()?;
+    let bytes = export::finance_stats_csv(&conn, input.range)?;
+    let report = crate::domain::finance_stats::report(&conn, input.range)?;
+    // 行数只用于提示：分区报表没有「行」的概念，这里用月份数近似反馈体积。
+    export::write_file(
+        PathBuf::from(&input.path).as_path(),
+        &bytes,
+        report.monthly.len() as i64,
+    )
+}
+
+#[tauri::command]
+pub fn export_payments_csv(
+    state: State<'_, AppState>,
+    input: SinglePathInput,
+) -> AppResult<ExportResult> {
+    let conn = state.env.open_db()?;
+    let bytes = export::payments_csv(&conn)?;
+    let rows: i64 = conn.query_row("SELECT COUNT(*) FROM payment_records", [], |r| r.get(0))?;
+    export::write_file(PathBuf::from(&input.path).as_path(), &bytes, rows)
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SinglePathInput {
+    pub path: String,
+}

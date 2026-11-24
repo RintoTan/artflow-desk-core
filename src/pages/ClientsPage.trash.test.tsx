@@ -57,6 +57,25 @@ vi.mock("../bridge/commands", async () => {
   );
   return {
     ...actual,
+    financeStatsApi: {
+      ...actual.financeStatsApi,
+      clientSummary: async () => ({
+        clientId: "c0",
+        displayName: "客户",
+        orders: 0,
+        orderAmountCents: 0,
+        unknownAmountOrders: 0,
+        grossReceivedCents: 0,
+        feeTotalCents: 0,
+        netReceivedCents: 0,
+        refundTotalCents: 0,
+        netRetainedCents: 0,
+        remainingCents: 0,
+        overReceivedCents: 0,
+        unrecordedOrders: 0,
+      }),
+    },
+
     api: {
       ...actual.api,
       // CUST-02 起客户页要读完整订单来分组，这里给空集合即可。

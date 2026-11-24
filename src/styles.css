@@ -9171,3 +9171,29 @@ dl.stat-row {
     grid-column: 2;
   }
 }
+
+/* ------------------------------------------- 财务导出与客户维度（FIN-06） */
+.finance-export {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.stat-row.is-secondary dd {
+  font-size: 13px;
+}
+
+.stat-row dd.is-negative {
+  color: var(--danger);
+}
+
+.finance-table th a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border);
+  text-underline-offset: 2px;
+}
+
+.finance-table th a:hover {
+  text-decoration-color: var(--accent);
+}

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 import ConfirmDialog from "../components/ConfirmDialog";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
+import ClientFinancePanel from "../components/ClientFinancePanel";
 import { filterAndSortClients } from "../lib/clientsView";
 import { orderStatusLabel } from "../lib/orderStatus";
 import { usePageShortcuts } from "../lib/shortcuts";
@@ -674,6 +675,8 @@ export default function ClientsPage() {
                 订单被永久删除后会随剩余订单重算。这里没有收款事实，所以不叫「实收」。
               </p>
             </section>
+
+            <ClientFinancePanel clientId={detail.client.id} />
 
             <section className="panel">
               <header className="panel-head compact">

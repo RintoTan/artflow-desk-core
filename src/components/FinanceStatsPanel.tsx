@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { save } from "@tauri-apps/plugin-dialog";
+import { Link } from "react-router-dom";
 
 import {
   describeError,
   financeStatsApi,
+  statsApi,
   type FinanceStatsReport,
   type MonthCashFlow,
 } from "../bridge/commands";
@@ -33,6 +36,9 @@ export default function FinanceStatsPanel({ range, onRangeChange }: Props) {
   const [report, setReport] = useState<FinanceStatsReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState<"stats" | "payments" | null>(null);
+  const [exportMsg, setExportMsg] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   // 快速切范围时，旧请求回来不许覆盖新结果。
   const token = useRef(0);
 
@@ -55,6 +61,46 @@ export default function FinanceStatsPanel({ range, onRangeChange }: Props) {
         if (mine === token.current) setLoading(false);
       });
   }, [range]);
+
+  async function exportStats() {
+    setExportError(null);
+    setExportMsg(null);
+    try {
+      const path = await save({
+        title: "导出财务统计 CSV",
+        defaultPath: `artflow-财务统计-${range}.csv`,
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+      if (!path) return; // 用户取消：不建文件、不提示成功
+      setExporting("stats");
+      await statsApi.exportFinanceStats({ path, range: range as "thisMonth" });
+      setExportMsg(`已导出财务统计到 ${path}`);
+    } catch (cause) {
+      setExportError(describeError(cause));
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  async function exportPayments() {
+    setExportError(null);
+    setExportMsg(null);
+    try {
+      const path = await save({
+        title: "导出收款流水 CSV",
+        defaultPath: "artflow-收款流水.csv",
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+      if (!path) return;
+      setExporting("payments");
+      await statsApi.exportPayments({ path });
+      setExportMsg(`已导出收款流水到 ${path}`);
+    } catch (cause) {
+      setExportError(describeError(cause));
+    } finally {
+      setExporting(null);
+    }
+  }
 
   const chips = (
     <div className="segmented" role="group" aria-label="财务统计范围">
@@ -103,7 +149,32 @@ export default function FinanceStatsPanel({ range, onRangeChange }: Props) {
           {report.fromMonth} ~ {report.toMonth}
           {loading ? " · 更新中…" : ""}
         </span>
+        <span className="finance-export">
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={exporting !== null}
+            onClick={() => void exportStats()}
+          >
+            {exporting === "stats" ? "导出中…" : "导出财务统计 CSV"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={exporting !== null}
+            onClick={() => void exportPayments()}
+          >
+            {exporting === "payments" ? "导出中…" : "导出收款流水 CSV"}
+          </button>
+        </span>
       </div>
+
+      {exportMsg && <p className="notice notice-ok">{exportMsg}</p>}
+      {exportError && (
+        <p className="notice notice-error" role="alert">
+          {exportError}
+        </p>
+      )}
 
       {error && (
         <p className="notice notice-error" role="alert">
@@ -379,6 +450,48 @@ export default function FinanceStatsPanel({ range, onRangeChange }: Props) {
         <p className="hint">
           订单金额是合同金额，实际到账是真金；两列不相等是正常的，不代表哪一边错了。
         </p>
+      </section>
+
+      <section className="finance-stats-block">
+        <h3>按客户（累计）</h3>
+        <p className="hint">
+          客户按稳定身份归类，同名客户不会合并；这里是累计口径，不随上面的日期范围变化。
+        </p>
+        {report.byClient.length === 0 ? (
+          <p className="muted">还没有可统计的客户。</p>
+        ) : (
+          <div className="finance-table-wrap">
+            <table className="finance-table">
+              <thead>
+                <tr>
+                  <th scope="col">客户</th>
+                  <th scope="col">订单</th>
+                  <th scope="col">累计委托金额</th>
+                  <th scope="col">实际到账</th>
+                  <th scope="col">待收款</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.byClient.map((row) => (
+                  <tr key={row.clientId}>
+                    <th scope="row">
+                      <Link to={`/clients?client=${row.clientId}`}>{row.displayName}</Link>
+                    </th>
+                    <td className="mono">
+                      {row.orders}
+                      {row.unrecordedOrders > 0 && (
+                        <span className="muted">（{row.unrecordedOrders} 单未记录收款）</span>
+                      )}
+                    </td>
+                    <td className="mono">{formatYuan(row.orderAmountCents)}</td>
+                    <td className="mono">{formatYuan(row.grossReceivedCents)}</td>
+                    <td className="mono">{formatYuan(row.remainingCents)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <details className="finance-basis">
