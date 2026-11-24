@@ -14,6 +14,7 @@ import FilterMenu from "../components/FilterMenu";
 import OrderTable from "../components/OrderTable";
 import ActionMenu from "../components/ActionMenu";
 import CancelOrderDialog, { type CancelOrderPayload } from "../components/CancelOrderDialog";
+import OrderFinancePanel from "../components/OrderFinancePanel";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { ScheduleOverview } from "../components/ScheduleOverview";
 import { TruncatedTitle } from "../components/TitleTooltip";
@@ -1556,6 +1557,14 @@ export default function OrdersPage() {
 
             <AttachmentPanel
               orderId={detail.id}
+              onError={setError}
+              onNotice={setNotice}
+            />
+
+            {/* 财务：数字全部来自后端 snapshot，前端只负责展示与录入。 */}
+            <OrderFinancePanel
+              orderId={detail.id}
+              cancelled={detail.status === "cancelled"}
               onError={setError}
               onNotice={setNotice}
             />

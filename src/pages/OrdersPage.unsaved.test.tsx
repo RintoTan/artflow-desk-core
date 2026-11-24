@@ -59,6 +59,35 @@ vi.mock("../bridge/commands", async () => {
   );
   return {
     ...actual,
+    // 财务面板一挂载就会拉一次 snapshot；这两个页面测试不关心财务，给个空视图即可，
+    // 否则它会渲染自己的错误提示，和页面错误撞成两个 alert。
+    paymentsApi: {
+      ...actual.paymentsApi,
+      snapshot: async () => ({
+        orderId: "o0",
+        orderAmountCents: null,
+        planMode: "none",
+        planItems: [],
+        planTotalCents: 0,
+        planMatchesOrder: false,
+        records: [],
+        voidedRecords: [],
+        refunds: [],
+        voidedRefunds: [],
+        grossReceivedCents: 0,
+        feeTotalCents: 0,
+        netReceivedCents: 0,
+        refundTotalCents: 0,
+        netRetainedCents: 0,
+        remainingCents: null,
+        overReceivedCents: 0,
+        unrecorded: true,
+        hasRecordsWithoutPlan: false,
+        cancelled: false,
+      }),
+      quoteFee: async () => ({ amountCents: 0, feeRateBp: null, suggestedFeeCents: null }),
+    },
+    financeApi: { ...actual.financeApi, platforms: async () => [] },
     api: {
       listOrders: async () => [order],
       listClients: async () => [],

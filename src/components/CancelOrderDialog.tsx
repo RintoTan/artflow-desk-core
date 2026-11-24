@@ -171,7 +171,7 @@ export default function CancelOrderDialog({
         </p>
 
         <fieldset className="cancel-decision">
-          <legend>这笔订单是否已经发生实际退款？</legend>
+          <legend>本次取消操作是否同时发生退款？</legend>
           <label className="check-line">
             <input
               type="radio"
@@ -182,7 +182,9 @@ export default function CancelOrderDialog({
             />
             <span>没有退款</span>
           </label>
-          <p className="hint">客户没有收到退款，或这笔委托从未收过钱。取消后不会再记录任何资金流出。</p>
+          <p className="hint">
+            本次取消不涉及退钱。订单此前已经发生过的退款不会被改动，也不需要在这里重复记录。
+          </p>
           <label className="check-line">
             <input
               type="radio"

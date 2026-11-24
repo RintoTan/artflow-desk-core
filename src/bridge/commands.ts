@@ -995,6 +995,21 @@ export type PlanItemView = {
 };
 
 /** 订单财务全景。全部由后端派生，没有任何「已收」「待收」落库字段。 */
+export type RefundView = {
+  id: string;
+  orderId: string;
+  /** null = 未关联原收款，系统核验不了可退款余额。 */
+  paymentRecordId: string | null;
+  amountCents: number;
+  refundedOn: string;
+  method: string | null;
+  note: string | null;
+  voidedAt: string | null;
+  voidReason: string | null;
+  createdAt: string;
+  unmatched: boolean;
+};
+
 export type OrderFinanceView = {
   orderId: string;
   orderAmountCents: number | null;
@@ -1007,6 +1022,13 @@ export type OrderFinanceView = {
   grossReceivedCents: number;
   feeTotalCents: number;
   netReceivedCents: number;
+  refunds: RefundView[];
+  voidedRefunds: RefundView[];
+  refundTotalCents: number;
+  /** 净到账 − 有效退款；允许为负（退款超过已记录到账）。 */
+  netRetainedCents: number;
+  /** 订单已取消：财务只读，但退款仍可管理。 */
+  cancelled: boolean;
   /** 订单金额未知时为 null：不能拿 0 表示「已结清」。 */
   remainingCents: number | null;
   overReceivedCents: number;
@@ -1064,21 +1086,6 @@ export const paymentsApi = {
       "finance_payment_fee_quote",
       { amountCents, feeRateBp },
     ),
-};
-
-export type RefundView = {
-  id: string;
-  orderId: string;
-  /** null = 未关联原收款，系统核验不了可退款余额。 */
-  paymentRecordId: string | null;
-  amountCents: number;
-  refundedOn: string;
-  method: string | null;
-  note: string | null;
-  voidedAt: string | null;
-  voidReason: string | null;
-  createdAt: string;
-  unmatched: boolean;
 };
 
 export const refundsApi = {
