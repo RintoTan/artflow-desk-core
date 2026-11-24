@@ -1,3 +1,4 @@
+pub mod activate;
 pub mod lock;
 pub mod close;
 pub mod diag;

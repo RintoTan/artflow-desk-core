@@ -8460,3 +8460,61 @@ dl.stat-row {
     grid-column: 1 / -1;
   }
 }
+
+/* DEV-0.1.1-05 数据位置。 */
+.storage-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  margin: 14px 0 0;
+  font-size: 12.5px;
+}
+
+.storage-facts dt {
+  color: var(--text-muted);
+}
+
+.storage-facts dd {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  word-break: break-all;
+}
+
+.storage-badge {
+  flex: none;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.storage-badge.is-custom {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.storage-preview {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-alt);
+}
+
+.storage-preview h3,
+.storage-report h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.storage-list {
+  margin: 8px 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  word-break: break-all;
+}

@@ -6,6 +6,7 @@ pub mod events;
 pub mod lifecycle;
 pub mod maintenance;
 pub mod numbering;
+pub mod migrate;
 pub mod orders;
 pub mod reset;
 pub mod queue;

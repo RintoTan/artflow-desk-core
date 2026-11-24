@@ -188,6 +188,39 @@ export type ResetReport = {
   snapshotPath: string | null;
 };
 
+/** DEV-0.1.1-05：数据位置。 */
+export type StorageStatus = {
+  root: string;
+  defaultRoot: string;
+  pointerPath: string;
+  custom: boolean;
+};
+
+export type MigratePreview = {
+  sourceRoot: string;
+  targetRoot: string;
+  files: number;
+  bytes: number;
+  generations: string[];
+  hasBackups: boolean;
+  hasQuarantineEvidence: boolean;
+  availableBytes: number;
+  requiredBytes: number;
+  fits: boolean;
+};
+
+export type MigrateReport = {
+  sourceRoot: string;
+  targetRoot: string;
+  files: number;
+  bytes: number;
+  generations: string[];
+  copiedFiles: number;
+  verifiedFiles: number;
+  snapshotPath: string | null;
+  switched: boolean;
+};
+
 export type UpdateDetailsInput = {
   orderId: string;
   expectedRevision: number;
@@ -400,6 +433,10 @@ export const api = {
   backupSetReminder: (days: number) => invoke<BackupStatus>("backup_set_reminder", { days }),
   restartApp: () => invoke<void>("restart_app"),
   dataReset: (input: DataResetInput) => invoke<ResetReport>("data_reset", { input }),
+  storageStatus: () => invoke<StorageStatus>("storage_status"),
+  storagePreview: (target: string) => invoke<MigratePreview>("storage_preview", { target }),
+  storageMigrate: (target: string) => invoke<MigrateReport>("storage_migrate", { target }),
+  storageUseDefault: () => invoke<void>("storage_use_default"),
 
   maintenanceQuarantine: () => invoke<QuarantineReport>("maintenance_quarantine"),
   maintenanceQuarantineClear: (names: string[]) =>

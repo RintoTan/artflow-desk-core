@@ -65,6 +65,30 @@ impl Environment {
     ) -> AppResult<Self> {
         let root = canonical_root(root)?;
         let lock = DirLock::acquire(&root)?;
+        Self::assemble(root, lock, migration_list, target_version, tz_override)
+    }
+
+    /// 用调用方已经持有的锁打开环境。
+    ///
+    /// 迁移时先锁住目标根再切换指针，锁不能中途断掉——否则切换的那一瞬间
+    /// 会有第二个进程从同一个根启动。
+    pub fn open_with_lock(
+        root: PathBuf,
+        lock: crate::infra::lock::DirLock,
+        migration_list: &[Migration],
+        target_version: i64,
+        tz_override: Option<Tz>,
+    ) -> AppResult<Self> {
+        Self::assemble(root, lock, migration_list, target_version, tz_override)
+    }
+
+    fn assemble(
+        root: PathBuf,
+        lock: crate::infra::lock::DirLock,
+        migration_list: &[Migration],
+        target_version: i64,
+        tz_override: Option<Tz>,
+    ) -> AppResult<Self> {
         let layout = Layout::new(root);
 
         let marker_exists = layout.marker().exists();

@@ -4,6 +4,7 @@ import { api, describeError, type TimezoneInfo } from "../bridge/commands";
 import { AppIconImage } from "../components/AppIconImage";
 import AttachmentMaintenancePanel from "../components/AttachmentMaintenancePanel";
 import DataResetPanel from "../components/DataResetPanel";
+import StorageLocationPanel from "../components/StorageLocationPanel";
 import BackupPanel from "../components/BackupPanel";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { NavIcon } from "../components/NavIcon";
@@ -554,6 +555,8 @@ export default function SettingsPage() {
           </span>
         </Link>
       </section>
+
+      <StorageLocationPanel onError={setError} />
 
       <DataResetPanel onError={setError} />
 

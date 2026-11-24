@@ -24,6 +24,12 @@ vi.mock("../bridge/commands", async () => {
   return {
     ...actual,
     api: {
+      storageStatus: async () => ({
+        root: "/data/root",
+        defaultRoot: "/data/root",
+        pointerPath: "/data/root.json",
+        custom: false,
+      }),
       timezoneGet: async () => ({
         workingTimezone: "Asia/Shanghai",
         systemTimezone: "Asia/Shanghai",

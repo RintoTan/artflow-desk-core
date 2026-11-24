@@ -5,6 +5,7 @@ pub mod highwater;
 pub mod migrations;
 pub mod paths;
 pub mod qa;
+pub mod rootptr;
 pub mod settings;
 pub mod timezone;
 pub mod visibility;

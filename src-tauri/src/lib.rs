@@ -168,6 +168,10 @@ fn build_app() -> Result<tauri::App, String> {
             commands::backup::restart_app,
             commands::maintenance::maintenance_quarantine,
             commands::reset::data_reset,
+            commands::storage::storage_status,
+            commands::storage::storage_preview,
+            commands::storage::storage_migrate,
+            commands::storage::storage_use_default,
             commands::maintenance::maintenance_quarantine_clear,
             commands::maintenance::maintenance_jobs,
             commands::maintenance::maintenance_jobs_prune,
@@ -205,19 +209,77 @@ fn setup_app(app: &mut tauri::App) -> AppResult<()> {
     // 数据根只由"构建标识"决定：
     // - 正式标识 → 正式目录，任何环境变量都不参与；
     // - QA 标识  → <qa 目录>/<scenario>，场景名走白名单，不接受路径。
-    let (root, qa) = if crate::store::qa::is_qa_identifier(&identifier) {
-        let scenario = crate::store::qa::scenario_from_env()?;
-        let root = crate::store::qa::scenario_root(&app_data_dir, scenario);
+    // 自定义数据位置的指针固定在应用数据目录里（不随数据根移动）。
+    let qa_scenario = if crate::store::qa::is_qa_identifier(&identifier) {
+        Some(crate::store::qa::scenario_from_env()?)
+    } else {
+        None
+    };
+    let pointer_path =
+        crate::store::rootptr::pointer_path(&app_data_dir, qa_scenario.map(|s| s.as_str()));
+
+    let (root, qa) = if let Some(scenario) = qa_scenario {
+        let fallback = crate::store::qa::scenario_root(&app_data_dir, scenario);
+        let root = match crate::store::rootptr::read(&pointer_path)? {
+            Some(pointer) => {
+                let custom = std::path::PathBuf::from(&pointer.data_root);
+                crate::store::rootptr::validate_existing_root(&custom)?;
+                custom
+            }
+            None => fallback,
+        };
         crate::store::qa::ensure_not_production(&root)?;
         crate::store::qa::write_marker(&root)?;
         (root, Some(scenario))
     } else {
         crate::store::qa::guard_production_root(&app_data_dir)?;
-        (app_data_dir, None)
+        let root = match crate::store::rootptr::read(&pointer_path)? {
+            Some(pointer) => {
+                let custom = std::path::PathBuf::from(&pointer.data_root);
+                crate::store::rootptr::validate_existing_root(&custom)?;
+                // 正式环境绝不能指向一个带 QA 标记的目录。
+                crate::store::qa::guard_production_root(&custom)?;
+                custom
+            }
+            // 后面还要用 app_data_dir 定单实例通道与指针，这里不能 move。
+            None => app_data_dir.clone(),
+        };
+        (root, None)
     };
 
+    // 「是否自定义」要和该环境的默认根比：QA 的默认根本身就在 app_data 下面，
+    // 直接跟 app_data_dir 比会永远得到 custom=true。
+    let default_root = match qa {
+        Some(scenario) => crate::store::qa::scenario_root(&app_data_dir, scenario),
+        None => app_data_dir.clone(),
+    };
+    crate::infra::diag::log(
+        "startup",
+        &format!(
+            "data root resolved to {} (default={} pointer={} custom={})",
+            root.display(),
+            default_root.display(),
+            pointer_path.display(),
+            root != default_root
+        ),
+    );
+
     // 打开环境即取得跨进程独占锁；此后整个进程生命周期都持有它。
-    let state = AppState::open_qa(&root, qa)?;
+    //
+    // 拿不到锁有两种可能：真的还有一个实例在跑，或者锁文件被人替换过。
+    // 前者请它把窗口拉到前面就退出，后者必须当作错误报出来。
+    let state = match AppState::open_qa(&root, qa) {
+        Ok(state) => state,
+        Err(e) if e.code == "BUSY" && crate::infra::activate::request(&app_data_dir) => {
+            crate::infra::diag::log(
+                "startup",
+                "another instance is running; asked it to focus and exiting",
+            );
+            println!("[minidesk] another instance is running; activated it and exiting");
+            return Ok(());
+        }
+        Err(e) => return Err(e),
+    };
     let outcome = state.env.outcome();
     crate::infra::diag::log(
         "startup",
@@ -338,6 +400,18 @@ fn setup_app(app: &mut tauri::App) -> AppResult<()> {
     infra::menu::install(app).map_err(|e| AppError::env(format!("无法安装菜单：{e}")))?;
 
     // 窗口由配置创建，这里只确认它真的建出来了——白屏与"窗口没建"要能分开。
+    // 单实例激活通道：位置固定在应用数据目录，不随数据根迁移。
+    {
+        let handle = app.handle().clone();
+        crate::infra::activate::serve(&app_data_dir, move || {
+            if let Some(window) = handle.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        })?;
+    }
+
     match app.get_webview_window("main") {
         Some(window) => {
             let url = window
