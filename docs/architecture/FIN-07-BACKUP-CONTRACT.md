@@ -77,9 +77,15 @@ v11 的迁移以「三张财务表必须为空」为前提（`PRAGMA foreign_key
 3. 机内审计：数据根下不存在任何 v10 / v11 数据库（只有 v7 / v8 / v9 / v12）；
    全部 5 个备份包为 2×v2（原型血统）与 3×同一份 v7 快照，**没有 v10 或 v11 的包**。
 
-**若真的遇到**（手改过的库、第三方构造）：恢复会在迁移阶段失败，不切 `active.json`、
-不做部分导入、不产生虚构记录——安全，但提示来自迁移而不是预览。**预览阶段尚未提前判定这一点**，
-列为已知缺口，见 §7。
+**若真的遇到**（手改过的库、第三方构造）：**预览阶段就拦住**（FIN-07.1）。
+
+判定谓词 `finance_guard::v10_blocker`，`schemaVersion == 10` 时逐张检查
+`payment_platforms` / `payment_schedules` / `payment_records`，**任意一张非空**即阻止：
+
+- 预览：`canRestore = false`，`blockReason` 点名具体表与行数，界面禁用确认按钮；
+- 恢复：同一谓词再判一次，返回 `SCHEMA`，不切 `active.json`、不做部分导入、不产生虚构记录。
+
+只查计划和收款会放过「只有一个平台」的包，那照样卡在迁移里，所以三张一起看。
 
 ## 4. 规则 B：平台配置回填
 
@@ -126,14 +132,23 @@ v11 的迁移以「三张财务表必须为空」为前提（`PRAGMA foreign_key
 | v10/v11（无退款表） | 「该备份版本尚未包含退款记录结构。升级后会创建空表，不会自动生成退款记录。」 |
 | 缺时区 / 缺高水位 | 沿用既有规则，不改历史日期 |
 
+## 6.1 启动结构检查（FIN-07.1）
+
+`validate()` 在完整性、外键之后增加一条：**`user_version >= 12` 时，四张财务表必须齐全。**
+
+- 缺表 → `SCHEMA` 错误，应用不进入正常业务运行；不自动建表、不伪造退款记录；
+- 版本号低于 12 时**跳过**：`resume` 会在迁移之前先 `validate` 一次，拿 v12 的清单去卡 v9 会把正常升级拦死；
+- 迁移完成后（`initialize` / `upgrade_generation` / `restore` / 数据重置）都会再跑一次，于是「迁移产物齐不齐」在同一处被确认。
+
 ## 7. 验收证据与边界
 
-- 自动化：`src-tauri/tests/finance_backup.rs`（15 例）、`src/components/BackupPanel.test.tsx`（4 例新增）。
+- 自动化：`src-tauri/tests/finance_backup.rs`（20 例）、`src-tauri/tests/schema_guard.rs`（8 例，FIN-07.1）、
+  `src/components/BackupPanel.test.tsx`（4 例新增）。
 - 构造夹具由正式迁移链建库 + 程序自身打包，证明**链路与规则**成立。
 - **未证明**：真实旧机器导出的同血统 ZIP 仍无样本；`legacy_restore_manual` 保持 ignored。
 - 已知构造边界：v10 的库不可能带财务数据升到 v11（v11 以三表为空为前提），
   故 v10 只覆盖「表存在但为空」，带数据的严格恢复由 v11 夹具证明。见 §3.1。
-- 未覆盖的故障路径：外键失败、恢复链路中的迁移失败、`active.json` 单步切换失败
+- 未覆盖的故障路径（留给集中 QA）：外键失败、恢复链路中的迁移失败、`active.json` 单步切换失败
   （后者与同目录的 `recovery/state.json` 写入无法分离构造）。均由其他层级的测试间接保护，
   不等于恢复链路端到端覆盖。
 - 实机（macOS / Windows）本批 NOT RUN。

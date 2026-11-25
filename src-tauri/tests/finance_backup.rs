@@ -758,6 +758,169 @@ fn v11_backup_keeps_its_own_platforms_and_ledger() {
     assert_eq!(done.summary.refund_records, 0);
 }
 
+// ------------------------------------------------- 4.1 v10 升级前提（FIN-07.1）
+
+/// 造一份 v10 备份，按需往三张财务表里塞数据。
+///
+/// v10 时期应用没有任何写入入口，这些行只能由测试直接构造——报告里也如实这么写，
+/// 不假装存在过真实的 v10 财务数据。
+fn v10_backup_with(root: &Path, zip: &Path, fill: &dyn Fn(&Connection, &str)) {
+    let src = open_at(root, 10);
+    let order_id = new_order(&src, "AF-2026-5001", "v10 订单");
+    {
+        let conn = src.open_db().unwrap();
+        fill(&conn, &order_id);
+    }
+    backup(&src, zip);
+}
+
+/// 三张财务表全空 → 允许继续（这是 v10 唯一合法的形态）。
+#[test]
+fn v10_backup_with_empty_finance_tables_is_allowed() {
+    let dir = tempfile::tempdir().unwrap();
+    let zip = dir.path().join("v10.zip");
+    v10_backup_with(&dir.path().join("src"), &zip, &|_, _| {});
+
+    let dst = open_at(&dir.path().join("dst"), migrations::APP_SCHEMA_VERSION);
+    let preview = restore::preview(&dst, &zip).unwrap();
+    assert!(preview.can_restore, "{:?}", preview.block_reason);
+    assert!(preview.block_reason.is_none());
+}
+
+/// 只有平台非空 → 拒绝。这条是「只查计划和流水」会漏掉的形态。
+#[test]
+fn v10_backup_with_platform_only_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let zip = dir.path().join("v10.zip");
+    v10_backup_with(&dir.path().join("src"), &zip, &|conn, _| {
+        platform(conn, "p1", "米画师", Some(500), 0, 0);
+    });
+
+    let dst_root = dir.path().join("dst");
+    let dst = open_at(&dst_root, migrations::APP_SCHEMA_VERSION);
+    new_order(&dst, "AF-2026-1100", "现有订单");
+
+    let preview = restore::preview(&dst, &zip).unwrap();
+    assert!(!preview.can_restore, "只有平台非空也必须拦住");
+    let reason = preview.block_reason.clone().unwrap();
+    assert!(reason.contains("payment_platforms 1 行"), "{reason}");
+    assert!(reason.contains("当前设备的数据不会受到影响"), "{reason}");
+
+    let err = restore::restore(&dst, &hw(&dst), &zip, &migrations::production()).unwrap_err();
+    assert_eq!(err.code, "SCHEMA", "{}", err.message);
+    assert!(err.message.contains("payment_platforms 1 行"), "{}", err.message);
+
+    let conn = dst.open_db().unwrap();
+    assert_eq!(count(&conn, "orders"), 1, "拒绝后现有数据不动");
+}
+
+/// 只有付款计划非空 → 拒绝。
+#[test]
+fn v10_backup_with_schedule_only_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let zip = dir.path().join("v10.zip");
+    v10_backup_with(&dir.path().join("src"), &zip, &|conn, order_id| {
+        schedule(conn, "s1", order_id, "full", 50000, None, 0);
+    });
+
+    let dst_root = dir.path().join("dst");
+    let dst = open_at(&dst_root, migrations::APP_SCHEMA_VERSION);
+    new_order(&dst, "AF-2026-1110", "现有订单");
+
+    let preview = restore::preview(&dst, &zip).unwrap();
+    assert!(!preview.can_restore);
+    let reason = preview.block_reason.clone().unwrap();
+    assert!(reason.contains("payment_schedules 1 行"), "{reason}");
+
+    let err = restore::restore(&dst, &hw(&dst), &zip, &migrations::production()).unwrap_err();
+    assert_eq!(err.code, "SCHEMA", "{}", err.message);
+    let conn = dst.open_db().unwrap();
+    assert_eq!(count(&conn, "orders"), 1);
+    assert_eq!(count(&conn, "payment_schedules"), 0, "备份里的计划没有落进来");
+}
+
+/// 只有收款流水非空 → 拒绝。
+#[test]
+fn v10_backup_with_record_only_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let zip = dir.path().join("v10.zip");
+    v10_backup_with(&dir.path().join("src"), &zip, &|conn, order_id| {
+        record(
+            conn,
+            Rec {
+                id: "r1",
+                order_id,
+                schedule_id: None,
+                kind: "full",
+                amount: 30000,
+                received_on: "2026-11-01",
+                platform_id: None,
+                platform_name: None,
+                fee_rate_bp: None,
+                fee: 0,
+                voided: None,
+                request_id: None,
+            },
+        );
+    });
+
+    let dst_root = dir.path().join("dst");
+    let dst = open_at(&dst_root, migrations::APP_SCHEMA_VERSION);
+    new_order(&dst, "AF-2026-1120", "现有订单");
+
+    let preview = restore::preview(&dst, &zip).unwrap();
+    assert!(!preview.can_restore);
+    let reason = preview.block_reason.clone().unwrap();
+    assert!(reason.contains("payment_records 1 行"), "{reason}");
+
+    let err = restore::restore(&dst, &hw(&dst), &zip, &migrations::production()).unwrap_err();
+    assert_eq!(err.code, "SCHEMA", "{}", err.message);
+    let conn = dst.open_db().unwrap();
+    assert_eq!(count(&conn, "payment_records"), 0);
+}
+
+/// 预览与恢复必须说同一句话——这是「共用同一谓词」的直接证据。
+#[test]
+fn preview_and_restore_share_the_v10_predicate() {
+    let dir = tempfile::tempdir().unwrap();
+    let zip = dir.path().join("v10.zip");
+    v10_backup_with(&dir.path().join("src"), &zip, &|conn, order_id| {
+        platform(conn, "p1", "米画师", Some(500), 0, 0);
+        schedule(conn, "s1", order_id, "full", 50000, None, 0);
+        record(
+            conn,
+            Rec {
+                id: "r1",
+                order_id,
+                schedule_id: Some("s1"),
+                kind: "full",
+                amount: 50000,
+                received_on: "2026-11-02",
+                platform_id: Some("p1"),
+                platform_name: Some("米画师"),
+                fee_rate_bp: Some(500),
+                fee: 250,
+                voided: None,
+                request_id: None,
+            },
+        );
+    });
+
+    let dst = open_at(&dir.path().join("dst"), migrations::APP_SCHEMA_VERSION);
+    let preview_reason = restore::preview(&dst, &zip).unwrap().block_reason.unwrap();
+    let restore_reason = restore::restore(&dst, &hw(&dst), &zip, &migrations::production())
+        .unwrap_err()
+        .message;
+    assert_eq!(
+        preview_reason, restore_reason,
+        "两处必须由同一个谓词产出，文案也不该分叉"
+    );
+    // 三张表都要在文案里点名，用户才知道到底哪张表有问题。
+    for table in ["payment_platforms", "payment_schedules", "payment_records"] {
+        assert!(preview_reason.contains(table), "{preview_reason}");
+    }
+}
+
 // ------------------------------------------------------------------ 5. 版本与结构闸门
 
 /// B7：v10 声称有财务表，实际没有 → 拒绝，且不动现有数据。

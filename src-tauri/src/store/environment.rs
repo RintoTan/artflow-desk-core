@@ -337,7 +337,12 @@ pub fn open_connection(path: &Path) -> AppResult<Connection> {
     Ok(conn)
 }
 
-/// 结构完整性 + 引用完整性。
+/// 结构完整性 + 引用完整性 + 当前版本必需表。
+///
+/// 调用点有先后之分，这里必须自己看 `user_version` 再决定查什么：
+/// `resume` 会在**迁移之前**先调一次（确认旧库没坏），那时版本还是 v9/v11，
+/// 拿 v12 的清单去卡它会把正常升级拦死。只有在库已经处于 v12（迁移之后，
+/// 或本来就是 v12）时，「四张财务表必须齐」才成立。
 pub fn validate(conn: &Connection) -> AppResult<()> {
     let integrity: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
     if integrity != "ok" {
@@ -349,7 +354,46 @@ pub fn validate(conn: &Connection) -> AppResult<()> {
         let table: String = row.get(0)?;
         return Err(AppError::db(format!("数据引用不完整：表 {table} 存在孤立引用")));
     }
+    require_tables(conn)?;
     Ok(())
+}
+
+/// v12 起必须存在的表。
+///
+/// 为什么要这道检查：v12 曾经在提交之后扩充过退款表，于是可能存在
+/// 「user_version 写着 12、`refund_records` 却没有」的库。版本号对得上、
+/// `integrity_check` 也 ok，但它会在第一次用到退款时才炸——那不是用户能理解的失败。
+///
+/// 只检查、不修补：缺表就是结构不完整，不自动建表，也不伪造退款记录。
+/// 补表的唯一合法路径是走迁移或恢复一份有效备份。
+fn require_tables(conn: &Connection) -> AppResult<()> {
+    let version = migrations::schema_version(conn)?;
+    if version < 12 {
+        return Ok(());
+    }
+    let mut missing: Vec<&str> = Vec::new();
+    for table in [
+        "payment_platforms",
+        "payment_schedules",
+        "payment_records",
+        "refund_records",
+    ] {
+        let found: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [table],
+            |r| r.get(0),
+        )?;
+        if found == 0 {
+            missing.push(table);
+        }
+    }
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(AppError::schema(format!(
+        "数据库结构不完整：Schema v{version} 缺少必需表 {}。为避免数据不一致，应用无法继续启动。请保留当前数据并使用有效备份进行恢复。",
+        missing.join("、")
+    )))
 }
 
 fn copy_dir(from: &Path, to: &Path) -> AppResult<()> {

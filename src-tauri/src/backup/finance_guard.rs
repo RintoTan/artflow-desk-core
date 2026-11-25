@@ -26,6 +26,16 @@ pub const LEDGER_TABLES: [&str; 3] = [
     "refund_records",
 ];
 
+/// v11 迁移的空表断言正好覆盖这三张表。
+///
+/// 判定 v10 备份能不能安全升级时必须三张一起看：只查计划与流水会放过
+/// 「只有一个平台」的包，那照样会卡在迁移里。
+pub const V10_GATE_TABLES: [&str; 3] = [
+    "payment_platforms",
+    "payment_schedules",
+    "payment_records",
+];
+
 /// v11 + v12 建出来的 12 条触发器。v12 备份必须一条不少地带回来。
 ///
 /// 名单与迁移脚本重复是有意的：恢复侧要断言的正是「迁移产物还在」，
@@ -173,6 +183,34 @@ pub fn check_consistency(declared: i64, tables: &Tables) -> AppResult<()> {
         )));
     }
     Ok(())
+}
+
+/// v10 备份若已经装了三张财务表里的数据，就没有安全的升级路径。
+///
+/// v11 的迁移以「三表为空」为前提：它按「建新表 → 确认旧的为空 → 删旧 → 改名」走，
+/// `PRAGMA foreign_keys` 在事务内又是 no-op，非空时硬搬会静默抹掉关联。
+/// 所以这里不改迁移，而是在用户按下确认之前把结论说清楚。
+///
+/// 预览与恢复**共用这一个谓词**：前端能不能点确认，不能代替后端自己再判一次。
+/// 返回 `Some(说明)` 表示阻止，`None` 表示可以继续。
+pub fn v10_blocker(declared: i64, conn: &Connection) -> AppResult<Option<String>> {
+    if declared != 10 {
+        return Ok(None);
+    }
+    let mut occupied: Vec<String> = Vec::new();
+    for table in V10_GATE_TABLES {
+        let rows = count_table(conn, table)?;
+        if rows > 0 {
+            occupied.push(format!("{table} {rows} 行"));
+        }
+    }
+    if occupied.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(format!(
+        "该 v10 备份包含财务数据（{}），而当前版本的升级流程要求 v10 的财务表为空。为避免数据丢失，本次恢复已被阻止。当前设备的数据不会受到影响。",
+        occupied.join("、")
+    )))
 }
 
 /// 迁移完成后：四张表齐全、12 条触发器齐全。缺任何一样都说明这份库不完整。

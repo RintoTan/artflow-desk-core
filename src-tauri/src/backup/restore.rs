@@ -90,7 +90,7 @@ pub fn preview(env: &Environment, path: &Path) -> AppResult<Preview> {
     // 摘要靠临时解出数据库来读；解到系统临时目录，不碰数据根。
     // 同一份临时库顺带判一次财务结构：版本号与表结构对不上要在预览阶段就拦住，
     // 不能等用户点了「确认恢复」才在隔离代际里失败。
-    let (summary, finance_tables) = {
+    let (summary, finance_tables, v10_block) = {
         let temp = std::env::temp_dir().join(format!("artflow-preview-{}", uuid::Uuid::new_v4().simple()));
         fs::create_dir_all(&temp)?;
         let db = temp.join("preview.sqlite");
@@ -98,7 +98,9 @@ pub fn preview(env: &Environment, path: &Path) -> AppResult<Preview> {
             let conn = open_connection(&db)?;
             let summary = crate::backup::manifest::summarize(&conn)?;
             let tables = finance_guard::inspect(&conn)?;
-            Ok((summary, tables))
+            // v10 的升级前提与恢复入口共用同一个谓词，两处不会各自漂移。
+            let v10_block = finance_guard::v10_blocker(manifest.schema_version, &conn)?;
+            Ok((summary, tables, v10_block))
         });
         let _ = fs::remove_dir_all(&temp);
         read?
@@ -108,6 +110,10 @@ pub fn preview(env: &Environment, path: &Path) -> AppResult<Preview> {
         if let Err(e) = finance_guard::check_consistency(manifest.schema_version, &finance_tables) {
             block = Some(e.message);
         }
+    }
+    // 结构自洽之后才谈升级路径：缺表 / 版本对不上是另一类问题，先报那个更准确。
+    if block.is_none() {
+        block = v10_block;
     }
 
     let mut warnings = inspection.warnings.clone();
@@ -349,6 +355,10 @@ pub fn restore(
         //      答案永远是「有」，规则 B 就再也不会触发。
         let backup_tables = finance_guard::inspect(&conn)?;
         finance_guard::check_consistency(from, &backup_tables)?;
+        // 与预览同一个谓词：绕过界面直接调用恢复命令，也必须在这里被拦住。
+        if let Some(reason) = finance_guard::v10_blocker(from, &conn)? {
+            return Err(AppError::schema(reason));
+        }
         let platforms_before = finance_guard::count_table(&conn, "payment_platforms")?;
         let ledger_before = finance_guard::ledger_counts(&conn)?;
         // 规则 B：只有「备份原本就没有平台表」才回填本机配置。
