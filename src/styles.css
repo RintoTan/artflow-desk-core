@@ -7298,6 +7298,22 @@ dl.stat-row {
   color: var(--danger);
 }
 
+/* 恢复前后的兼容说明：一条一句，不能挤成一段读不懂的长句。 */
+.backup-warnings {
+  margin: 8px 0 0;
+  padding: 8px 12px 8px 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.backup-warnings li + li {
+  margin-top: 4px;
+}
+
 /* ---------------------------------------------------------------- 附件维护 */
 
 .maintenance-sub {

@@ -280,6 +280,11 @@ export type BackupSummary = {
   trashedOrders?: number;
   /** `clients` 中在回收站的部分；旧后端可能缺省 */
   trashedClients?: number;
+  /** 财务四表是库存计数：含已归档平台、已作废流水、回收站订单的收款。旧后端缺省。 */
+  paymentPlatforms?: number;
+  paymentSchedules?: number;
+  paymentRecords?: number;
+  refundRecords?: number;
 };
 
 export type BackupCreated = {
@@ -307,6 +312,8 @@ export type BackupPreview = {
   /** `current` / `older`（可在隔离代际内迁移）/ `newer`（拒绝） */
   schemaRelation: "current" | "older" | "newer" | string;
   summary: BackupSummary;
+  /** 恢复会补什么、不补什么（平台回填、缺退款表等）。旧后端缺省 */
+  warnings?: string[];
   canRestore: boolean;
   blockReason: string | null;
 };
@@ -322,6 +329,8 @@ export type BackupRestored = {
   cleanupTasksRetargeted: number;
   staleJobsClosed: number;
   preRestoreBackup: string | null;
+  /** 兼容提示：时区、高水位、平台回填、缺退款表。旧后端缺省 */
+  warnings?: string[];
 };
 
 export type QuarantineItem = {

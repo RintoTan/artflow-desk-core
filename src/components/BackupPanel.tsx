@@ -7,6 +7,7 @@ import {
   type BackupPreview,
   type BackupRestored,
   type BackupStatus,
+  type BackupSummary,
 } from "../bridge/commands";
 import ConfirmDialog from "./ConfirmDialog";
 
@@ -46,6 +47,38 @@ export function daysLabel(status: BackupStatus): string {
   if (status.daysSinceLast === null) return "还没有备份过";
   if (status.daysSinceLast <= 0) return "今天已备份";
   return `${status.daysSinceLast} 天前`;
+}
+
+/**
+ * 财务四项是**包里有几条**，不是财务报表金额。
+ * 旧后端不带这四个字段时整行不显示，而不是画一排 0 让人以为财务数据没备份进去。
+ */
+export function financeLine(summary: BackupSummary): string | null {
+  const counts = [
+    summary.paymentPlatforms,
+    summary.paymentSchedules,
+    summary.paymentRecords,
+    summary.refundRecords,
+  ];
+  if (!counts.some((value) => typeof value === "number")) return null;
+  return [
+    `收款平台 ${summary.paymentPlatforms ?? 0} 个`,
+    `付款计划 ${summary.paymentSchedules ?? 0} 项`,
+    `收款流水 ${summary.paymentRecords ?? 0} 笔`,
+    `退款记录 ${summary.refundRecords ?? 0} 笔`,
+  ].join(" · ");
+}
+
+/** 兼容提示：平台回填、缺退款表、时区降级等，一条一句原样展示。 */
+function Warnings({ items }: { items?: string[] | null }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <ul className="backup-warnings">
+      {items.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  );
 }
 
 const RELATION_LABEL: Record<string, string> = {
@@ -268,10 +301,14 @@ export default function BackupPanel({ onError }: { onError: (message: string) =>
               跳级 {preview.summary.stageSkips} 条 · 改期 {preview.summary.reschedules} 条 · 文件{" "}
               {preview.files} 个 · {formatBytes(preview.bytes)}
             </p>
+            {financeLine(preview.summary) && (
+              <p>财务：{financeLine(preview.summary)}</p>
+            )}
             <p className={preview.canRestore ? "muted" : "backup-danger"}>
               兼容性：{RELATION_LABEL[preview.schemaRelation] ?? preview.schemaRelation}
               {preview.blockReason ? `（${preview.blockReason}）` : ""}
             </p>
+            <Warnings items={preview.warnings} />
             <p className="muted">
               恢复会先自动备份当前数据，再在新的数据代际里解包并校验；全部通过才切换。
               失败时当前数据保持不变。恢复完成后需要重启应用。
@@ -300,6 +337,10 @@ export default function BackupPanel({ onError }: { onError: (message: string) =>
               已恢复 {restored.summary.orders} 笔订单 · {restored.summary.attachments} 个附件，结构版本 v
               {restored.schemaVersion}。
             </p>
+            {financeLine(restored.summary) && (
+              <p className="muted">财务：{financeLine(restored.summary)}</p>
+            )}
+            <Warnings items={restored.warnings} />
             {restored.preRestoreBackup && (
               <p className="muted">恢复前已自动备份：{restored.preRestoreBackup}</p>
             )}

@@ -10,11 +10,12 @@
 
 > **ArtFlow Desk Core 正式 Schema 血统内的历史备份，必须能通过迁移链恢复到当前版本。**
 
-正式血统的判定标准（三者同时满足）：
+正式血统的判定标准（四项同时满足）：
 
 1. 备份 manifest 的 `format` 为 `artflow-minidesk-backup`；
 2. 包内 `database.sqlite` 含 `orders`、`clients`、`order_events`、`app_settings` 四张基础表；
-3. manifest 的 `schema_version` 与这四张表的存在性自洽。
+3. manifest 的 `schema_version` 与库内 `user_version` 一致；
+4. manifest 的 `schema_version` 与四张基础表、四张财务表的存在性自洽（见 §3.2）。
 
 旧备份允许缺少 `working_timezone`、`number_high_water`、`total_files`、`total_bytes`，也允许用 snake_case 写键名——这些都按 §3 的规则补。
 
@@ -52,6 +53,31 @@ SCHEMA：备份自称 schema v2，但缺少 3 张基础表（clients、order_eve
 | `format` | 缺失 | **仍然拒绝**（不是本程序的包） |
 | `files` | 缺失 | 仍然拒绝（清单是校验与落盘的依据） |
 
+## 3.2 财务表与版本的自洽（FIN-07）
+
+财务表从 v10 才有，退款表从 v12 才有。版本号与真实表结构对不上时**拒绝恢复**，
+不自动猜测用户的库属于哪个版本。
+
+| 备份声明的 schema | 应有的财务结构 | 不符时 |
+| --- | --- | --- |
+| v9 及以前 | 四张财务表都不存在 | 带任一财务表 → 拒绝（版本号是假的） |
+| v10 / v11 | `payment_platforms` / `payment_schedules` / `payment_records` 必须在；`refund_records` 不该存在 | 缺表或已带退款表 → 拒绝 |
+| v12 | 四张表齐全，且 v11+v12 的 12 条触发器在位 | 缺表或缺触发器 → 拒绝 |
+
+存在性在**迁移之前**判定。迁移会把缺的表建出来，事后再问「这份备份有没有平台表」，
+答案永远是「有」。
+
+**平台配置是唯一允许跨版本回填的财务数据（规则 B）：**
+
+| 备份情况 | 恢复后 |
+| --- | --- |
+| 包内没有 `payment_platforms` 表（v9 及以前） | 回填**恢复前本机**的平台配置：`id` / `name` / `fee_rate_bp` / `archived` / `sort_position` / `created_at` 原样，`updated_at` 记为恢复时刻 |
+| 包内有 `payment_platforms` 表 | 严格按备份恢复；**即使表是空的也保持空**，不与本机合并 |
+
+`payment_schedules` / `payment_records` / `refund_records` 任何情况下都不回填：
+它们是业务历史，不是工具配置。恢复 v9 备份后这三张表为 0 行，旧订单显示「未记录收款信息」。
+迁移前后会比对这三张表的行数，变化即拒绝切换。
+
 ## 4. 验收状态
 
 | 项 | 状态 |
@@ -63,10 +89,21 @@ SCHEMA：备份自称 schema v2，但缺少 3 张基础表（clients、order_eve
 | 缺 `format` → 拒绝 | 已测（`zip_safety`） |
 | 原型 v2 ZIP → 明确拒绝、不破坏现场 | 已测（`legacy_restore_manual`，真实文件） |
 | 构造 v8 库 → 打包 → 改历史 manifest → 恢复 v9 | **已测**（`backup_v8_lineage`）：迁移、数量、关联、历史事件、附件 SHA-256、高水位重建、完整性、时区降级、失败安全 |
+| 财务四表 v12 往返逐字段一致 | **已测**（`finance_backup`）：归档平台、作废流水、作废退款、未关联退款、费率快照、`request_id`、12 条触发器 |
+| 摘要财务四项口径（含归档/作废/回收站） | **已测**（`finance_backup`、`trash_export_backup`） |
+| v9 → v12 回填平台、不回填流水 | **已测**（`finance_backup`） |
+| v10 空平台表 → 保持空、不合并 | **已测**（`finance_backup`） |
+| v11 → v12 保留平台与流水 | **已测**（`finance_backup`） |
+| 版本号与结构不一致 → 拒绝 | **已测**（`finance_backup`：缺表、缺触发器、manifest 与库不一致、低版本带高版本表） |
+| 平台回填中途失败 → 不切代际 | **已测**（`finance_backup`，debug-only 故障注入） |
 | **真实同血统旧 ZIP 端到端恢复** | **仍未验证**：磁盘上不存在此类文件（现有两个 zip 均属原型血统） |
 
 「构造 v8 备份」用的是正式迁移链建库 + 程序自身打包逻辑，数据是构造的；
 它能证明链路正确，不能替代「真实旧机器导出的包」这一证据。
+
+**已知的构造边界**：v10 的库不可能带着财务数据升到 v11——v11 的迁移以「三张表必须为空」
+为前提（v10 期间没有任何写入入口）。因此 v10 夹具只覆盖「表存在但为空」这一合法形态，
+带数据的严格恢复由 v11 夹具证明。
 
 ## 5. 复现旧包验证
 

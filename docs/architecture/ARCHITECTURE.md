@@ -101,7 +101,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 - **`orders.amount_cents` 仍是订单总额**，没有第二套总额字段。旧订单迁移后不生成任何计划或流水，界面显示「未记录收款信息」，不显示「未收款 ¥X」。
 - **费率可空，空 ≠ 0**：`fee_rate_bp` 为 `NULL` 表示未配置/未知，`0` 表示用户明确填了 0%。`payment_records.fee_cents` **没有默认值**，实际手续费必须显式写入，避免「没算过」被记成「零手续费」。
 - **快照而非外键**：`platform_name`、`fee_rate_bp`、`fee_cents` 都存当时的值；删平台把 `platform_id` 置空，删计划把 `schedule_id` 置空，两者都**不删除真实流水**。
-- **作废不是退款**：`voided_at` 只标记「这笔录错了」，不作资金流出；系统不建退款表。
+- **作废不是退款**：`voided_at` 只标记「这笔录错了」，不作资金流出。真实退款是独立的 `refund_records` 表（v12 起，见下文「退款」）。
 - 约束落在数据库层：金额 `> 0`、`fee_cents <= amount_cents`、费率 `0–10000` bp、日期 `GLOB 'NNNN-NN-NN'`。
 - 新增 `payment_*` 不涉及 `orders` 列，**因此不需要重建可见性视图**；财务查询将来一律 `JOIN orders_visible`，不申请新的 lint 豁免。
 - **v11 补强（FIN-01.1）**：三表改 `STRICT`（`INTEGER` 只是亲和性，`1.5` 会被存成 REAL 而 CHECK 照样通过）；主键显式 `NOT NULL`（rowid 表的 TEXT 主键历史上允许 NULL）；名称要求「已 trim」；日期加 `date(x) IS x` 抓 `2026-02-31` 这类溢出（SQLite 会把它归一化成 3 月 3 日）；`platform_id` 有值时必须有 `platform_name` 快照。
@@ -168,6 +168,22 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 - 时间戳：用户动作（编辑/归档/恢复/排序）更新 `updated_at`；`created_at` 从不动。与 C-3 的「重置搬运两个都保留」是两套语义。
 
 - 索引：`payment_records_schedule(schedule_id)` 服务「按计划聚合已收」，`payment_records_received(received_on)` 服务月度现金流扫描（复合索引第二列不能单独用）。
+
+### 备份与恢复里的财务数据（FIN-07）
+
+- **不新增迁移、不改包格式**：四张财务表本来就在 `database.sqlite` 里，随 `VACUUM INTO` 快照一起备份。
+  `FORMAT_VERSION` 仍是 1，`manifest.json` 结构不变。
+- **摘要是临时算的**：`DataSummary` 不写进 manifest。导出时从本次快照算，预览时解出包内数据库再算一遍，
+  所以预览里的数字描述的是**这份包**，不是本机现状。财务四项（平台/计划/收款/退款）是库存计数，
+  含已归档平台与已作废流水，不含金额与客户信息。
+- **缺表 ≠ 0**：财务表不存在记 0（旧版本还没有）；表存在却统计失败直接报错，不用 `unwrap_or(0)` 兜住。
+- **结构判定在迁移之前**：`backup::finance_guard::inspect` 记下「这份包原本有没有四张表」，
+  再按声明的 schema 版本核对（v9 及以前不该有、v10/v11 三表无退款表、v12 四表齐全）。
+  迁移后再核对四表与 12 条触发器齐全，缺一即拒绝切换。
+- **规则 B（平台回填）**：只有「包内没有平台表」时才把恢复前的本机平台搬进新代际，
+  `updated_at` 记为恢复时刻；包内有平台表就严格用备份的，空表也保持空。
+  业务历史三表永不回填，迁移前后比对行数，变化即拒绝。
+- 所有判定都在隔离代际内完成，失败不切 `active.json`、不删旧代际与恢复前快照。
 
 ### 迁移链
 

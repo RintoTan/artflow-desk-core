@@ -8,6 +8,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::backup::create;
+use crate::backup::finance_guard;
 use crate::backup::manifest::DataSummary;
 use crate::backup::zip_read::{self, Manifest};
 use crate::error::{AppError, AppResult};
@@ -34,6 +35,9 @@ pub struct Preview {
     /// 与当前程序的关系：`current` / `older`（可在隔离代际内迁移）/ `newer`（拒绝）
     pub schema_relation: String,
     pub summary: DataSummary,
+    /// FIN-07：这次恢复会「补什么、不补什么」必须提前讲清楚。
+    /// 旧备份缺平台表时的平台回填、缺退款表时的空表说明都在这里，界面原样展示。
+    pub warnings: Vec<String>,
     pub can_restore: bool,
     pub block_reason: Option<String>,
 }
@@ -62,7 +66,7 @@ pub fn preview(env: &Environment, path: &Path) -> AppResult<Preview> {
     let source_generation = source_generation_of(&manifest);
     let current = env.outcome().schema_version;
 
-    let (relation, block) = if manifest.schema_version > current {
+    let (relation, mut block) = if manifest.schema_version > current {
         (
             "newer".to_string(),
             Some(format!(
@@ -84,18 +88,51 @@ pub fn preview(env: &Environment, path: &Path) -> AppResult<Preview> {
     };
 
     // 摘要靠临时解出数据库来读；解到系统临时目录，不碰数据根。
-    let summary = {
+    // 同一份临时库顺带判一次财务结构：版本号与表结构对不上要在预览阶段就拦住，
+    // 不能等用户点了「确认恢复」才在隔离代际里失败。
+    let (summary, finance_tables) = {
         let temp = std::env::temp_dir().join(format!("artflow-preview-{}", uuid::Uuid::new_v4().simple()));
         fs::create_dir_all(&temp)?;
         let db = temp.join("preview.sqlite");
-        let summary = extract_entry(path, zip_read::DATABASE_NAME, &db)
-            .and_then(|_| {
-                let conn = open_connection(&db)?;
-                crate::backup::manifest::summarize(&conn)
-            });
+        let read = extract_entry(path, zip_read::DATABASE_NAME, &db).and_then(|_| {
+            let conn = open_connection(&db)?;
+            let summary = crate::backup::manifest::summarize(&conn)?;
+            let tables = finance_guard::inspect(&conn)?;
+            Ok((summary, tables))
+        });
         let _ = fs::remove_dir_all(&temp);
-        summary?
+        read?
     };
+
+    if block.is_none() {
+        if let Err(e) = finance_guard::check_consistency(manifest.schema_version, &finance_tables) {
+            block = Some(e.message);
+        }
+    }
+
+    let mut warnings = inspection.warnings.clone();
+    if block.is_none() {
+        if !finance_tables.platforms {
+            // 规则 B：备份里就没有平台表，恢复后将保留本机配置。数量取当前代际，
+            // 但**不能**把本机数量写成备份的数量——摘要里的 0 是备份的事实。
+            let current_platforms = finance_guard::read_platforms(&env.open_db()?)?;
+            warnings.push(format!(
+                "该备份早于收款平台配置功能（包内没有平台表）。恢复后将保留当前设备的 {} 个平台配置：ID、名称、费率、归档状态、排序与创建时间原样，更新时间记为恢复时刻。",
+                current_platforms.len()
+            ));
+        }
+        if !finance_tables.records {
+            warnings.push(
+                "该备份早于财务模块（包内没有付款计划、收款流水与退款记录）。升级后这三张表为空，不会为旧订单生成任何记录。"
+                    .to_string(),
+            );
+        } else if !finance_tables.refunds {
+            warnings.push(
+                "该备份版本尚未包含退款记录结构。升级后会创建空表，不会自动生成退款记录。"
+                    .to_string(),
+            );
+        }
+    }
 
     Ok(Preview {
         path: path.to_string_lossy().to_string(),
@@ -113,6 +150,7 @@ pub fn preview(env: &Environment, path: &Path) -> AppResult<Preview> {
         bytes: manifest.total_bytes,
         schema_relation: relation,
         summary,
+        warnings,
         can_restore: block.is_none(),
         block_reason: block,
     })
@@ -270,6 +308,16 @@ pub fn restore(
         // 4) 只走已测试的迁移链，不改版本号伪装兼容。
         let from = migrations::schema_version(&conn)?;
 
+        // 4.0) manifest 声明的版本必须与库里写的一致。
+        //      后面所有结构判断都以这个版本号为准；对不上就说明包被改过或拼错了，
+        //      此时继续猜下去只会得到一份「看起来恢复成功」的错库。
+        if from != manifest.schema_version {
+            return Err(AppError::schema(format!(
+                "备份 manifest 声明 schema v{}，库内实际为 v{from}：版本号与数据库不一致，拒绝恢复。",
+                manifest.schema_version
+            )));
+        }
+
         // 4.1) 版本号与实际结构必须自洽。
         //      旧备份可能来自不同的 schema 血统：user_version 写着 2，库里却没有
         //      v1 就该建出来的表。迁移只补「更高版本」，这些表会永远缺失，
@@ -296,6 +344,22 @@ pub fn restore(
                 )));
             }
         }
+        // 4.2) 财务结构也必须在迁移**之前**判定。
+        //      迁移会把缺的表建出来；事后再问「这份备份有没有平台表」,
+        //      答案永远是「有」，规则 B 就再也不会触发。
+        let backup_tables = finance_guard::inspect(&conn)?;
+        finance_guard::check_consistency(from, &backup_tables)?;
+        let platforms_before = finance_guard::count_table(&conn, "payment_platforms")?;
+        let ledger_before = finance_guard::ledger_counts(&conn)?;
+        // 规则 B：只有「备份原本就没有平台表」才回填本机配置。
+        // 读的是恢复前的活动代际，绝不是正在构建的新代际。
+        let carried_platforms = if backup_tables.platforms {
+            None
+        } else {
+            let current = open_connection(&layout.generation_db(&previous))?;
+            Some(finance_guard::read_platforms(&current)?)
+        };
+
         if from != target_version {
             migrations::migrate_to(&mut conn, migration_list, target_version)?;
         }
@@ -305,6 +369,39 @@ pub fn restore(
                 "恢复后结构版本为 v{reached}，期望 v{target_version}"
             )));
         }
+
+        // 4.3) 迁移产物必须齐全：四张财务表 + 12 条约束触发器。
+        finance_guard::require_complete_v12(&conn)?;
+
+        // 4.4) 回填平台（仅规则 B）。冲突即整体失败，不用 OR IGNORE 咽下去。
+        if let Some(rows) = &carried_platforms {
+            finance_guard::backfill_platforms(&mut conn, rows, &now)?;
+        }
+
+        // 4.5) 业务历史一行都不许凭空出现，也不许在迁移里丢掉。
+        let ledger_after = finance_guard::ledger_counts(&conn)?;
+        if ledger_after != ledger_before {
+            return Err(AppError::schema(format!(
+                "财务记录数量在迁移中发生变化（迁移前 计划/收款/退款 = {}/{}/{}，迁移后 = {}/{}/{}），拒绝切换",
+                ledger_before[0],
+                ledger_before[1],
+                ledger_before[2],
+                ledger_after[0],
+                ledger_after[1],
+                ledger_after[2]
+            )));
+        }
+        let platforms_after = finance_guard::count_table(&conn, "payment_platforms")?;
+        let platforms_expected = match &carried_platforms {
+            Some(rows) => rows.len() as i64,
+            None => platforms_before,
+        };
+        if platforms_after != platforms_expected {
+            return Err(AppError::schema(format!(
+                "平台配置数量不符：期望 {platforms_expected} 个，实际 {platforms_after} 个，拒绝切换"
+            )));
+        }
+
         crate::store::environment::validate(&conn)?;
 
         // 5) 附件引用核对：原图必须有，缩略图可重建。
@@ -392,6 +489,25 @@ pub fn restore(
         if !rebuilt_watermarks.is_empty() {
             warnings.push(
                 "此备份未记录编号高水位，已按库内已有编号重建。历史上已永久删除的编号无法还原。"
+                    .to_string(),
+            );
+        }
+        // 财务侧的兼容提示必须与预览说同一件事：用户在预览里看到的承诺，
+        // 恢复结果里要能对得上账。
+        if let Some(rows) = &carried_platforms {
+            warnings.push(format!(
+                "该备份不含收款平台配置，已保留当前设备的 {} 个平台：ID、名称、费率、归档状态、排序与创建时间原样，更新时间记为本次恢复时刻。",
+                rows.len()
+            ));
+        }
+        if !backup_tables.records {
+            warnings.push(
+                "该备份早于财务模块，升级后付款计划、收款流水与退款记录为空；没有为旧订单生成任何记录。"
+                    .to_string(),
+            );
+        } else if !backup_tables.refunds {
+            warnings.push(
+                "该备份版本尚未包含退款记录结构，升级后已创建空表；没有自动生成退款记录。"
                     .to_string(),
             );
         }

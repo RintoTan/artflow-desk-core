@@ -277,6 +277,8 @@ SELECT COUNT(*) FROM orders WHERE stage_template_id = ?   -- 不过滤 deleted_a
 
 对旧包（schema v7）预览时，`deleted_at` 列不存在，现有 `count()` 用 `unwrap_or(0)` 兜底 → 计数显示 0，语义正确。若将来确实要把摘要写进 manifest，必须给新字段加 `#[serde(default)]`（现有字段没有 default，缺字段会解析失败），并保留「旧读端忽略未知字段」的既有行为（已核实无 `deny_unknown_fields`）。**实施时两个新字段已加上 `#[serde(default)]`**：若读到缺少这两个字段的旧形状 `DataSummary` JSON，会补 0 而不是解析失败。注意 manifest 本身并不保存摘要，这条兼容性只对摘要结构成立。
 
+**FIN-07 追加口径**：财务四项（`paymentPlatforms` / `paymentSchedules` / `paymentRecords` / `refundRecords`）同样只进摘要、不进 manifest，同样带 `#[serde(default)]`。区别是它们**不走 `unwrap_or(0)`**：表不存在才是 0，表存在却统计失败必须报错——否则结构损坏会被显示成「这个版本一条都没有」。细节见 [FIN-07-BACKUP-CONTRACT](FIN-07-BACKUP-CONTRACT.md)。
+
 ## 6. 数据重置（Q2 已裁定）
 
 ### 6.1 两种机制

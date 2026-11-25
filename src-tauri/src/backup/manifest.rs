@@ -16,6 +16,9 @@ use crate::error::{AppError, AppResult};
 /// `orders` / `clients` 是**总数**（含回收站），`trashed_*` 是其中的回收站部分。
 /// 两者分开是刻意的：把回收站并进总数会让用户以为「恢复后能直接看到这些订单」。
 /// 新字段带 `serde(default)`，读任何不含这两个字段的旧摘要都不会失败。
+///
+/// 财务四项（FIN-07）是**库存清单**，不是财务统计：已归档平台、已作废流水、
+/// 回收站订单挂着的收款都照数，不按状态过滤，也不出现任何金额或客户信息。
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DataSummary {
@@ -33,9 +36,25 @@ pub struct DataSummary {
     /// 回收站中的客户数（`clients` 的子集）。
     #[serde(default)]
     pub trashed_clients: i64,
+    /// 接单平台数量（含已归档）。v9 及以前的库没有这张表 → 0。
+    #[serde(default)]
+    pub payment_platforms: i64,
+    /// 付款计划数量。
+    #[serde(default)]
+    pub payment_schedules: i64,
+    /// 收款流水数量（含已作废）。
+    #[serde(default)]
+    pub payment_records: i64,
+    /// 退款记录数量（含已作废）。
+    #[serde(default)]
+    pub refund_records: i64,
 }
 
 /// 表不存在时按 0 计：旧备份 / 未来新增表都不该让摘要失败。
+///
+/// 这条兜底只用于**列**级的旧形状（v8 之前的库没有 `deleted_at`），
+/// 那种情况下查询报的正是「这列还不存在」，记 0 是事实。
+/// 财务四表不走这里——它们的缺失与损坏必须分开，见 `finance_guard::count_table`。
 fn count(conn: &Connection, sql: &str) -> i64 {
     conn.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap_or(0)
 }
@@ -63,6 +82,12 @@ pub fn summarize(conn: &Connection) -> AppResult<DataSummary> {
         // 所以查基表、不过滤 deleted_at。
         trashed_orders: count(conn, "SELECT COUNT(*) FROM orders WHERE deleted_at IS NOT NULL"),
         trashed_clients: count(conn, "SELECT COUNT(*) FROM clients WHERE deleted_at IS NOT NULL"),
+        // 财务四表同样是库存口径：归档平台、作废流水、回收站订单的收款都算。
+        // 缺表 = 该版本还没引入，记 0；查不动 = 真故障，直接报错。
+        payment_platforms: crate::backup::finance_guard::count_table(conn, "payment_platforms")?,
+        payment_schedules: crate::backup::finance_guard::count_table(conn, "payment_schedules")?,
+        payment_records: crate::backup::finance_guard::count_table(conn, "payment_records")?,
+        refund_records: crate::backup::finance_guard::count_table(conn, "refund_records")?,
     })
 }
 
