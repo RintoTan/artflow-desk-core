@@ -5,6 +5,7 @@ import { AppIconImage } from "../components/AppIconImage";
 import AttachmentMaintenancePanel from "../components/AttachmentMaintenancePanel";
 import DataResetPanel from "../components/DataResetPanel";
 import PlatformsPanel from "../components/PlatformsPanel";
+import PageHeader from "../components/PageHeader";
 import StorageLocationPanel from "../components/StorageLocationPanel";
 import BackupPanel from "../components/BackupPanel";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -231,13 +232,12 @@ export default function SettingsPage() {
 
   return (
     <div className="settings-page">
-      <header className="settings-head">
-        <NavIcon name="settings" className="settings-head-icon" />
-        <div>
-          <h1>通用设置</h1>
-          <p className="muted">配置应用的外观、工作区域与保存方式。</p>
-        </div>
-      </header>
+      <PageHeader
+        className="settings-head"
+        leading={<NavIcon name="settings" className="settings-head-icon" />}
+        title="通用设置"
+        description="配置应用的外观、工作区域与保存方式。"
+      />
 
       <div className="settings-grid">
       <div className="settings-col">

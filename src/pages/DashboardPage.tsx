@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { describeError, statsApi, type DashboardMetrics } from "../bridge/commands";
+import PageHeader from "../components/PageHeader";
 import { ProjectTimeline } from "../components/ProjectTimeline";
 
 type Card = {
@@ -116,17 +117,21 @@ export default function DashboardPage() {
   return (
     <>
       <section className="panel">
-        <header className="panel-head">
-          <div>
-            <h2>工作台</h2>
-            <p className="muted">
+        <PageHeader
+          level={2}
+          className="panel-head"
+          title="工作台"
+          description={
+            <>
               今天是 {metrics.today}（{metrics.timezone}）· 本月 {metrics.month}
-            </p>
-          </div>
-          <span className={`badge ${attention > 0 ? "badge-warn" : "badge-ok"}`}>
-            {attention > 0 ? `${attention} 项需要关注` : "没有临期订单"}
-          </span>
-        </header>
+            </>
+          }
+          actions={
+            <span className={`badge ${attention > 0 ? "badge-warn" : "badge-ok"}`}>
+              {attention > 0 ? `${attention} 项需要关注` : "没有临期订单"}
+            </span>
+          }
+        />
 
         <div className="metric-grid">
           {CARDS.map((card) => (

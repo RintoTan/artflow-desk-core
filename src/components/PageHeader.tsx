@@ -10,6 +10,17 @@
  * 它不持有任何业务状态：不接 onClick、不读数据，只摆放调用方给的东西。
  */
 type Props = {
+  /**
+   * 标题层级。默认 1。
+   *
+   * 之所以留这个口子：现有页面里「页面主标题」有的写成 h1（统计、设置），
+   * 有的写成 h2（工作台、订单、客户、流程）。统一成 h1 会改变四页的文档大纲
+   * 与无障碍结构，属于另一件事，不在本批顺手做。这里先保留原层级，
+   * 让**结构**统一、**级别**不动。
+   */
+  level?: 1 | 2;
+  /** 标题左前方的图标（如设置页的 NavIcon），可选。 */
+  leading?: React.ReactNode;
   title: React.ReactNode;
   description?: React.ReactNode;
   /** 右侧操作区：按钮、筛选器、视图切换等既有控件。 */
@@ -23,6 +34,8 @@ type Props = {
 };
 
 export default function PageHeader({
+  level = 1,
+  leading,
   title,
   description,
   actions,
@@ -32,8 +45,13 @@ export default function PageHeader({
 }: Props) {
   return (
     <header className={["page-header", className ?? ""].filter(Boolean).join(" ")}>
+      {leading}
       <div className={["page-header-text", textClassName ?? ""].filter(Boolean).join(" ")}>
-        <h1 className="page-header-title">{title}</h1>
+        {level === 1 ? (
+          <h1 className="page-header-title">{title}</h1>
+        ) : (
+          <h2 className="page-header-title">{title}</h2>
+        )}
         {description ? <p className="page-header-desc">{description}</p> : null}
       </div>
       {actions ? (

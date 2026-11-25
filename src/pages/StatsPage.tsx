@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 
 import FinanceStatsPanel from "../components/FinanceStatsPanel";
+import PageHeader from "../components/PageHeader";
 import { save } from "@tauri-apps/plugin-dialog";
 
 import { placeTooltip, type TooltipPlacement } from "../components/TitleTooltip";
@@ -234,13 +235,14 @@ export default function StatsPage() {
   if (tab === "finance") {
     return (
       <section className="panel stats-overview">
-        <header className="stats-toolbar">
-          <div className="stats-heading">
-            <h1 className="page-title">数据统计</h1>
-            <p className="muted">只统计真实资金流动：到账按收款日、退款按退款日，取消单不计入金额。</p>
-          </div>
-          <div className="stats-tools">{tabBar("finance")}</div>
-        </header>
+        <PageHeader
+          className="stats-toolbar"
+          textClassName="stats-heading"
+          actionsClassName="stats-tools"
+          title="数据统计"
+          description={<>{'只统计真实资金流动：到账按收款日、退款按退款日，取消单不计入金额。'}</>}
+          actions={tabBar("finance")}
+        />
         <FinanceStatsPanel range={range} onRangeChange={switchRange} />
       </section>
     );
