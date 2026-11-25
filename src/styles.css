@@ -8717,7 +8717,10 @@ dl.stat-row {
 
 .platform-row {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 96px auto;
+  /* 名字列原来吃 1fr，把费率与操作按钮一直推到最右边——一条记录被拆成两端。
+     改成按内容宽度排、整行左对齐：空隙落在行尾，而不是名字与费率之间。 */
+  grid-template-columns: 22px minmax(0, auto) 96px auto;
+  justify-content: start;
   align-items: center;
   gap: 10px;
   padding: 7px 10px;
@@ -8788,12 +8791,35 @@ dl.stat-row {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   display: grid;
-  gap: 12px;
+  /* 名称与费率并排：表单占满卡片宽度时，内容也跟着铺开，不再挤在左侧三分之一。 */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 160px);
+  gap: 12px 16px;
+  align-items: end;
+}
+
+/* 表单里的字段跟随所在列，不受 .field 的 460px 上限约束（那条是给长页面表单用的） */
+.platform-form .field {
+  margin-top: 0;
+  max-width: none;
 }
 
 .platform-form-actions {
+  grid-column: 1 / -1;
   display: flex;
   gap: 8px;
+}
+
+@media (max-width: 720px) {
+  .platform-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 名字过长时截断，避免窄列被一条超长平台名撑破 */
+.platform-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .platform-danger {
