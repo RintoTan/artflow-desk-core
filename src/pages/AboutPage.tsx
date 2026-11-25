@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { api, describeError, type EnvironmentStatus } from "../bridge/commands";
+import { buildId, buildKindLabel } from "../lib/buildInfo";
 
 /** 尚未确认的信息一律显式标注，不编造姓名、地址、许可证或年份。 */
 const TBD = "待补充";
@@ -242,17 +243,20 @@ export default function AboutPage() {
       <section className="panel" aria-labelledby="about-version-title">
         <header className="panel-head compact">
           <h2 id="about-version-title">版本信息</h2>
-          <span className="muted">版本号由应用自身提供，不在界面里另写一份</span>
+          <span className="muted">版本号由应用自身提供，构建号在打包时注入，两者都不在界面里另写一份</span>
         </header>
         <div className="about-facts">
           <Fact label="应用版本" value={status ? `v${status.appVersion}` : "读取中…"} />
+          <Fact label="构建号" value={buildId()} />
           <Fact
             label="运行构建"
             value={
               status
-                ? status.qaMode
-                  ? `QA 测试构建（${status.qaScenario === "clean" ? "空白场景" : "预置场景"}）`
-                  : "正式构建"
+                ? buildKindLabel(
+                    status.qaMode
+                      ? `QA 测试构建（${status.qaScenario === "clean" ? "空白场景" : "预置场景"}）`
+                      : "正式构建",
+                  )
                 : "读取中…"
             }
           />

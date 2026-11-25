@@ -54,6 +54,8 @@ function baseStatus(patch: Partial<EnvironmentStatus> = {}): EnvironmentStatus {
 beforeEach(() => {
   statusError = null;
   status = baseStatus();
+  // 构建身份用全局常量注入；用例之间必须互相隔离，否则「没注入」的用例会拿到上一条的值。
+  vi.unstubAllGlobals();
 });
 
 describe("关于软件页面", () => {
@@ -70,6 +72,47 @@ describe("关于软件页面", () => {
     render(<AboutPage />);
     expect(await screen.findByText("v9.9.9")).toBeTruthy();
     expect(screen.queryByText("v0.1.0")).toBeNull();
+  });
+
+  it("构建号在正式环境也显示，取的是构建注入值", async () => {
+    vi.stubGlobal("__BUILD_ID__", "b17a430");
+    status = baseStatus({ qaMode: false, qaScenario: null });
+    render(<AboutPage />);
+    const version = await screen.findByRole("region", { name: "版本信息" });
+    expect(within(version).getByText("b17a430")).toBeTruthy();
+  });
+
+  it("脏工作区的构建号带 -dirty，原样显示不当作另一个版本", async () => {
+    vi.stubGlobal("__BUILD_ID__", "b17a430-dirty");
+    render(<AboutPage />);
+    const version = await screen.findByRole("region", { name: "版本信息" });
+    expect(within(version).getByText("b17a430-dirty")).toBeTruthy();
+    expect(screen.queryByText("v0.1.2")).toBeNull(); // 应用版本来自后端，不由构建号推出
+  });
+
+  it("拿不到 Git 信息时显示 unknown，不猜也不留空", async () => {
+    delete (globalThis as { __BUILD_ID__?: string }).__BUILD_ID__;
+    render(<AboutPage />);
+    const version = await screen.findByRole("region", { name: "版本信息" });
+    expect(within(version).getByText("unknown")).toBeTruthy();
+  });
+
+  it("没有发布标记时不显示 Demo", async () => {
+    vi.stubGlobal("__RELEASE_LABEL__", "");
+    render(<AboutPage />);
+    const version = await screen.findByRole("region", { name: "版本信息" });
+    expect(within(version).queryByText(/Demo/)).toBeNull();
+  });
+
+  it("发布标记与应用版本、运行环境三者独立显示", async () => {
+    vi.stubGlobal("__BUILD_ID__", "b17a430");
+    vi.stubGlobal("__RELEASE_LABEL__", "v0.1.2-demo.1");
+    status = baseStatus({ appVersion: "0.1.2", qaMode: false, qaScenario: null });
+    render(<AboutPage />);
+    const version = await screen.findByRole("region", { name: "版本信息" });
+    expect(within(version).getByText("v0.1.2")).toBeTruthy();
+    expect(within(version).getByText("正式构建 · Demo · v0.1.2-demo.1")).toBeTruthy();
+    expect(within(version).getByText("b17a430")).toBeTruthy();
   });
 
   it("开发与归属：已知信息展示，未知信息标「待补充」", async () => {

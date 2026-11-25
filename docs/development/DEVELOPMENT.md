@@ -101,15 +101,26 @@ npx tauri build --target x86_64-pc-windows-msvc --bundles nsis
 
 ### 版本号
 
-- 应用版本三处必须一致：`package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json`。
-- Release 标签 `v<版本>-demo.<序号>`（如 `v0.1.0-demo.2`）**不代表**修改应用版本号。
+- 应用版本**四处**必须一致：`src-tauri/Cargo.toml`（界面与备份 manifest 的权威来源）、
+  `src-tauri/tauri.conf.json`（安装包元数据）、`package.json`、
+  `.github/workflows/windows-build.yml` 的 `APP_VERSION`（决定 CI 产物文件名）。
+- `cargo test --test version_consistency` 会实际读取这四个文件比对，任意一处漂移即失败。
+- Release 标签 `v<版本>-demo.<序号>`（如 `v0.1.2-demo.1`）**不代表**修改应用版本号。
+
+### 构建身份
+
+- 构建号在 `vite build` 时注入（见 `vite.config.ts`）：7 位短 SHA；工作区有未提交改动时追加
+  `-dirty`；取不到 Git 信息时为 `unknown`。`dist/`、`target/` 已被忽略，不会把干净的树误判成脏。
+- 关于页「版本信息」显示构建号，QA 横幅显示同一个值，两处不会分叉。
+- 可选发布标记：构建时设置 `VITE_RELEASE_LABEL="v0.1.2-demo.1"`，关于页「运行构建」追加
+  `· Demo · <标记>`；未设置则什么都不显示。它不改应用版本，也不参与 QA 环境判定。
 
 ### 产物命名
 
 ```
-ArtFlowDesk-Core-macOS-v0.1.0-Production.zip      ArtFlowDesk-Core-macOS-v0.1.0-QA.zip
-ArtFlowDesk-Core-Windows-v0.1.0-Production-Setup.exe     ...-Production-Portable.exe
-ArtFlowDesk-Core-Windows-v0.1.0-QA-Setup.exe             ...-QA-Portable.exe
+ArtFlowDesk-Core-macOS-v0.1.2-Production.zip      ArtFlowDesk-Core-macOS-v0.1.2-QA.zip
+ArtFlowDesk-Core-Windows-v0.1.2-Production-Setup.exe     ...-Production-Portable.exe
+ArtFlowDesk-Core-Windows-v0.1.2-QA-Setup.exe             ...-QA-Portable.exe
 SHA256SUMS.txt
 ```
 
