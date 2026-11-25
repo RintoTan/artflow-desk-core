@@ -47,6 +47,14 @@ export function matchesArchive(order: OrderView, scope: ArchiveScope): boolean {
   return scope === "archived" ? isArchived(order) : !isArchived(order);
 }
 
+/**
+ * 「有效置顶」的唯一前端判据，与后端 `PIN_EFFECTIVE_SQL` 保持一致：
+ * 置过顶 + 进行中 + 未归档。回收站里的订单本来就不在这个列表里，不必再判。
+ */
+export function isPinned(order: OrderView): boolean {
+  return Boolean(order.pinnedAt) && order.status === "active" && !order.archivedAt;
+}
+
 export function matchesWork(order: OrderView, filter: WorkFilter): boolean {
   if (filter === "all") return true;
   if (order.status !== "active") return false;
@@ -83,7 +91,15 @@ export function filterOrders(
     const aActive = a.status === "active";
     const bActive = b.status === "active";
     if (aActive !== bActive) return aActive ? -1 : 1;
-    if (aActive && bActive) return a.queuePosition - b.queuePosition;
+    if (aActive && bActive) {
+      // 置顶是独立的优先级分组：始终在普通订单之前。
+      // 判据必须与后端一致（状态 / 归档 / 回收站），否则会出现「界面置顶、
+      // 后端不认」或者反过来「界面上冒出一个不该置顶的单」。
+      const aPinned = isPinned(a);
+      const bPinned = isPinned(b);
+      if (aPinned !== bPinned) return aPinned ? -1 : 1;
+      return a.queuePosition - b.queuePosition;
+    }
     return b.updatedAt.localeCompare(a.updatedAt);
   });
 }

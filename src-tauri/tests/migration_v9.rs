@@ -149,5 +149,5 @@ fn migration_list_stays_contiguous() {
     let versions: Vec<i64> = list.iter().map(|m| m.version).collect();
     // 版本号必须从 1 连续到程序支持的最高版本——升版时这条跟着走，不用手改数字。
     assert_eq!(versions, (1..=migrations::APP_SCHEMA_VERSION).collect::<Vec<_>>());
-    assert_eq!(list.last().unwrap().name, "v12_payment_kind_match");
+    assert_eq!(list.last().unwrap().name, "v13_order_pin");
 }

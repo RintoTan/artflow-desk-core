@@ -7298,6 +7298,16 @@ dl.stat-row {
   color: var(--danger);
 }
 
+/* 置顶标记：跟着编号走，用中性色，不抢标题的视觉权重 */
+.pin-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  color: var(--accent);
+  vertical-align: -1px;
+  opacity: 0.85;
+}
+
 /* 恢复前后的兼容说明：一条一句，不能挤成一段读不懂的长句。 */
 .backup-warnings {
   margin: 8px 0 0;

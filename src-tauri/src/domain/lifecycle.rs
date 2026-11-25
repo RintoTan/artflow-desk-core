@@ -642,7 +642,8 @@ pub fn complete_order(conn: &mut Connection, input: LifecycleInput) -> AppResult
 
     let now = timezone::now_timestamp();
     let changed = tx.execute(
-        "UPDATE orders SET status = ?1, completed_at = ?2, revision = revision + 1, updated_at = ?2
+        "UPDATE orders SET status = ?1, completed_at = ?2, pinned_at = NULL,
+                revision = revision + 1, updated_at = ?2
          WHERE id = ?3 AND revision = ?4",
         params![STATUS_COMPLETE, now, input.order_id, input.expected_revision],
     )?;
@@ -729,7 +730,8 @@ fn cancel_in_tx(tx: &Transaction<'_>, input: &LifecycleInput) -> AppResult<(Orde
     let now = timezone::now_timestamp();
     // 取消不补记开工时间。
     let changed = tx.execute(
-        "UPDATE orders SET status = ?1, cancelled_at = ?2, revision = revision + 1, updated_at = ?2
+        "UPDATE orders SET status = ?1, cancelled_at = ?2, pinned_at = NULL,
+                revision = revision + 1, updated_at = ?2
          WHERE id = ?3 AND revision = ?4",
         params![STATUS_CANCELLED, now, input.order_id, input.expected_revision],
     )?;
@@ -831,7 +833,7 @@ pub fn reopen_order(conn: &mut Connection, input: LifecycleInput) -> AppResult<O
     // 队列位置交给 queue::insert_new 统一追加并重排，保持活动队列位置连续。
     let changed = tx.execute(
         "UPDATE orders
-         SET status = ?1, completed_at = NULL, cancelled_at = NULL,
+         SET status = ?1, completed_at = NULL, cancelled_at = NULL, pinned_at = NULL,
              revision = revision + 1, updated_at = ?2
          WHERE id = ?3 AND revision = ?4",
         params![STATUS_ACTIVE, now, input.order_id, input.expected_revision],

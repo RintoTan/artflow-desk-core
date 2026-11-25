@@ -98,6 +98,8 @@ export type OrderView = {
   /** 归档时间；非空表示已从「订单信息」的普通列表收起，其他页面照常显示。
    *  可缺省：旧缓存或测试夹具没有这个字段时应视为未归档，而不是已归档。 */
   archivedAt?: string | null;
+  /** 置顶时间；非空只说明置过顶，是否**有效**要用 `isPinned()` 判（见 lib/ordersView）。 */
+  pinnedAt?: string | null;
   capabilities: Capabilities;
 };
 
@@ -422,6 +424,8 @@ export const api = {
     invoke<OrderView>("duplicate_order", { input }),
   archiveOrder: (orderId: string) => invoke<OrderView>("order_archive", { orderId }),
   unarchiveOrder: (orderId: string) => invoke<OrderView>("order_unarchive", { orderId }),
+  pinOrder: (orderId: string) => invoke<OrderView>("order_pin", { orderId }),
+  unpinOrder: (orderId: string) => invoke<OrderView>("order_unpin", { orderId }),
   updateOrderDetails: (input: UpdateDetailsInput) =>
     invoke<OrderView>("update_order_details", { input }),
 

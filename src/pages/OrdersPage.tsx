@@ -15,6 +15,7 @@ import OrderTable from "../components/OrderTable";
 import ActionMenu from "../components/ActionMenu";
 import CancelOrderDialog, { type CancelOrderPayload } from "../components/CancelOrderDialog";
 import ContextMenu, { type ContextMenuItem } from "../components/ContextMenu";
+import PinBadge from "../components/PinBadge";
 import OrderFinancePanel from "../components/OrderFinancePanel";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { ScheduleOverview } from "../components/ScheduleOverview";
@@ -37,6 +38,7 @@ import {
   dropIndex,
   filterOrders,
   isArchived,
+  isPinned,
   riskBadge,
   type ArchiveScope,
   type RiskFilter,
@@ -529,6 +531,33 @@ export default function OrdersPage() {
     [detail, archiveBusy, reloadList],
   );
 
+  /**
+   * 置顶 / 取消置顶：只改展示优先级，不动队列位置、不动 revision，
+   * 所以不走确认框，也不重载草稿——草稿里放的是订单内容，跟置顶无关。
+   */
+  const applyPin = useCallback(
+    async (orderId: string, next: boolean) => {
+      setError(null);
+      try {
+        const updated = next ? await api.pinOrder(orderId) : await api.unpinOrder(orderId);
+        // 脏草稿时不要用返回值覆盖详情，否则会把用户正在编辑的内容冲掉。
+        if (!dirty && detail?.id === updated.id) {
+          setDetail(updated);
+          setDraft(draftFrom(updated));
+        }
+        setNotice(next ? `${updated.code} 已置顶` : `${updated.code} 已取消置顶`);
+        try {
+          await reloadList();
+        } catch (e) {
+          setError(describeError(e));
+        }
+      } catch (e) {
+        setError(describeError(e));
+      }
+    },
+    [detail, dirty, reloadList],
+  );
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -953,7 +982,7 @@ export default function OrdersPage() {
 
   /** 菜单项：只列当前订单真做得了的事，执行仍然落到各自的既有入口。 */
   function menuItems(order: OrderView): ContextMenuItem[] {
-    return orderMenuActions(order.capabilities).map((action) => ({
+    return orderMenuActions(order).map((action) => ({
       id: action,
       label: ORDER_MENU_LABEL[action],
       danger: action === "cancel",
@@ -961,6 +990,10 @@ export default function OrdersPage() {
         setMenu(null);
         if (action === "open") {
           attemptSelect(order.id);
+          return;
+        }
+        if (action === "pin" || action === "unpin") {
+          void applyPin(order.id, action === "pin");
           return;
         }
         if (action === "cancel") {
@@ -1342,6 +1375,7 @@ export default function OrdersPage() {
                   >
                     <span className="order-row-top">
                       <code className="order-code">{order.code}</code>
+                      {isPinned(order) && <PinBadge />}
                       {isArchived(order) && <span className="chip chip-archived">已归档</span>}
                       <span className={`chip chip-${order.status}`}>{orderStatusLabel(order.status)}</span>
                     </span>

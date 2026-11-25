@@ -63,6 +63,18 @@ pub fn order_unarchive(state: State<'_, AppState>, order_id: String) -> AppResul
 }
 
 #[tauri::command]
+pub fn order_pin(state: State<'_, AppState>, order_id: String) -> AppResult<OrderView> {
+    let mut conn = state.env.open_db()?;
+    orders::pin(&mut conn, &order_id)
+}
+
+#[tauri::command]
+pub fn order_unpin(state: State<'_, AppState>, order_id: String) -> AppResult<OrderView> {
+    let mut conn = state.env.open_db()?;
+    orders::unpin(&mut conn, &order_id)
+}
+
+#[tauri::command]
 pub fn list_orders(state: State<'_, AppState>) -> AppResult<Vec<OrderView>> {
     let conn = state.env.open_db()?;
     orders::list(&conn)

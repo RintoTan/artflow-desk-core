@@ -4,7 +4,8 @@ import { useElementWidth } from "../lib/useElementWidth";
 
 import type { OrderView } from "../bridge/commands";
 import { orderStatusLabel } from "../lib/orderStatus";
-import { riskBadge } from "../lib/ordersView";
+import { isPinned, riskBadge } from "../lib/ordersView";
+import PinBadge from "./PinBadge";
 import { workStateLabel } from "../lib/workState";
 
 export type SortKey = "code" | "client" | "title" | "source" | "stage" | "status" | "delivery" | "amount";
@@ -148,6 +149,7 @@ export default function OrderTable({
             >
               <td className="mono">
                 {order.code}
+                {isPinned(order) && <PinBadge />}
                 {(order.archivedAt ?? null) !== null && (
                   <span className="chip chip-archived table-archived">已归档</span>
                 )}

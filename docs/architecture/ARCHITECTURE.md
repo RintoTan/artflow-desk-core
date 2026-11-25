@@ -60,7 +60,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | `bridge/commands.ts` | 命令类型与 `api` 封装，**invoke 的唯一出口** |
 | `styles.css` | 原生 CSS + 设计令牌（Arctic Blue） |
 
-## 数据模型（schema v12）
+## 数据模型（schema v13）
 
 > 删除、回收站、数据重置与存储位置迁移的详细设计与实现约束见 [DATA-LIFECYCLE.md](DATA-LIFECYCLE.md)（已实施并验收）。
 
@@ -199,6 +199,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | v9 | `orders` 增加 `archived_at` 与部分索引；**重建两个订单视图**（SQLite 的 `SELECT *` 在建视图时冻结列清单）。归档只影响「订单信息」页普通列表的归属，其余查询口径不变 |
 | v10 | 新增 `payment_platforms` / `payment_schedules` / `payment_records` 三表与索引；**不改 `orders`**、不建视图、不写任何种子数据或历史流水 |
 | v12 | 新增 `refund_records` 与三条「流水类型 = 计划类型」触发器；迁移前自检历史数据，发现跨类型关联即中止 |
+| v13 | 新增 `orders.pinned_at`（可空时间戳）与部分索引；因 `SELECT *` 列冻结，重建 `orders_visible` / `orders_trashed` |
 | v11 | 三张财务表重建为 `STRICT`，补主键 `NOT NULL`、名称 trim、日期真实性、平台名快照约束，新增同订单关联三触发器与两个查询索引；迁移前断言三表为空，非空中止 |
 
 ## 关键机制
@@ -211,8 +212,29 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | 时间 | 事件存真实时间点（含时区偏移），计划日期是纯日历日期 | 改期与「实际何时做的」是两件事 |
 | 代际 | 迁移/恢复都新建 `generations/gen-<uuid>/`，写完原子切换 `state/active.json` | 失败不动现有数据，见 [DATA-SAFETY.md](DATA-SAFETY.md) |
 | 退出 | Tauri 的 `ExitRequested` 在最后一个窗口销毁后才发出；闸门只在「窗口还在 + 应用级退出」时拦截 | 无条件拦截会留下无窗口的孤儿进程 |
+| 置顶 | `orders.pinned_at` 是**展示优先级**，不是状态：不改 `status`、不改 `queue_position`、不动 revision。是否生效统一由 `PIN_EFFECTIVE_SQL`（置过顶 + 进行中 + 未归档）判定 | 只靠清理不靠判据，漏一条生命周期路径就会多出一个置顶；两处都做才安全 |
 | 浮层 | 模态走 `lib/modalStack`；右键菜单这类非模态浮层走 `lib/layers` 的层级栈，Esc 只交给最上层 | 两者语义不同：模态要接管焦点与交互，菜单只是临时遮挡；混用会连带改掉页面快捷键与退出排队 |
 | 日志 | `logs/app.log`（1 MiB 轮转）+ panic hook + UI ready 回执 | release 版无控制台，`println!` 不可见 |
+
+### 置顶的生命周期
+
+`pinned_at` 非空不等于「有效置顶」：只有 `pinned_at IS NOT NULL AND status = 'active'
+AND archived_at IS NULL` 才算（`domain/orders.rs::PIN_EFFECTIVE_SQL`）。数量上限、列表分组、
+界面标记三处都过这个判据。
+
+清理**同时**写在每条会让订单离开「活动且未归档」的写入路径上，逐个分支显式置 `NULL`：
+
+| 路径 | 位置 |
+| --- | --- |
+| 完成 | `lifecycle::complete_order` |
+| 取消 | `lifecycle::cancel_order` |
+| 重开（防御：不恢复原置顶） | `lifecycle::reopen_order` |
+| 归档 / 取消归档 | `orders::set_archived` |
+| 移入回收站（单笔 / 按客户整批） | `trash::delete_order` / `trash::delete_client` |
+| 从回收站恢复（单笔 / 按客户整批） | `trash::restore_order` / `trash::restore_client` |
+
+队列拖拽的跨组边界在 `queue::move_order` 里拦（`display_ids` 的置顶块长度），
+前端禁用把手只是礼貌——`move_order` 收的是目标下标，直接调用同样要挡住。
 
 ## 关键技术约束
 

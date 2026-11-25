@@ -85,7 +85,7 @@ fn complete_v12_database_opens() {
     drop(env);
 
     let reopened = common::open(&root);
-    assert_eq!(reopened.outcome().schema_version, 12);
+    assert_eq!(reopened.outcome().schema_version, migrations::APP_SCHEMA_VERSION);
     assert!(reopened.outcome().upgraded_from.is_none(), "v12 不该再升级");
 }
 
@@ -102,7 +102,11 @@ fn v12_missing_refund_records_is_refused_at_startup() {
     let err = open_error(&root);
     assert_eq!(err.code, "SCHEMA", "{}", err.message);
     assert!(err.message.contains("refund_records"), "{}", err.message);
-    assert!(err.message.contains("v12"), "错误要说清当前版本：{}", err.message);
+    assert!(
+        err.message.contains(&format!("v{}", migrations::APP_SCHEMA_VERSION)),
+        "错误要说清当前版本：{}",
+        err.message
+    );
     assert!(err.message.contains("无法继续启动"), "{}", err.message);
 }
 
@@ -177,7 +181,7 @@ fn structure_error_does_not_repair_anything() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 12, "版本号不该被改写");
+    assert_eq!(version, migrations::APP_SCHEMA_VERSION, "版本号不该被改写");
     let orders: i64 = conn
         .query_row("SELECT COUNT(*) FROM orders", [], |r| r.get(0))
         .unwrap();
@@ -206,7 +210,7 @@ fn v9_upgrades_to_v12_and_opens() {
 
     let upgraded = common::open(&root);
     assert_eq!(upgraded.outcome().upgraded_from, Some(9));
-    assert_eq!(upgraded.outcome().schema_version, 12);
+    assert_eq!(upgraded.outcome().schema_version, migrations::APP_SCHEMA_VERSION);
 
     let conn = upgraded.open_db().unwrap();
     for table in [

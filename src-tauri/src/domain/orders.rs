@@ -62,6 +62,9 @@ pub struct OrderView {
     /// 归档时间；`Some` 表示已从「订单信息」的普通列表收起。
     /// 只影响该列表的归属，不影响客户、工作台、日历与统计。
     pub archived_at: Option<String>,
+    /// 置顶时间；`Some` 只说明「曾经置顶」。是否**有效**还要看状态与归档，
+    /// 判据统一为 `PIN_EFFECTIVE_SQL`，见该常量的说明。
+    pub pinned_at: Option<String>,
     pub capabilities: Capabilities,
 }
 
@@ -172,7 +175,7 @@ pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
                 o.planned_start_date, o.planned_delivery_date,
                 o.started_at, o.completed_at, o.cancelled_at,
                 o.revision, o.created_at, o.updated_at, o.source, o.stage_template_id,
-                o.archived_at
+                o.archived_at, o.pinned_at
          FROM orders_visible o
          LEFT JOIN clients c ON c.id = o.client_id
          WHERE o.id = ?1",
@@ -201,6 +204,7 @@ pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
                 r.get::<_, Option<String>>(19)?,
                 r.get::<_, Option<String>>(20)?,
                 r.get::<_, Option<String>>(21)?,
+                r.get::<_, Option<String>>(22)?,
             ))
         },
     )
@@ -262,6 +266,7 @@ pub fn load(conn: &Connection, order_id: &str) -> AppResult<OrderView> {
         created_at: row.17,
         updated_at: row.18,
         archived_at: row.21,
+        pinned_at: row.22,
         capabilities: caps,
     })
 }
@@ -917,17 +922,86 @@ pub fn set_archived(
         }
         if current.is_none() {
             tx.execute(
-                "UPDATE orders SET archived_at = ?1 WHERE id = ?2",
+                "UPDATE orders SET archived_at = ?1, pinned_at = NULL WHERE id = ?2",
                 params![timezone::now_timestamp(), order_id],
             )?;
         }
     } else if current.is_some() {
         tx.execute(
-            "UPDATE orders SET archived_at = NULL WHERE id = ?1",
+            "UPDATE orders SET archived_at = NULL, pinned_at = NULL WHERE id = ?1",
             params![order_id],
         )?;
     }
 
+    let view = load(&tx, order_id)?;
+    tx.commit()?;
+    Ok(view)
+}
+
+// ---------------------------------------------------------------- 置顶
+
+/// 最多同时置顶的活动订单数。
+pub const MAX_PINNED: i64 = 5;
+
+/// 「有效置顶」的唯一判据。
+///
+/// `pinned_at` 非空只说明历史上置过顶：完成、取消、归档、进回收站都会清空它。
+/// 但**不能只依赖清理**——漏一处就会出现第六个置顶，或者一个看不见的订单占着名额。
+/// 数量上限、列表分组、界面标记三处都过这个条件，结论才会一致。
+/// 查询一律走 `orders_visible`，因此 `deleted_at` 已由视图排除。
+pub const PIN_EFFECTIVE_SQL: &str =
+    "pinned_at IS NOT NULL AND status = 'active' AND archived_at IS NULL";
+
+pub fn pinned_count(conn: &Connection) -> AppResult<i64> {
+    Ok(conn.query_row(
+        &format!("SELECT COUNT(*) FROM orders_visible WHERE {PIN_EFFECTIVE_SQL}"),
+        [],
+        |r| r.get(0),
+    )?)
+}
+
+/// 置顶。已置顶时幂等返回，不重复消耗名额、也不刷新时间。
+pub fn pin(conn: &mut Connection, order_id: &str) -> AppResult<OrderView> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_order(&tx, order_id)?;
+
+    let (status, archived, pinned): (String, Option<String>, Option<String>) = tx.query_row(
+        "SELECT status, archived_at, pinned_at FROM orders_visible WHERE id = ?1",
+        [order_id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )?;
+    if status != lifecycle::STATUS_ACTIVE {
+        return Err(AppError::invalid("只有进行中的订单可以置顶"));
+    }
+    if archived.is_some() {
+        return Err(AppError::invalid("已归档的订单不能置顶"));
+    }
+
+    if pinned.is_none() {
+        if pinned_count(&tx)? >= MAX_PINNED {
+            return Err(AppError::invalid(format!(
+                "最多只能置顶 {MAX_PINNED} 个订单，请先取消其他订单的置顶。"
+            )));
+        }
+        tx.execute(
+            "UPDATE orders SET pinned_at = ?1 WHERE id = ?2",
+            params![timezone::now_timestamp(), order_id],
+        )?;
+    }
+
+    let view = load(&tx, order_id)?;
+    tx.commit()?;
+    Ok(view)
+}
+
+/// 取消置顶。不改 queue_position，也不改订单状态。
+pub fn unpin(conn: &mut Connection, order_id: &str) -> AppResult<OrderView> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    visibility::require_visible_order(&tx, order_id)?;
+    tx.execute(
+        "UPDATE orders SET pinned_at = NULL WHERE id = ?1",
+        params![order_id],
+    )?;
     let view = load(&tx, order_id)?;
     tx.commit()?;
     Ok(view)

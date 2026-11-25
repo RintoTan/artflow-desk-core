@@ -36,6 +36,8 @@ const APPROVED: &[&str] = &[
     "get_order",
     "order_archive",
     "order_unarchive",
+    "order_pin",
+    "order_unpin",
     "list_order_events",
     "list_clients",
     "update_order_details",

@@ -477,8 +477,20 @@ export default function CalendarPage() {
     }
   }
 
+  /** 置顶只影响展示顺序，日历不按队列排列，所以这里只负责把状态写回去再刷新。 */
+  async function runPin(orderId: string, next: boolean) {
+    setActionError(null);
+    try {
+      if (next) await api.pinOrder(orderId);
+      else await api.unpinOrder(orderId);
+      setGeneration((n) => n + 1);
+    } catch (error) {
+      setActionError(describeError(error));
+    }
+  }
+
   function menuItems(order: OrderView): ContextMenuItem[] {
-    return orderMenuActions(order.capabilities).map((action) => ({
+    return orderMenuActions(order).map((action) => ({
       id: action,
       label: ORDER_MENU_LABEL[action],
       danger: action === "cancel",
@@ -486,6 +498,10 @@ export default function CalendarPage() {
         setMenu(null);
         if (action === "open") {
           navigate(`/orders?orderId=${order.id}`);
+          return;
+        }
+        if (action === "pin" || action === "unpin") {
+          void runPin(order.id, action === "pin");
           return;
         }
         if (action === "cancel") {

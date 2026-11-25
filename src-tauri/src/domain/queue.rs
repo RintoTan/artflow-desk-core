@@ -38,7 +38,8 @@ pub fn revision(conn: &Connection) -> AppResult<i64> {
 
 pub fn list(conn: &Connection) -> AppResult<Vec<QueueEntry>> {
     let mut stmt = conn.prepare(
-        "SELECT id FROM orders_visible WHERE status = 'active' ORDER BY queue_position, code",
+        "SELECT id FROM orders_visible WHERE status = 'active'
+          ORDER BY (pinned_at IS NOT NULL AND archived_at IS NULL) DESC, queue_position, code",
     )?;
     let ids: Vec<String> = stmt
         .query_map([], |r| r.get::<_, String>(0))?
@@ -98,9 +99,27 @@ pub fn renumber(tx: &Connection, ids: &[String]) -> AppResult<()> {
 }
 
 /// 活动订单 ID 列表（按当前位置）。
+///
+/// 注意：这是「队列位置」顺序，不含置顶分组。要拿用户看到的顺序用 [`display_ids`]。
 pub fn active_ids(conn: &Connection) -> AppResult<Vec<String>> {
     let mut stmt = conn.prepare(
         "SELECT id FROM orders_visible WHERE status = 'active' ORDER BY queue_position, code",
+    )?;
+    let ids = stmt
+        .query_map([], |r| r.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ids)
+}
+
+/// 用户看到的队列顺序：有效置顶在前，普通在后；两组内部都按 `queue_position`。
+///
+/// `move_order` 的下标来自这个列表——拖拽发生在界面上，界面显示的就是这个顺序。
+/// 用「位置顺序」当下标基准会让置顶订单在第一屏的位置与实际位置错位。
+pub fn display_ids(conn: &Connection) -> AppResult<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT id FROM orders_visible
+          WHERE status = 'active'
+          ORDER BY (pinned_at IS NOT NULL AND archived_at IS NULL) DESC, queue_position, code",
     )?;
     let ids = stmt
         .query_map([], |r| r.get::<_, String>(0))?
@@ -134,7 +153,7 @@ pub fn move_order(conn: &mut Connection, input: MoveInput) -> AppResult<QueueSna
         )));
     }
 
-    let mut ids = active_ids(&tx)?;
+    let mut ids = display_ids(&tx)?;
     let index = ids
         .iter()
         .position(|id| id == &input.order_id)
@@ -152,6 +171,22 @@ pub fn move_order(conn: &mut Connection, input: MoveInput) -> AppResult<QueueSna
     }
 
     let target = input.to_index.clamp(0, ids.len() as i64 - 1) as usize;
+
+    // 分组边界：置顶与普通两组不能互相跨越，靠拖拽把置顶挤进普通组（或反过来）
+    // 会让「置顶始终在上方」这条展示规则失效。前端禁用把手只是礼貌，真正的
+    // 边界在这里——`move_order` 收的是目标下标，直接调用同样要挡住。
+    let pinned_block = crate::domain::orders::pinned_count(&tx)? as usize;
+    let crosses = if index < pinned_block {
+        target >= pinned_block
+    } else {
+        target < pinned_block
+    };
+    if crosses {
+        return Err(AppError::invalid(
+            "置顶订单与普通订单不能互相跨越：请先取消置顶，或在各自分组内调整顺序",
+        ));
+    }
+
     if target != index {
         let moved = ids.remove(index);
         ids.insert(target, moved);
@@ -169,7 +204,7 @@ pub fn move_order(conn: &mut Connection, input: MoveInput) -> AppResult<QueueSna
 
 /// 相对移动：上移/下移的共用实现，供命令层与 UI 的键盘操作使用。
 pub fn shift(conn: &mut Connection, order_id: &str, expected_revision: i64, delta: i64) -> AppResult<QueueSnapshot> {
-    let ids = active_ids(conn)?;
+    let ids = display_ids(conn)?;
     let index = ids
         .iter()
         .position(|id| id == order_id)

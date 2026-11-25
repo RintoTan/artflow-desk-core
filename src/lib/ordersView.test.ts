@@ -5,6 +5,7 @@ import {
   densityClass,
   dropIndex,
   filterOrders,
+  isPinned,
   matchesQuery,
   matchesSource,
   riskBadge,
@@ -187,5 +188,45 @@ describe("风险与工作状态筛选", () => {
   it("搜索也会匹配来源", () => {
     const a = order({ id: "a", title: "双人插画", source: "B站工坊" });
     expect(matchesQuery(a, "b站")).toBe(true);
+  });
+});
+
+describe("置顶分组", () => {
+  const pin = "2026-11-25T10:00:00+08:00";
+
+  it("有效置顶排在普通订单之前，两组内部仍按队列位置", () => {
+    const list = [
+      order({ id: "a", queuePosition: 0 }),
+      order({ id: "b", queuePosition: 1, pinnedAt: pin }),
+      order({ id: "c", queuePosition: 2 }),
+      order({ id: "d", queuePosition: 3, pinnedAt: pin }),
+    ];
+    expect(filterOrders(list).map((item) => item.id)).toEqual(["b", "d", "a", "c"]);
+  });
+
+  it("pinnedAt 非空但订单已完成，不算有效置顶", () => {
+    const done = order({ id: "done", status: "complete", pinnedAt: pin, queuePosition: 9 });
+    expect(isPinned(done)).toBe(false);
+    // 终态订单仍按原来的「更新时间倒序」排在活动订单之后
+    expect(filterOrders([done, order({ id: "active" })]).map((item) => item.id)).toEqual([
+      "active",
+      "done",
+    ]);
+  });
+
+  it("pinnedAt 非空但已归档，不算有效置顶", () => {
+    expect(isPinned(order({ id: "x", pinnedAt: pin, archivedAt: "2026-11-24T00:00:00+08:00" }))).toBe(
+      false,
+    );
+  });
+
+  it("排序不修改传入数组", () => {
+    const list = [
+      order({ id: "a", queuePosition: 0 }),
+      order({ id: "b", queuePosition: 1, pinnedAt: pin }),
+    ];
+    const snapshot = list.map((item) => item.id);
+    filterOrders(list);
+    expect(list.map((item) => item.id)).toEqual(snapshot);
   });
 });

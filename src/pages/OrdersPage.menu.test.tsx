@@ -210,6 +210,7 @@ describe("订单右键菜单", () => {
     await screen.findByRole("menu", { name: "订单操作" });
     expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
       "打开订单",
+      "置顶",
       "取消订单…",
     ]);
   });

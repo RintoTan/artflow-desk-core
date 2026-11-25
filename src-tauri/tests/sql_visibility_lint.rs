@@ -105,6 +105,21 @@ const EXEMPTIONS: &[Exemption] = &[
         kind: Kind::MigrationSchema,
         why: "v9 重建回收站视图，同上",
     },
+    // v13 加 pinned_at 后同样要重建（列冻结），与 v9 同理，单独登记。
+    Exemption {
+        file: "store/migrations/v13.rs",
+        needle: "CREATE VIEW orders_visible  AS SELECT * FROM orders  WHERE deleted_at IS NULL;",
+        lines: 1,
+        kind: Kind::MigrationSchema,
+        why: "v13 重建可见性视图，让 pinned_at 在视图里可见",
+    },
+    Exemption {
+        file: "store/migrations/v13.rs",
+        needle: "CREATE VIEW orders_trashed  AS SELECT * FROM orders  WHERE deleted_at IS NOT NULL;",
+        lines: 1,
+        kind: Kind::MigrationSchema,
+        why: "v13 重建回收站视图，同上",
+    },
     Exemption {
         file: "backup/restore.rs",
         needle: "SELECT code FROM orders\"",
@@ -620,11 +635,12 @@ fn historical_migrations_are_untouched_snapshots() {
             .unwrap()
             .to_string_lossy()
             .replace('\\', "/");
-        // v8 引入可见性视图、v9 因加列重建它们：两者都必须读基表。
+        // v8 引入可见性视图、v9 与 v13 因加列重建它们：三者都必须读基表。
         if !rel.starts_with("store/migrations/")
             || rel.ends_with("mod.rs")
             || rel.ends_with("v8.rs")
             || rel.ends_with("v9.rs")
+            || rel.ends_with("v13.rs")
         {
             continue;
         }

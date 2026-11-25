@@ -103,6 +103,8 @@ fn build_app() -> Result<tauri::App, String> {
             commands::orders::list_orders,
             commands::orders::order_archive,
             commands::orders::order_unarchive,
+            commands::orders::order_pin,
+            commands::orders::order_unpin,
             commands::orders::get_order,
             commands::orders::list_order_events,
             commands::orders::list_clients,

@@ -251,7 +251,7 @@ pub fn delete_order(conn: &mut Connection, order_id: &str) -> AppResult<DeletedO
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     visibility::require_visible_order(&tx, order_id)?;
     let changed = tx.execute(
-        "UPDATE orders SET deleted_at = ?2, deleted_batch = ?3
+        "UPDATE orders SET deleted_at = ?2, deleted_batch = ?3, pinned_at = NULL
           WHERE id = ?1 AND deleted_at IS NULL",
         params![order_id, now, batch],
     )?;
@@ -290,7 +290,8 @@ pub fn delete_client(conn: &mut Connection, client_id: &str) -> AppResult<Delete
     )?;
 
     tx.execute(
-        "UPDATE orders SET deleted_batch = ?2, deleted_at = COALESCE(deleted_at, ?3)
+        "UPDATE orders SET deleted_batch = ?2, deleted_at = COALESCE(deleted_at, ?3),
+                pinned_at = NULL
           WHERE client_id = ?1",
         params![client_id, batch, now],
     )?;
@@ -373,7 +374,7 @@ pub fn restore_order(conn: &mut Connection, order_id: &str) -> AppResult<Restore
     }
 
     let changed = tx.execute(
-        "UPDATE orders SET deleted_at = NULL, deleted_batch = NULL
+        "UPDATE orders SET deleted_at = NULL, deleted_batch = NULL, pinned_at = NULL
           WHERE id = ?1 AND deleted_at IS NOT NULL",
         [order_id],
     )?;
@@ -416,7 +417,7 @@ pub fn restore_client(conn: &mut Connection, client_id: &str) -> AppResult<Resto
     assert_client_orders_in_batch(&tx, client_id, &batch)?;
 
     let orders_restored = tx.execute(
-        "UPDATE orders SET deleted_at = NULL, deleted_batch = NULL
+        "UPDATE orders SET deleted_at = NULL, deleted_batch = NULL, pinned_at = NULL
           WHERE client_id = ?1 AND deleted_batch = ?2",
         params![client_id, batch],
     )?;

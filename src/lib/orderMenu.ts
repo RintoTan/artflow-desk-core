@@ -8,14 +8,32 @@
  * 顺序固定，与详情里的操作栏一致：打开在最上，其余按生命周期排列。
  */
 
-import { api, newRequestId, type Capabilities, type OrderView } from "../bridge/commands";
+import { api, newRequestId, type OrderView } from "../bridge/commands";
+import { isPinned } from "./ordersView";
 
-export type OrderMenuAction = "open" | "undo" | "complete" | "cancel" | "reopen";
+export type OrderMenuAction =
+  | "open"
+  | "pin"
+  | "unpin"
+  | "undo"
+  | "complete"
+  | "cancel"
+  | "reopen";
 
-const ORDER: OrderMenuAction[] = ["open", "undo", "complete", "cancel", "reopen"];
+const ORDER: OrderMenuAction[] = [
+  "open",
+  "pin",
+  "unpin",
+  "undo",
+  "complete",
+  "cancel",
+  "reopen",
+];
 
 export const ORDER_MENU_LABEL: Record<OrderMenuAction, string> = {
   open: "打开订单",
+  pin: "置顶",
+  unpin: "取消置顶",
   undo: "撤销开工",
   complete: "完成",
   cancel: "取消订单…",
@@ -47,11 +65,18 @@ export const LIFECYCLE_CONFIRM: Record<
  * 不具备条件的项**不出现**，而不是灰一片：右键菜单是就地操作的入口，
  * 一排禁用项只会让人以为「这里本来就能做，只是现在不行」。
  */
-export function orderMenuActions(caps: Capabilities): OrderMenuAction[] {
+export function orderMenuActions(order: OrderView): OrderMenuAction[] {
+  const caps = order.capabilities;
+  const pinnable = order.status === "active" && !order.archivedAt;
   return ORDER.filter((action) => {
     switch (action) {
       case "open":
         return true;
+      // 置顶只对「进行中且未归档」的订单开放；恰好置顶中的才给「取消置顶」。
+      case "pin":
+        return pinnable && !isPinned(order);
+      case "unpin":
+        return isPinned(order);
       case "undo":
         return caps.canUndoStartWork;
       case "complete":

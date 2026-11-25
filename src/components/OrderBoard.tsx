@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 
 import type { OrderView, TemplateView } from "../bridge/commands";
-import { riskBadge } from "../lib/ordersView";
+import { isPinned, riskBadge } from "../lib/ordersView";
+import PinBadge from "./PinBadge";
 import { TruncatedTitle } from "./TitleTooltip";
 
 type Props = {
@@ -218,7 +219,10 @@ export default function OrderBoard({
                 </span>
                 <span className="flat-card-line flat-card-foot">
                   <span className="flat-card-date">{formatDate(order.plannedDeliveryDate)}</span>
-                  <span className="muted flat-card-code">{order.code}</span>
+                  <span className="muted flat-card-code">
+                    {order.code}
+                    {isPinned(order) && <PinBadge />}
+                  </span>
                 </span>
               </button>
             </article>

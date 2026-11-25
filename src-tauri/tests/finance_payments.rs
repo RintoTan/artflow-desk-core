@@ -121,7 +121,9 @@ fn v11_upgrades_to_v12_with_the_kind_triggers() {
     let ctx = Ctx::new();
     let conn = ctx.conn();
     let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
-    assert_eq!(version, 12);
+    // 版本号跟着 APP_SCHEMA_VERSION 走：这条用例要证明的是「v11 的库能沿链升上来、
+    // 且 v12 建的触发器都在」，不是把某个具体数字钉死。
+    assert_eq!(version, minidesk::store::migrations::APP_SCHEMA_VERSION);
     for trigger in [
         "payment_records_kind_match_insert",
         "payment_records_kind_match_update",
