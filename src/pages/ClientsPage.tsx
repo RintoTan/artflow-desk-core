@@ -22,6 +22,7 @@ import {
   type ClientView,
   type OrderView,
 } from "../bridge/commands";
+import EmptyState from "../components/EmptyState";
 
 type Draft = { displayName: string; contact: string; note: string };
 
@@ -488,7 +489,7 @@ export default function ClientsPage() {
 
         {clients.length === 0 ? (
           <div className="empty">
-            <p>还没有客户档案。</p>
+            <EmptyState title="还没有客户档案" />
             <p className="muted">新建订单时也可以直接创建客户。</p>
           </div>
         ) : visibleClients.length === 0 ? (
@@ -809,7 +810,7 @@ export default function ClientsPage() {
               </header>
 
               {clientOrderGroups.every((group) => group.items.length === 0) ? (
-                <p className="muted">这位客户还没有关联订单。</p>
+                <EmptyState inline title="这位客户还没有关联订单" />
               ) : (
                 clientOrderGroups.map((group) => (
                   <div className="client-order-group" key={group.key}>

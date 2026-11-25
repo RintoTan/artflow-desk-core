@@ -61,6 +61,12 @@
   --control-h-sm: 28px;
   /* 分段控件与紧凑工具条按钮：比 sm 高一档，比标准矮一档 */
   --control-h-dense: 30px;
+  /* 五档字号：辅助 / 正文 / 表单与列表 / 模块标题 / 页面标题 */
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --fs-page: 19px;
   --shadow: 0 1px 2px rgba(22, 40, 60, 0.05), 0 8px 24px rgba(22, 40, 60, 0.05);
 
   font-family: "PingFang SC", "Hiragino Sans GB", "Source Han Sans SC", "Noto Sans SC",
@@ -620,6 +626,12 @@ code.mono {
 
 .btn-primary:hover:not(:disabled) {
   filter: brightness(0.92);
+}
+
+/* 弹窗内的提示条：留白收紧，语义与配色仍走 .notice 同一套 */
+.notice-inline {
+  margin: 0;
+  padding: 6px 10px;
 }
 
 .notice {
@@ -1700,14 +1712,10 @@ code.mono {
   color: var(--text-muted);
 }
 
-.modal-error {
-  margin: 12px 0 0;
-  padding: 9px 11px;
-  border-radius: var(--radius-sm);
-  background: var(--danger-soft);
-  color: var(--danger);
-  font-size: 12.5px;
-  line-height: 1.6;
+/* 提示条在弹窗里需要与上下内容拉开一点距离，语义与配色仍走 .notice */
+.modal-body + .notice-inline,
+.notice-inline {
+  margin-top: 12px;
 }
 
 .modal-actions {
@@ -5099,14 +5107,8 @@ dl.stat-row {
   gap: 12px;
 }
 
-.cal-refresh-error {
+.cal-refresh-notice {
   margin: 0;
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--warn);
-  background: var(--surface);
-  color: var(--text);
-  font-size: 12px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -7315,6 +7317,62 @@ dl.stat-row {
 
 .backup-danger {
   color: var(--danger);
+}
+
+/* 空状态：只表达"现在没有"，不承担加载中与失败 */
+.empty-state {
+  padding: 18px 12px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.empty-state-inline {
+  padding: 8px 0;
+  text-align: left;
+}
+
+.empty-state-title {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.empty-state-desc {
+  margin: 4px 0 0;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+
+.empty-state-action {
+  margin-top: 8px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.empty-state-inline .empty-state-action {
+  justify-content: flex-start;
+}
+
+/* 页面头部：只定标题与副标题的排版，布局交给页面原有外壳类 */
+.page-header-title {
+  margin: 0;
+  font-size: var(--fs-page);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.page-header-desc {
+  margin: 2px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 /* 置顶标记：跟着编号走，用中性色，不抢标题的视觉权重 */

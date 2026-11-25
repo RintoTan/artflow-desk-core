@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { createPortal } from "react-dom";
 
 import { popModal, pushModal, useIsTopModal } from "../lib/modalStack";
+import Notice from "./Notice";
 
 type Props = {
   open: boolean;
@@ -152,9 +153,9 @@ export default function ConfirmDialog({
         </div>
 
         {error && (
-          <p className="modal-error" role="alert">
+          <Notice variant="error" className="notice-inline">
             {error}
-          </p>
+          </Notice>
         )}
 
         <div className="modal-actions" aria-busy={locked}>

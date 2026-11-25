@@ -6,6 +6,7 @@ import CancelOrderDialog, { type CancelOrderPayload } from "../components/Cancel
 import CalendarGrid, { type ChipDragStart } from "../components/CalendarGrid";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ContextMenu, { type ContextMenuItem } from "../components/ContextMenu";
+import Notice from "../components/Notice";
 import OrderRail from "../components/OrderRail";
 import RescheduleDialog, { type ReschedulePlan } from "../components/RescheduleDialog";
 import { topLayer } from "../lib/layers";
@@ -884,18 +885,18 @@ export default function CalendarPage() {
       </header>
 
       {refreshError !== null && (
-        <p className="cal-refresh-error" role="alert">
+        <Notice variant="error" className="cal-refresh-notice">
           刷新失败，仍显示上次读取的数据：{refreshError}
           <button type="button" onClick={() => setGeneration((n) => n + 1)}>
             重新尝试
           </button>
-        </p>
+        </Notice>
       )}
 
       {actionError !== null && pending === null && (
-        <p className="cal-refresh-error" role="alert">
+        <Notice variant="error" className="cal-refresh-notice">
           {actionError}
-        </p>
+        </Notice>
       )}
 
       <div className="cal-body">

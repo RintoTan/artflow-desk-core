@@ -16,6 +16,7 @@ import {
   type StatsRangeKey,
   type StatsReport,
 } from "../bridge/commands";
+import EmptyState from "../components/EmptyState";
 
 /** 单排容纳 12 个月所需的最小内容宽度：12×42 + 11×10 + 8 ≈ 622，留点余量取 640。 */
 const SINGLE_ROW_MIN_WIDTH = 640;
@@ -326,7 +327,7 @@ export default function StatsPage() {
         </header>
 
         {report.months.every((m) => m.created + m.completed + m.cancelled === 0) ? (
-          <p className="muted">这个区间内还没有任何事件。</p>
+          <EmptyState inline title="这个区间内还没有任何事件" />
         ) : (
           <>
             <div
@@ -468,7 +469,7 @@ export default function StatsPage() {
             <span className="muted">{events.length} 条</span>
           </header>
           {events.length === 0 ? (
-            <p className="muted">本月还没有完成事件。</p>
+            <EmptyState inline title="本月还没有完成事件" />
           ) : (
             <ul className="timeline">
               {events.map((event) => (

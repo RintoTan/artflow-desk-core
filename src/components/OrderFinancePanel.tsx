@@ -13,6 +13,7 @@ import {
 } from "../bridge/commands";
 import { formatYuan } from "../lib/money";
 import { KIND_LABEL, METHOD_LABEL, PlanEditor, RecordForm, RefundForm, VoidDialog } from "./FinanceForms";
+import EmptyState from "./EmptyState";
 
 /**
  * 订单详情里的财务区。
@@ -246,7 +247,7 @@ export default function OrderFinancePanel({ orderId, cancelled, onError, onNotic
         </div>
 
         {snapshot.planItems.length === 0 ? (
-          <p className="muted">还没有付款计划。没有计划也可以直接记录收款。</p>
+          <EmptyState inline title="还没有付款计划" description="没有计划也可以直接记录收款。" />
         ) : (
           <ul className="finance-plan-list">
             {snapshot.planItems.map((item) => (
@@ -274,7 +275,7 @@ export default function OrderFinancePanel({ orderId, cancelled, onError, onNotic
         </div>
 
         {snapshot.records.length === 0 ? (
-          <p className="muted">还没有收款记录。</p>
+          <EmptyState inline title="还没有收款记录" />
         ) : (
           <ul className="finance-record-list">
             {snapshot.records.map((record) => (
@@ -348,7 +349,7 @@ export default function OrderFinancePanel({ orderId, cancelled, onError, onNotic
         </div>
 
         {snapshot.refunds.length === 0 ? (
-          <p className="muted">还没有退款记录。</p>
+          <EmptyState inline title="还没有退款记录" />
         ) : (
           <ul className="finance-record-list">
             {snapshot.refunds.map((refund) => (

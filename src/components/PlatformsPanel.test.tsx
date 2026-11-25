@@ -77,7 +77,7 @@ beforeEach(() => {
 describe("接单平台与手续费", () => {
   it("没有任何平台时给空状态，不预置也不造假数据", async () => {
     await setup([]);
-    expect(screen.getByText("还没有任何平台。")).toBeTruthy();
+    expect(screen.getByText("还没有任何平台")).toBeTruthy();
     expect(screen.getByText(/程序不会替你预置平台/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "添加平台" })).toBeTruthy();
   });

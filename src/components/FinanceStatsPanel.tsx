@@ -10,6 +10,7 @@ import {
   type MonthCashFlow,
 } from "../bridge/commands";
 import { formatYuan } from "../lib/money";
+import EmptyState from "./EmptyState";
 
 /**
  * FIN-05 财务统计。
@@ -296,7 +297,7 @@ export default function FinanceStatsPanel({ range, onRangeChange }: Props) {
       <section className="finance-stats-block">
         <h3>年度净到账</h3>
         {annual.length === 0 ? (
-          <p className="muted">还没有可用于统计的年度收款。</p>
+          <EmptyState inline title="还没有可用于统计的年度收款" />
         ) : (
           <ul className="finance-year-list">
             {annual.map((year) => (
@@ -458,7 +459,7 @@ export default function FinanceStatsPanel({ range, onRangeChange }: Props) {
           客户按稳定身份归类，同名客户不会合并；这里是累计口径，不随上面的日期范围变化。
         </p>
         {report.byClient.length === 0 ? (
-          <p className="muted">还没有可统计的客户。</p>
+          <EmptyState inline title="还没有可统计的客户" />
         ) : (
           <div className="finance-table-wrap">
             <table className="finance-table">

@@ -189,7 +189,7 @@ describe("财务统计面板", () => {
       }),
     );
     expect(screen.getByText("当前没有已记录的收款流水。")).toBeTruthy();
-    expect(screen.getByText("还没有可用于统计的年度收款。")).toBeTruthy();
+    expect(screen.getByText("还没有可用于统计的年度收款")).toBeTruthy();
     expect(screen.getByText("没有可用于统计的有效订单金额。")).toBeTruthy();
   });
 

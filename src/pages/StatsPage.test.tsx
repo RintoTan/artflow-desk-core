@@ -230,7 +230,7 @@ describe("数据统计", () => {
       }),
     );
     await setup();
-    expect(screen.getByText("这个区间内还没有任何事件。")).toBeInTheDocument();
+    expect(screen.getByText("这个区间内还没有任何事件")).toBeInTheDocument();
   });
 
   it("默认进入业务统计，不加载财务统计", async () => {

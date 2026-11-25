@@ -180,7 +180,7 @@ describe("月度趋势图", () => {
   it("全零时显示空状态，不摆一个空图表", async () => {
     await setup(reportOf([bucket("2026-10", 0, 0, 0), bucket("2026-11", 0, 0, 0)]));
     expect(document.querySelector(".chart-frame")).toBeNull();
-    expect(screen.getByText("这个区间内还没有任何事件。")).toBeInTheDocument();
+    expect(screen.getByText("这个区间内还没有任何事件")).toBeInTheDocument();
   });
 
   it("每列可聚焦，可访问名带三个数字", async () => {

@@ -67,6 +67,7 @@ import {
   type OrderView,
   type UpdateDetailsInput,
 } from "../bridge/commands";
+import EmptyState from "../components/EmptyState";
 
 // ---------------------------------------------------------------- 展示辅助
 
@@ -1311,7 +1312,9 @@ export default function OrdersPage() {
       <aside className="orders-list panel">
         {visible.length === 0 ? (
           <div className="empty">
-            <p>{orders.length === 0 ? "还没有订单。" : "没有符合筛选条件的订单。"}</p>
+            <EmptyState
+              title={orders.length === 0 ? "还没有订单" : "没有符合筛选条件的订单"}
+            />
             {orders.length === 0 && <p className="muted">点击「新建」创建第一张委托。</p>}
           </div>
         ) : (
@@ -2796,7 +2799,7 @@ function ScheduleHistory({
         <span className="muted">{reschedules.length} 次改期</span>
       </header>
       {reschedules.length === 0 ? (
-        <p className="muted">还没有改期记录。</p>
+        <EmptyState inline title="还没有改期记录" />
       ) : (
         <ul className="timeline">
           {reschedules.map((event) => (
@@ -2839,7 +2842,7 @@ function EventTimeline({
         <span className="muted">{lifecycleEvents.length} 条事件</span>
       </header>
       {lifecycleEvents.length === 0 ? (
-        <p className="muted">还没有历史事件。</p>
+        <EmptyState inline title="还没有历史事件" />
       ) : (
         <ul className="timeline">
           {[...lifecycleEvents].reverse().map((event) => (

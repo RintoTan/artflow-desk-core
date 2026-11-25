@@ -7,6 +7,7 @@ import {
   type PlatformView,
 } from "../bridge/commands";
 import ConfirmDialog from "./ConfirmDialog";
+import EmptyState from "./EmptyState";
 
 /**
  * FIN-02：接单平台与默认手续费率。
@@ -322,7 +323,7 @@ export default function PlatformsPanel({ onError }: Props) {
         <p className="muted">正在读取平台配置…</p>
       ) : platforms.length === 0 ? (
         <div className="platform-empty">
-          <p>还没有任何平台。</p>
+          <EmptyState title="还没有任何平台" />
           <p className="muted">
             程序不会替你预置平台。按你实际接单的渠道添加即可；不添加也可以，未关联平台的收款仍然允许记录。
           </p>
