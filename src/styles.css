@@ -59,6 +59,8 @@
   /* 控件统一尺寸：同层级按钮/输入框高度一致 */
   --control-h: 34px;
   --control-h-sm: 28px;
+  /* 分段控件与紧凑工具条按钮：比 sm 高一档，比标准矮一档 */
+  --control-h-dense: 30px;
   --shadow: 0 1px 2px rgba(22, 40, 60, 0.05), 0 8px 24px rgba(22, 40, 60, 0.05);
 
   font-family: "PingFang SC", "Hiragino Sans GB", "Source Han Sans SC", "Noto Sans SC",
@@ -1331,6 +1333,23 @@ code.mono {
 
 .btn-danger:hover:not(:disabled) {
   filter: brightness(0.92);
+}
+
+/*
+ * 低视觉权重的危险操作：文字是危险色，容器不抢眼。
+ * 用在删除、取消订单这类不可逆动作上——它们应当一眼可辨是"危险"，
+ * 但不该在列表里跟主按钮抢注意力。
+ * 焦点环沿用 .btn:focus-visible（强调色实线），无需重复声明。
+ */
+.btn-quiet-danger {
+  background: transparent;
+  border-color: transparent;
+  color: var(--danger);
+}
+
+.btn-quiet-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: var(--danger-border);
 }
 
 .confirm-bar {
@@ -2676,7 +2695,7 @@ body:has(.row-dragging) {
 
 .segmented .btn,
 .segmented .filter-chip {
-  min-height: 30px;
+  min-height: var(--control-h-dense);
   padding: 4px 12px;
   border: 1px solid transparent;
   background: transparent;
@@ -3146,7 +3165,7 @@ body:has(.row-dragging) {
 }
 
 .board-col-over {
-  border-color: var(--accent, #5a7c9b);
+  border-color: var(--accent);
   background: var(--accent-soft, rgba(90, 124, 155, 0.12));
 }
 
@@ -3369,7 +3388,7 @@ body:has(.row-dragging) {
 }
 
 .order-table tbody tr:focus-visible {
-  outline: 2px solid var(--accent, #5a7c9b);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
@@ -3467,7 +3486,7 @@ body:has(.row-dragging) {
 }
 
 .tag-remove:hover {
-  color: var(--danger, #b4402f);
+  color: var(--danger);
 }
 
 .tag-editor {
@@ -3595,7 +3614,7 @@ dl.stat-row {
 }
 
 .drawer-close:focus-visible {
-  outline: 2px solid var(--accent, #5a7c9b);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -3617,7 +3636,7 @@ dl.stat-row {
 .board-card-move:hover,
 .board-card-move:focus-visible {
   color: var(--text);
-  border-color: var(--accent, #5a7c9b);
+  border-color: var(--accent);
   border-style: solid;
 }
 
@@ -3941,7 +3960,7 @@ dl.stat-row {
 }
 
 .search-clear:focus-visible {
-  outline: 2px solid var(--accent, #5a7c9b);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -4072,7 +4091,7 @@ dl.stat-row {
 }
 
 .stage-chip:hover { color: var(--text); border-color: var(--border-strong); }
-.stage-chip.is-on { color: var(--text); font-weight: 600; border-color: var(--accent, #5a7c9b); background: var(--accent-soft, rgba(90,124,155,.12)); }
+.stage-chip.is-on { color: var(--text); font-weight: 600; border-color: var(--accent); background: var(--accent-soft); }
 .stage-chip-count { font-variant-numeric: tabular-nums; opacity: .7; }
 
 .board-count { margin-left: auto; font-size: 12px; }
@@ -4111,7 +4130,7 @@ dl.stat-row {
 }
 
 .flat-card-open:hover { background: var(--surface-soft); }
-.flat-card-open:focus-visible { outline: 2px solid var(--accent, #5a7c9b); outline-offset: 2px; }
+.flat-card-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .flat-card-title {
   display: -webkit-box;
@@ -4178,7 +4197,7 @@ dl.stat-row {
 .filter-row select {
   flex: 1 1 auto;
   min-width: 0;
-  height: 30px;
+  height: var(--control-h-dense);
   border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--surface);
@@ -4200,11 +4219,11 @@ dl.stat-row {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent, #5a7c9b);
+  background: var(--accent);
   margin-left: 5px;
 }
 
-.btn-active { border-color: var(--accent, #5a7c9b); color: var(--text); }
+.btn-active { border-color: var(--accent); color: var(--text); }
 
 /* 生效条件行 */
 .cond-row {
@@ -4221,7 +4240,7 @@ dl.stat-row {
   align-items: center;
   gap: 4px;
   border: 1px solid var(--accent-soft, rgba(90,124,155,.25));
-  background: var(--accent-soft, rgba(90,124,155,.12));
+  background: var(--accent-soft);
   color: var(--text);
   border-radius: 999px;
   padding: 2px 6px 2px 9px;
@@ -4568,7 +4587,7 @@ dl.stat-row {
 }
 
 .timeline-refresh {
-  height: 30px;
+  height: var(--control-h-dense);
   padding: 0 10px;
   font-size: 12px;
 }
@@ -4745,7 +4764,7 @@ dl.stat-row {
   padding: 2px 5px 3px;
   border-radius: 0 0 4px 4px;
   background: var(--danger);
-  color: #fff;
+  color: var(--danger-contrast);
   font-size: 9.5px;
   line-height: 1;
 }
@@ -5606,7 +5625,7 @@ dl.stat-row {
 
 .cal-dialog-invalid {
   margin: 0;
-  color: var(--danger, #c0392b);
+  color: var(--danger);
   font-size: 11.5px;
 }
 
