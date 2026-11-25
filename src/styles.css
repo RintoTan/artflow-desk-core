@@ -2791,6 +2791,9 @@ body:has(.row-dragging) {
 
 /* 设置页分区标题：让「界面与工作环境 / 数据与维护」两段一眼可辨 */
 .settings-section-title {
+  /* 分区标题是分隔符，不是卡片：不跨列的话它会占掉第一个单元格，
+     让同组卡片整体右移一格——这正是设置页整页错位的原因。 */
+  grid-column: 1 / -1;
   margin: 18px 0 2px;
   font-size: var(--fs-lg);
   font-weight: 600;
@@ -9169,7 +9172,9 @@ dl.stat-row {
    之前它们只靠分隔线区分，看上去像另一套产品。 */
 .finance-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  /* 340px 在宽屏会排出四列，八块面板挤成竖条、数字换行。
+     财务是文字+金额密集内容，最多两列才读得下去。 */
+  grid-template-columns: repeat(auto-fit, minmax(560px, 1fr));
   gap: 12px;
   align-items: start;
 }
