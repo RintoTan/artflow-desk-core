@@ -397,7 +397,7 @@ export default function TemplatesPage() {
             <p>从左侧选择一个模板。</p>
           </section>
         ) : (
-          <section className="panel">
+          <section className="panel template-editor">
             <header className="panel-head">
               <div>
                 <h1 className="detail-title">{selected.name}</h1>

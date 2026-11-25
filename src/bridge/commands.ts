@@ -380,11 +380,26 @@ export type SkipInput = LifecycleInput & {
 };
 
 /** 把后端结构化错误转成可读中文，不做字符串猜测。 */
+/**
+ * 业务错误码：`message` 本身就是写给用户的一句话。
+ *
+ * 在它后面再补一个 `（INVALID）` 只会让人以为出了技术故障——
+ * "最多只能置顶 5 个订单，请先取消其他订单的置顶。（INVALID）" 里，
+ * 括号里的东西不解决任何问题，只是把内部枚举漏给了用户。
+ *
+ * 技术错误码（DB / IO / ZIP / SCHEMA / ENV / NUMBERING）反过来要保留：
+ * 它们回答的是「该找谁看」，藏起来会让故障无法定位。
+ */
+const BUSINESS_ERROR_CODES = new Set(["INVALID", "CONFLICT", "NOT_FOUND"]);
+
 export function describeError(error: unknown): string {
   if (typeof error === "object" && error !== null && "message" in error) {
     const candidate = error as Partial<AppError>;
     if (typeof candidate.message === "string") {
-      const code = typeof candidate.code === "string" ? candidate.code : "ERROR";
+      // 没有 code 的普通 Error（以及缺码的对象）就照原样显示：
+      // 硬补一个「（ERROR）」只是把不确定性写进界面。
+      const code = typeof candidate.code === "string" ? candidate.code.trim() : "";
+      if (code === "" || BUSINESS_ERROR_CODES.has(code)) return candidate.message;
       return `${candidate.message}（${code}）`;
     }
   }

@@ -4497,6 +4497,13 @@ dl.stat-row {
   font-variant-numeric: tabular-nums;
 }
 
+/* 流程模板的编辑卡片：内容是「名称 + 阶段列表 + 操作」，本身不需要铺满。
+   给一个上限，让它在宽窗口下保持一篇表单的宽度，而不是把输入框和列表拉长。 */
+.template-editor {
+  max-width: 760px;
+  width: 100%;
+}
+
 /* 客户右栏里的标签编辑器：窄列下改为纵向，不把按钮挤成小方块 */
 .client-col-side .tag-editor {
   flex-direction: column;
@@ -7510,7 +7517,9 @@ dl.stat-row {
 
 .about-modules {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  /* auto-fill 而不是 auto-fit：最后一行卡片不足时保留空轨道，
+     卡片维持同一宽度，不会被拉成整行。 */
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 10px;
 }
 
@@ -8823,9 +8832,12 @@ dl.stat-row {
   grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   gap: 10px 16px;
   margin: 0;
-  padding: 12px 14px;
+  /* 与业务统计的 .metric-card 用同一套内边距与圆角：
+     两处都是「一组指标」，边框语言不该有两种。
+     背景仍用 surface-soft——它嵌在面板里，比页面级卡片轻一档是合理的层次差异。 */
+  padding: 14px 16px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--surface-soft);
 }
 
