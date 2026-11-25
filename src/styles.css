@@ -2789,6 +2789,25 @@ body:has(.row-dragging) {
   max-width: 62ch;
 }
 
+/* 设置页分区标题：让「界面与工作环境 / 数据与维护」两段一眼可辨 */
+.settings-section-title {
+  margin: 18px 0 2px;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.settings-section-title:first-of-type {
+  margin-top: 0;
+}
+
+/* 成对模块：宽屏并排，窄屏自动落成单列 */
+.settings-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
 .settings-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -4507,6 +4526,11 @@ dl.stat-row {
 
 .template-editor input[type="text"] {
   max-width: 420px;
+}
+
+/* 收起状态：控件仍在，但不参与布局与 Tab 顺序；展开后功能一字不少 */
+.tag-editor-collapsed {
+  display: none;
 }
 
 /* 客户右栏里的标签编辑器：窄列下改为纵向，不把按钮挤成小方块 */
@@ -9113,6 +9137,15 @@ dl.stat-row {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+/* 财务统计的每一块都当面板用：与业务统计的 .stats-section 同一套边框、圆角、内边距。
+   之前它们只靠分隔线区分，看上去像另一套产品。 */
+.finance-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 12px;
+  align-items: start;
 }
 
 .finance-stats-block {

@@ -240,6 +240,8 @@ export default function SettingsPage() {
       />
 
       <div className="settings-grid">
+      {/* 分区一：界面与工作环境。四个模块同属一组，宽度由这一层的网格决定。 */}
+      <h2 className="settings-section-title">界面与工作环境</h2>
       <div className="settings-col">
       <section className="panel settings-module settings-appearance">
         <header className="module-head">
@@ -533,9 +535,12 @@ export default function SettingsPage() {
       </section>
       </div>
 
-      <BackupPanel onError={setError} />
-
-      <AttachmentMaintenancePanel onError={setError} />
+      {/* 分区二：数据与维护。备份/附件、平台/存储位置各自成对，不再逐个占满整行。 */}
+      <h2 className="settings-section-title">数据与维护</h2>
+      <div className="settings-pair">
+        <BackupPanel onError={setError} />
+        <AttachmentMaintenancePanel onError={setError} />
+      </div>
 
       <section className="panel settings-module settings-module-full">
         <h2>数据维护</h2>
@@ -557,9 +562,10 @@ export default function SettingsPage() {
         </Link>
       </section>
 
-      <PlatformsPanel onError={setError} />
-
-      <StorageLocationPanel onError={setError} />
+      <div className="settings-pair">
+        <PlatformsPanel onError={setError} />
+        <StorageLocationPanel onError={setError} />
+      </div>
 
       <DataResetPanel onError={setError} />
 

@@ -76,6 +76,8 @@ export default function ClientsPage() {
   /** 详情里的订单分组要用完整订单（含归档、计划交付），list_clients 的 brief 没有这些字段。 */
   const [orders, setOrders] = useState<OrderView[]>([]);
   const [newTagName, setNewTagName] = useState("");
+  /** 标签编辑器默认收起：右栏常驻的是「当前有哪些标签」，改标签是低频动作。 */
+  const [tagEditorOpen, setTagEditorOpen] = useState(false);
   const [tagBusy, setTagBusy] = useState(false);
   const [timezone, setTimezone] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -742,6 +744,14 @@ export default function ClientsPage() {
               <header className="panel-head compact">
                 <h2>标签</h2>
                 <span className="muted">手工维护，不自动生成等级</span>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  aria-expanded={tagEditorOpen}
+                  onClick={() => setTagEditorOpen((open) => !open)}
+                >
+                  {tagEditorOpen ? "收起" : "管理标签"}
+                </button>
               </header>
 
               <div className="tag-row">
@@ -764,7 +774,7 @@ export default function ClientsPage() {
                 ))}
               </div>
 
-              <div className="tag-editor">
+              <div className={tagEditorOpen ? "tag-editor" : "tag-editor tag-editor-collapsed"}>
                 <select
                   className="select-inline"
                   value=""

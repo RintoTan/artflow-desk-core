@@ -282,3 +282,33 @@ describe("客户页：标签与动态统计", () => {
     );
   });
 });
+
+describe("标签模块的收起与展开", () => {
+  it("默认收起：只展示已有标签，编辑器不占位", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText("¥1500")).toBeInTheDocument());
+
+    const editor = document.querySelector(".tag-editor");
+    expect(editor).not.toBeNull();
+    expect(editor?.className).toContain("tag-editor-collapsed");
+    expect(screen.getByRole("button", { name: "管理标签" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  });
+
+  it("展开后原有控件一个不少，再点收起恢复紧凑", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(screen.getByText("¥1500")).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "管理标签" }));
+    const toggle = screen.getByRole("button", { name: "收起" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText("添加已有标签")).toBeInTheDocument();
+    expect(screen.getByLabelText("新建标签名称")).toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(document.querySelector(".tag-editor")?.className).toContain("tag-editor-collapsed");
+  });
+});
