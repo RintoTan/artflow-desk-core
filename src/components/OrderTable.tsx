@@ -13,6 +13,8 @@ type Props = {
   orders: OrderView[];
   selectedId: string | null;
   onOpen: (orderId: string) => void;
+  /** 右键某一行：交给页面决定选中与菜单，表格本身不认识业务动作。 */
+  onContextMenu?: (event: React.MouseEvent, orderId: string) => void;
   formatMoney: (cents: number | null) => string;
   formatDate: (value: string | null) => string;
 };
@@ -55,6 +57,7 @@ export default function OrderTable({
   orders,
   selectedId,
   onOpen,
+  onContextMenu,
   formatMoney,
   formatDate,
 }: Props) {
@@ -134,6 +137,7 @@ export default function OrderTable({
               key={order.id}
               className={order.id === selectedId ? "row-active" : undefined}
               onClick={() => onOpen(order.id)}
+              onContextMenu={(event) => onContextMenu?.(event, order.id)}
               tabIndex={0}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {

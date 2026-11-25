@@ -1,10 +1,21 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { api, describeError, isConflict, type OrderView } from "../bridge/commands";
+import { api, describeError, isConflict, newRequestId, type OrderView } from "../bridge/commands";
+import CancelOrderDialog, { type CancelOrderPayload } from "../components/CancelOrderDialog";
 import CalendarGrid, { type ChipDragStart } from "../components/CalendarGrid";
+import ConfirmDialog from "../components/ConfirmDialog";
+import ContextMenu, { type ContextMenuItem } from "../components/ContextMenu";
 import OrderRail from "../components/OrderRail";
 import RescheduleDialog, { type ReschedulePlan } from "../components/RescheduleDialog";
+import { topLayer } from "../lib/layers";
+import {
+  LIFECYCLE_CONFIRM,
+  ORDER_MENU_LABEL,
+  lifecycleCommand,
+  orderMenuActions,
+  type LifecycleCommand,
+} from "../lib/orderMenu";
 import {
   canReschedule,
   dropPlan,
@@ -47,6 +58,16 @@ export default function CalendarPage() {
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [generation, setGeneration] = useState(0);
+  /** 右键菜单：目标订单 + 指针位置（视口坐标）。 */
+  const [menu, setMenu] = useState<{ order: OrderView; x: number; y: number } | null>(null);
+  /** 需要二次确认的生命周期操作（完成 / 重新打开）。 */
+  const [pending, setPending] = useState<{
+    action: "complete" | "reopen";
+    order: OrderView;
+  } | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<OrderView | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [view, setView] = useState<CalendarView>("month");
   const [anchor, setAnchor] = useState<DayIndex | null>(null);
   /** 连续周行的起点（某周周一）与总周数；滚动到边界时向两侧扩展。 */
@@ -121,6 +142,8 @@ export default function CalendarPage() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (dragRef.current !== null) return;  // 拖动中的 Esc 交给拖动自己的处理
+      // 上面还有菜单时，这一次 Esc 属于它——一次按键只关一层。
+      if (topLayer() !== null) return;
       clearFocus();
     };
     document.addEventListener("keydown", onKey);
@@ -422,6 +445,63 @@ export default function CalendarPage() {
     },
     [navigate],
   );
+
+  /**
+   * 右键订单条：选中它，再弹菜单。
+   *
+   * 日历页没有详情抽屉，选中即「当前订单」；菜单里的操作直接作用于这一条，
+   * 不需要先跳到订单页——否则日历上的右键就退化成「另一次双击」。
+   */
+  function openOrderMenu(event: React.MouseEvent, orderId: string) {
+    event.preventDefault();
+    event.stopPropagation();
+    const order = orders?.find((item) => item.id === orderId);
+    if (!order) return;
+    setSelectedOrderId(orderId);
+    setActionError(null);
+    setMenu({ order, x: event.clientX, y: event.clientY });
+  }
+
+  async function runCommand(action: LifecycleCommand, order: OrderView) {
+    setBusy(true);
+    setActionError(null);
+    try {
+      await lifecycleCommand(action, order);
+      setGeneration((n) => n + 1);
+    } catch (error) {
+      const message = describeError(error);
+      setActionError(message);
+      throw error instanceof Error ? error : new Error(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function menuItems(order: OrderView): ContextMenuItem[] {
+    return orderMenuActions(order.capabilities).map((action) => ({
+      id: action,
+      label: ORDER_MENU_LABEL[action],
+      danger: action === "cancel",
+      onSelect: () => {
+        setMenu(null);
+        if (action === "open") {
+          navigate(`/orders?orderId=${order.id}`);
+          return;
+        }
+        if (action === "cancel") {
+          setActionError(null);
+          setCancelTarget(order);
+          return;
+        }
+        if (action === "undo") {
+          void runCommand("undo", order).catch(() => {});
+          return;
+        }
+        setActionError(null);
+        setPending({ action, order });
+      },
+    }));
+  }
 
   function openKeyboardDialog(order: OrderView) {
     if (!canReschedule(order)) return;
@@ -796,6 +876,12 @@ export default function CalendarPage() {
         </p>
       )}
 
+      {actionError !== null && pending === null && (
+        <p className="cal-refresh-error" role="alert">
+          {actionError}
+        </p>
+      )}
+
       <div className="cal-body">
         <OrderRail
           orders={orders}
@@ -863,6 +949,7 @@ export default function CalendarPage() {
             onSelectOrder={selectOrder}
             onReschedule={openKeyboardDialog}
             onChipPointerDown={startDrag}
+            onOrderContextMenu={openOrderMenu}
             onPickDay={pickDay}
           />
           </div>
@@ -917,6 +1004,61 @@ export default function CalendarPage() {
           setDialogError(null);
         }}
         onConfirm={confirmReschedule}
+      />
+
+      {menu !== null && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={menuItems(menu.order)}
+          onClose={() => setMenu(null)}
+        />
+      )}
+
+      <ConfirmDialog
+        open={pending !== null}
+        title={pending ? LIFECYCLE_CONFIRM[pending.action].title : ""}
+        confirmLabel={pending ? LIFECYCLE_CONFIRM[pending.action].confirmLabel : ""}
+        busy={busy}
+        error={actionError}
+        onCancel={() => {
+          if (busy) return;
+          setPending(null);
+          setActionError(null);
+        }}
+        onConfirm={async () => {
+          if (!pending) return;
+          try {
+            await runCommand(pending.action, pending.order);
+            setPending(null);
+          } catch {
+            /* 错误已在对话框内显示，保持打开让用户可以重试或取消 */
+          }
+        }}
+      >
+        <p>{pending ? LIFECYCLE_CONFIRM[pending.action].detail : ""}</p>
+      </ConfirmDialog>
+
+      <CancelOrderDialog
+        open={cancelTarget !== null}
+        orderId={cancelTarget?.id ?? null}
+        orderCode={cancelTarget?.code ?? ""}
+        orderTitle={cancelTarget?.title ?? ""}
+        currentStageTitle={cancelTarget?.currentStageTitle ?? null}
+        expectedRevision={cancelTarget?.revision ?? 0}
+        busy={busy}
+        newRequestId={() => newRequestId("cancel")}
+        onCancel={() => setCancelTarget(null)}
+        onConfirm={async (payload: CancelOrderPayload) => {
+          setBusy(true);
+          try {
+            await api.cancelOrder(payload);
+            setCancelTarget(null);
+            setGeneration((n) => n + 1);
+          } finally {
+            setBusy(false);
+          }
+        }}
       />
     </div>
   );

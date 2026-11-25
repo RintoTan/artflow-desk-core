@@ -211,6 +211,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | 时间 | 事件存真实时间点（含时区偏移），计划日期是纯日历日期 | 改期与「实际何时做的」是两件事 |
 | 代际 | 迁移/恢复都新建 `generations/gen-<uuid>/`，写完原子切换 `state/active.json` | 失败不动现有数据，见 [DATA-SAFETY.md](DATA-SAFETY.md) |
 | 退出 | Tauri 的 `ExitRequested` 在最后一个窗口销毁后才发出；闸门只在「窗口还在 + 应用级退出」时拦截 | 无条件拦截会留下无窗口的孤儿进程 |
+| 浮层 | 模态走 `lib/modalStack`；右键菜单这类非模态浮层走 `lib/layers` 的层级栈，Esc 只交给最上层 | 两者语义不同：模态要接管焦点与交互，菜单只是临时遮挡；混用会连带改掉页面快捷键与退出排队 |
 | 日志 | `logs/app.log`（1 MiB 轮转）+ panic hook + UI ready 回执 | release 版无控制台，`println!` 不可见 |
 
 ## 关键技术约束
@@ -226,7 +227,13 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 7. **打包不要带上开发 CLI**（`minidesk-probe` / `attachments-probe` / `qa_seed`）。它们是测试依赖，只能从打包配置里排除，不能删源码。
 8. **子进程退出是异步的**：Windows 冒烟测试判定残留要给收敛窗口（15 秒），固定 800 ms 会误报。
 9. **单个数据目录只允许一个实例**（`.write.lock`）。第二个实例提示后退出，不聚焦已有窗口——已知取舍。
-10. **同一类数据 ≠ 同一个交互模块**。工作台全览时间线（`DashboardPage` / `ProjectTimeline` / `lib/timeline`）与日历排单（`CalendarPage` / `CalendarGrid`）都画订单日期，但前者只读全览、后者可编辑排期，**二者独立实现，不得合并、不得互相复用状态机与布局计算**。为其中一个改需求时，不允许"顺手"改动另一个的组件、`.cal-*` 规则、断点、sticky / overflow / z-index 或改期链路；`styles.css` 是共享文件，各自只改自己的命名空间（`.timeline-*` / `.cal-*`）。若发现某段代码被两者共用，先停下评估影响面，不得自行重构。
+10. **macOS 的 Dock「退出」拦不住，这是框架边界而非疏漏**。tao 0.37.2 的 AppDelegate 只实现
+   `applicationWillTerminate:`，没有 `applicationShouldTerminate:`；而 `RunEvent::ExitRequested`
+   只在「最后一个窗口销毁」或 `app.exit()` 时发出。Dock 右键退出、活动监视器退出、`osascript quit`
+   都走 AppKit 的 `terminate:`，直接进 `willTerminate` → 进程结束，不产生 `ExitRequested`。
+   要拦下来只能替换或方法交换 tao 的私有 `TaoAppDelegateParent`，属于未经验证的高风险改动，**未采用**。
+   当前 Cmd+Q、顶部菜单退出、红色关闭按钮都有未保存保护；Dock 退出没有。
+11. **同一类数据 ≠ 同一个交互模块**。工作台全览时间线（`DashboardPage` / `ProjectTimeline` / `lib/timeline`）与日历排单（`CalendarPage` / `CalendarGrid`）都画订单日期，但前者只读全览、后者可编辑排期，**二者独立实现，不得合并、不得互相复用状态机与布局计算**。为其中一个改需求时，不允许"顺手"改动另一个的组件、`.cal-*` 规则、断点、sticky / overflow / z-index 或改期链路；`styles.css` 是共享文件，各自只改自己的命名空间（`.timeline-*` / `.cal-*`）。若发现某段代码被两者共用，先停下评估影响面，不得自行重构。
 
 ## 已采纳的技术结论
 

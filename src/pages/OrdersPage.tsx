@@ -14,13 +14,22 @@ import FilterMenu from "../components/FilterMenu";
 import OrderTable from "../components/OrderTable";
 import ActionMenu from "../components/ActionMenu";
 import CancelOrderDialog, { type CancelOrderPayload } from "../components/CancelOrderDialog";
+import ContextMenu, { type ContextMenuItem } from "../components/ContextMenu";
 import OrderFinancePanel from "../components/OrderFinancePanel";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { ScheduleOverview } from "../components/ScheduleOverview";
 import { TruncatedTitle } from "../components/TitleTooltip";
 import { localDayIndex } from "../lib/scheduleBar";
+import {
+  LIFECYCLE_CONFIRM,
+  LIFECYCLE_DONE,
+  ORDER_MENU_LABEL,
+  lifecycleCommand,
+  orderMenuActions,
+} from "../lib/orderMenu";
 import { orderStatusLabel } from "../lib/orderStatus";
 import { workStateLabel } from "../lib/workState";
+import { topLayer } from "../lib/layers";
 import { useQaRefresh } from "../lib/qaRefresh";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import {
@@ -291,6 +300,8 @@ export default function OrdersPage() {
 
   const [creating, setCreating] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  /** 右键菜单：目标订单 + 指针位置（视口坐标）。 */
+  const [menu, setMenu] = useState<{ order: OrderView; x: number; y: number } | null>(null);
   const [manualNav, setManualNav] = useState<PendingNav | null>(null);
   // 键盘光标：与"当前打开的订单"分开，方向键只移动光标，Enter 才打开。
   const [cursorId, setCursorId] = useState<string | null>(null);
@@ -340,6 +351,8 @@ export default function OrdersPage() {
     if (!drawerOpen || viewMode === "cards") return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      // 上面还有菜单（右键菜单等）时，这一次 Esc 属于它——一次按键只关一层。
+      if (topLayer() !== null) return;
       // 新建态没有抽屉标题栏（也就没有关闭按钮），Esc 必须能退出新建，
       // 否则面板被隐藏、creating 却仍为 true，界面卡在半截。
       if (creating) {
@@ -402,7 +415,7 @@ export default function OrdersPage() {
   }, []);
 
   const selectOrder = useCallback(
-    async (orderId: string) => {
+    async (orderId: string): Promise<OrderView | null> => {
       setError(null);
       setNotice(null);
       setDraftError(null);
@@ -415,11 +428,12 @@ export default function OrdersPage() {
         setDetail(order);
         setEvents(history);
         setDraft(draftFrom(order));
-      setDateReason("");
         setDateReason("");
         setCreating(false);
+        return order;
       } catch (e) {
         setError(describeError(e));
+        return null;
       }
     },
     [],
@@ -915,6 +929,60 @@ export default function OrdersPage() {
     setCopySource({ order, attachmentCount });
   }
 
+  /**
+   * 右键：先把目标订单变成「当前订单」，再弹菜单。
+   *
+   * 顺序不能反——菜单里的操作全部走详情那套函数（`runLifecycle` 用的是 `detail`），
+   * 所以必须等 Detail 真的换成 B 之后再开菜单，否则会出现「菜单对着 B、操作打到 A」。
+   * 载入失败就干脆不弹：一个说不出对象的菜单，比没有菜单更危险。
+   */
+  async function openOrderMenu(event: React.MouseEvent, orderId: string) {
+    event.preventDefault();
+    event.stopPropagation();
+    // 有未保存的修改且要换到别的订单：走同一个守卫，不在这里静默丢弃。
+    if (dirty && orderId !== selectedId) {
+      setGuardError(null);
+      setManualNav({ kind: "order", orderId });
+      return;
+    }
+    const target = orderId === selectedId && detail ? detail : await selectOrder(orderId);
+    if (!target) return;
+    if (viewMode !== "cards") setDrawerOpen(true);
+    setMenu({ order: target, x: event.clientX, y: event.clientY });
+  }
+
+  /** 菜单项：只列当前订单真做得了的事，执行仍然落到各自的既有入口。 */
+  function menuItems(order: OrderView): ContextMenuItem[] {
+    return orderMenuActions(order.capabilities).map((action) => ({
+      id: action,
+      label: ORDER_MENU_LABEL[action],
+      danger: action === "cancel",
+      onSelect: () => {
+        setMenu(null);
+        if (action === "open") {
+          attemptSelect(order.id);
+          return;
+        }
+        if (action === "cancel") {
+          setCancelOpen(true);
+          return;
+        }
+        if (action === "undo") {
+          void runLifecycle(LIFECYCLE_DONE.undo, (o) => lifecycleCommand("undo", o));
+          return;
+        }
+        const copy = LIFECYCLE_CONFIRM[action];
+        setPendingAction({
+          title: copy.title,
+          detail: copy.detail,
+          confirmLabel: copy.confirmLabel,
+          run: () =>
+            runLifecycle(copy.done, (o) => lifecycleCommand(action, o)),
+        });
+      },
+    }));
+  }
+
   function attemptSelect(orderId: string) {
     if (orderId === selectedId && !creating) {
       // 看板/表格里点"已经选中的那张卡"也必须能把详情抽屉重新打开，
@@ -1336,6 +1404,7 @@ export default function OrdersPage() {
             orders={visible}
             templates={templates}
             onOpen={(orderId) => void attemptSelect(orderId)}
+            onContextMenu={(event, orderId) => void openOrderMenu(event, orderId)}
             formatMoney={formatMoney}
             // planned 日期本身就是 YYYY-MM-DD，不要再走带时间的格式化
             formatDate={(value) => (value ? value : "未排期")}
@@ -1345,6 +1414,7 @@ export default function OrdersPage() {
             orders={visible}
             selectedId={selectedId}
             onOpen={(orderId) => void attemptSelect(orderId)}
+            onContextMenu={(event, orderId) => void openOrderMenu(event, orderId)}
             formatMoney={formatMoney}
             formatDate={(value) => (value ? value : "未排期")}
           />
@@ -1864,6 +1934,15 @@ export default function OrdersPage() {
           />
         )}
       </ConfirmDialog>
+
+      {menu !== null && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={menuItems(menu.order)}
+          onClose={() => setMenu(null)}
+        />
+      )}
 
       <UnsavedChangesDialog
         open={dialogOpen}

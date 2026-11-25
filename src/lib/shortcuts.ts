@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import { topLayer } from "./layers";
 import { topModal } from "./modalStack";
 
 export type PageShortcuts = {
@@ -46,6 +47,9 @@ export function usePageShortcuts(bindings: PageShortcuts, enabled = true): void 
       if (event.defaultPrevented || event.isComposing) return;
       // 任何模态（包括关窗确认）打开时，页面快捷键一律不执行。
       if (topModal() !== null) return;
+      // 右键菜单这类非模态浮层同样要独占键盘：开着菜单还让 ⌘N 之类穿透，
+      // 等于在用户看着一份菜单时替他打开了别的东西。
+      if (topLayer() !== null) return;
 
       const handler = ref.current;
       const mod = event.metaKey || event.ctrlKey;

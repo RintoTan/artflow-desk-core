@@ -43,6 +43,8 @@ type Props = {
   onOpenOrder: (id: string) => void;
   onReschedule: (order: OrderView) => void;
   onChipPointerDown: (payload: ChipDragStart) => void;
+  /** 右键订单条：与表格/看板一致，页面负责选中与菜单。 */
+  onOrderContextMenu?: (event: React.MouseEvent, orderId: string) => void;
   onPickDay: (day: DayIndex) => void;
 };
 
@@ -61,12 +63,14 @@ function Chip({
   onChipPointerDown,
   selected,
   onSelect,
+  onOrderContextMenu,
 }: {
   segment: Segment;
   previewed: boolean;
   focusedOrderId: string | null;
   selected: boolean;
   onSelect: (id: string) => void;
+  onOrderContextMenu?: (event: React.MouseEvent, orderId: string) => void;
   onOpenOrder: (id: string) => void;
   onReschedule: (order: OrderView) => void;
   onChipPointerDown: (payload: ChipDragStart) => void;
@@ -95,6 +99,7 @@ function Chip({
       data-kind={kind}
       data-mode={terminal ? "none" : mode}
       title={`${order.code} · ${order.title}（拖两端调整日期，拖中间整体移动）`}
+      onContextMenu={(event) => onOrderContextMenu?.(event, order.id)}
       aria-label={`${order.code} ${order.title}`}
       onClick={(event) => {
         // 拖动过就不当成点击；单击只选中，双击才进详情
@@ -189,6 +194,7 @@ export default function CalendarGrid({
   onOpenOrder,
   onReschedule,
   onChipPointerDown,
+  onOrderContextMenu,
   onPickDay,
 }: Props) {
   const laneCount = metrics.lanes;
@@ -360,6 +366,7 @@ export default function CalendarGrid({
                 onOpenOrder={onOpenOrder}
                 onReschedule={onReschedule}
                 onChipPointerDown={onChipPointerDown}
+                onOrderContextMenu={onOrderContextMenu}
               />
             ))}
 

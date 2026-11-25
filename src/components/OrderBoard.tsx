@@ -9,6 +9,8 @@ type Props = {
   orders: OrderView[];
   templates: TemplateView[];
   onOpen: (orderId: string) => void;
+  /** 右键卡片：菜单由页面处理，看板只管把目标订单交出去。 */
+  onContextMenu?: (event: React.MouseEvent, orderId: string) => void;
   formatMoney: (cents: number | null) => string;
   formatDate: (value: string | null) => string;
 };
@@ -25,7 +27,14 @@ type StageFilter = { templateId: string; stageId: string } | null;
  * 阶段匹配用 (templateId, stageId)，**不用中文名**——不同模板可能有同名阶段。
  * 卡片只负责概览与打开详情，制作阶段操作在订单详情里。
  */
-export default function OrderBoard({ orders, templates, onOpen, formatMoney, formatDate }: Props) {
+export default function OrderBoard({
+  orders,
+  templates,
+  onOpen,
+  onContextMenu,
+  formatMoney,
+  formatDate,
+}: Props) {
   const [templateId, setTemplateId] = useState<"all" | string>("all");
   const [stage, setStage] = useState<StageFilter>(null);
 
@@ -175,7 +184,12 @@ export default function OrderBoard({ orders, templates, onOpen, formatMoney, for
       ) : (
         <div className="board-grid" role="list" aria-label="订单概览">
           {shown.map((order) => (
-            <article key={order.id} className="flat-card" role="listitem">
+            <article
+              key={order.id}
+              className="flat-card"
+              role="listitem"
+              onContextMenu={(event) => onContextMenu?.(event, order.id)}
+            >
               <button
                 type="button"
                 className="flat-card-open"
