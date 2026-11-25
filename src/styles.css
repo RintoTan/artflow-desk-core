@@ -4499,9 +4499,14 @@ dl.stat-row {
 
 /* 流程模板的编辑卡片：内容是「名称 + 阶段列表 + 操作」，本身不需要铺满。
    给一个上限，让它在宽窗口下保持一篇表单的宽度，而不是把输入框和列表拉长。 */
+/* 编辑卡片本身填满主工作区：限宽要加在「一行文字该有多长」上，
+   而不是加在卡片上——卡片变窄只会在右侧留出更大的空白。 */
 .template-editor {
-  max-width: 760px;
   width: 100%;
+}
+
+.template-editor input[type="text"] {
+  max-width: 420px;
 }
 
 /* 客户右栏里的标签编辑器：窄列下改为纵向，不把按钮挤成小方块 */
@@ -8408,8 +8413,21 @@ dl.stat-row {
   margin: 14px 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  /* 六项固定 3/2/1 列：auto-fit 在宽屏会排成 5 列，第六张孤零零落在第二行。 */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+}
+
+@media (max-width: 1100px) {
+  .reset-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .reset-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .reset-option {

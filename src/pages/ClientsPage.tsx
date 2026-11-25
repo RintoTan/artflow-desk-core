@@ -647,6 +647,65 @@ export default function ClientsPage() {
             </section>
             </div>
 
+              <section className="panel client-orders">
+                <header className="panel-head compact">
+                  <h2>关联订单</h2>
+                  <span className="muted">
+                    {clientOrderGroups.reduce((sum, group) => sum + group.items.length, 0)} 笔 · 含已归档
+                  </span>
+                </header>
+
+                {clientOrderGroups.every((group) => group.items.length === 0) ? (
+                  <EmptyState inline title="这位客户还没有关联订单" />
+                ) : (
+                  clientOrderGroups.map((group) => (
+                    <div className="client-order-group" key={group.key}>
+                      <h3 className="client-order-group-head">
+                        {group.label}
+                        <span className="muted">{group.items.length} 笔</span>
+                      </h3>
+                      {group.items.length === 0 ? (
+                        <p className="muted client-order-empty">暂无</p>
+                      ) : (
+                        <ul className="order-rows">
+                          {group.items.map((order) => (
+                            <li key={order.id}>
+                              <button
+                                type="button"
+                                className="order-row"
+                                onClick={() => navigate(`/orders?orderId=${encodeURIComponent(order.id)}`)}
+                              >
+                                <span className="order-row-title">
+                                  <code className="order-code">{order.code}</code> {order.title}
+                                </span>
+                                <span className="order-row-meta">
+                                  {orderStatusLabel(order.status)}
+                                  {order.status === "active"
+                                    ? ` · 当前阶段 ${order.currentStageTitle ?? "未开始"}`
+                                    : ""}
+                                  {order.plannedDeliveryDate ? ` · 交付 ${order.plannedDeliveryDate}` : " · 未排期"}
+                                </span>
+                                {order.archivedAt !== null && <span className="chip chip-archived">已归档</span>}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))
+                )}
+
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => navigate(`/orders?client=${encodeURIComponent(detail.client.id)}`)}
+                  >
+                    在订单信息中查看全部
+                  </button>
+                </div>
+              </section>
+
             <div className="client-col client-col-side">
             <section className="panel">
               <header className="panel-head compact">
@@ -801,64 +860,6 @@ export default function ClientsPage() {
             </div>
             </div>
 
-            <section className="panel client-orders">
-              <header className="panel-head compact">
-                <h2>关联订单</h2>
-                <span className="muted">
-                  {clientOrderGroups.reduce((sum, group) => sum + group.items.length, 0)} 笔 · 含已归档
-                </span>
-              </header>
-
-              {clientOrderGroups.every((group) => group.items.length === 0) ? (
-                <EmptyState inline title="这位客户还没有关联订单" />
-              ) : (
-                clientOrderGroups.map((group) => (
-                  <div className="client-order-group" key={group.key}>
-                    <h3 className="client-order-group-head">
-                      {group.label}
-                      <span className="muted">{group.items.length} 笔</span>
-                    </h3>
-                    {group.items.length === 0 ? (
-                      <p className="muted client-order-empty">暂无</p>
-                    ) : (
-                      <ul className="order-rows">
-                        {group.items.map((order) => (
-                          <li key={order.id}>
-                            <button
-                              type="button"
-                              className="order-row"
-                              onClick={() => navigate(`/orders?orderId=${encodeURIComponent(order.id)}`)}
-                            >
-                              <span className="order-row-title">
-                                <code className="order-code">{order.code}</code> {order.title}
-                              </span>
-                              <span className="order-row-meta">
-                                {orderStatusLabel(order.status)}
-                                {order.status === "active"
-                                  ? ` · 当前阶段 ${order.currentStageTitle ?? "未开始"}`
-                                  : ""}
-                                {order.plannedDeliveryDate ? ` · 交付 ${order.plannedDeliveryDate}` : " · 未排期"}
-                              </span>
-                              {order.archivedAt !== null && <span className="chip chip-archived">已归档</span>}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                ))
-              )}
-
-              <div className="actions">
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() => navigate(`/orders?client=${encodeURIComponent(detail.client.id)}`)}
-                >
-                  在订单信息中查看全部
-                </button>
-              </div>
-            </section>
 
 
           </>
