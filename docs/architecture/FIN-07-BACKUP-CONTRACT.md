@@ -105,7 +105,7 @@
 
 ## 7. 验收证据与边界
 
-- 自动化：`src-tauri/tests/finance_backup.rs`（14 例）、`src/components/BackupPanel.test.tsx`（4 例新增）。
+- 自动化：`src-tauri/tests/finance_backup.rs`（15 例）、`src/components/BackupPanel.test.tsx`（4 例新增）。
 - 构造夹具由正式迁移链建库 + 程序自身打包，证明**链路与规则**成立。
 - **未证明**：真实旧机器导出的同血统 ZIP 仍无样本；`legacy_restore_manual` 保持 ignored。
 - 已知构造边界：v10 的库不可能带财务数据升到 v11（v11 以三表为空为前提），

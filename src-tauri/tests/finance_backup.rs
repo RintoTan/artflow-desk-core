@@ -934,6 +934,73 @@ fn platform_backfill_failure_midway_keeps_active_generation() {
     assert!(recovery.exists(), "应保留失败现场供排查");
 }
 
+/// `state/` 写不进去 → 不切代际、现有数据不动。
+///
+/// `state/` 里放着编号高水位、`recovery/state.json` 与 `active.json`，三者走同一条
+/// 「先写、再原子切换」的路径。这条用例证明「前面全部通过、最后要落状态时失败」
+/// 不会留下半切换状态。把失败精确卡在 `active.json` 那一步、而不影响同目录的前两次写入，
+/// 在文件系统层面构造不出来——这一点报告里如实写明，不假装覆盖到了。
+#[cfg(unix)]
+#[test]
+fn state_write_failure_before_the_switch_keeps_the_previous_generation() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let src = open_at(&dir.path().join("src"), migrations::APP_SCHEMA_VERSION);
+    let o1 = new_order(&src, "AF-2026-4201", "备份里的订单");
+    {
+        let conn = src.open_db().unwrap();
+        platform(&conn, "p1", "米画师", Some(500), 0, 0);
+        record(
+            &conn,
+            Rec {
+                id: "r1",
+                order_id: &o1,
+                schedule_id: None,
+                kind: "full",
+                amount: 1000,
+                received_on: "2026-11-01",
+                platform_id: Some("p1"),
+                platform_name: Some("米画师"),
+                fee_rate_bp: Some(500),
+                fee: 5,
+                voided: None,
+                request_id: None,
+            },
+        );
+    }
+    let zip = dir.path().join("v12.zip");
+    backup(&src, &zip);
+
+    let dst_root = dir.path().join("dst");
+    let dst = open_at(&dst_root, migrations::APP_SCHEMA_VERSION);
+    new_order(&dst, "AF-2026-1020", "现有订单");
+    let generation_before = dst.active_generation().to_string();
+    // 句柄先打开：锁目录之后连打开都会失败，那就测不到「合并/切换」这一段了。
+    let watermarks = hw(&dst);
+
+    let state_dir = dst.layout().state_dir();
+    let original = std::fs::metadata(&state_dir).unwrap().permissions();
+    let mut locked = original.clone();
+    locked.set_mode(0o500);
+    std::fs::set_permissions(&state_dir, locked).unwrap();
+
+    let result = restore::restore(&dst, &watermarks, &zip, &migrations::production());
+
+    std::fs::set_permissions(&state_dir, original).unwrap();
+
+    let err = result.expect_err("状态落不下去时必须整次失败");
+    assert_eq!(err.code, "NUMBERING", "{} {}", err.code, err.message);
+    assert_eq!(
+        dst.active_generation(),
+        generation_before,
+        "失败不得切换活动代际"
+    );
+    let conn = dst.open_db().unwrap();
+    assert_eq!(count(&conn, "orders"), 1, "现有订单仍在");
+    assert_eq!(count(&conn, "payment_records"), 0, "备份里的流水没有落进来");
+}
+
 // ------------------------------------------------------------------ 工具
 
 fn rewrite_manifest<F: FnOnce(&mut serde_json::Value)>(source: &Path, target: &Path, edit: F) {
