@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -54,6 +54,11 @@ async function setup(rows: PlatformView[]) {
   const onError = vi.fn();
   render(<PlatformsPanel onError={onError} />);
   await waitFor(() => expect(platformsMock).toHaveBeenCalled());
+  // waitFor 只保证「接口被调用过」，不保证它 resolve 后的 setState 已经提交。
+  // 断言紧接着同步执行，在并发跑测试、CPU 抢占时会读到旧 DOM——这是本用例
+  // 偶发失败的原因，不是超时太短。用一次 act 把微任务队列与随之而来的渲染冲干净，
+  // 让 setup 返回时页面已经是稳定态。
+  await act(async () => {});
   return { onError };
 }
 
