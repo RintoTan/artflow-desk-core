@@ -187,6 +187,70 @@ describe("订单右键菜单", () => {
     await waitFor(() => expect(hoisted.getOrder).toHaveBeenCalledWith("o2"));
   });
 
+  it("默认卡片视图：右键订单行主体，菜单打开并同步详情", async () => {
+    // 不写 orders_view_mode，走默认视图
+    renderPage();
+    const rows = await screen.findAllByRole("button", { name: /第一张|第二张/ });
+    fireEvent.contextMenu(rows[1]!);
+
+    await screen.findByRole("menu", { name: "订单操作" });
+    await waitFor(() => expect(hoisted.getOrder).toHaveBeenCalledWith("o2"));
+    await waitFor(() => {
+      const detail = document.querySelector(".orders-detail");
+      expect(detail).not.toBeNull();
+      expect(within(detail as HTMLElement).getByText("AF-2026-0002")).toBeTruthy();
+    });
+  });
+
+  it("卡片视图的菜单项与其他视图一致", async () => {
+    renderPage();
+    const rows = await screen.findAllByRole("button", { name: /第一张|第二张/ });
+    fireEvent.contextMenu(rows[0]!);
+
+    await screen.findByRole("menu", { name: "订单操作" });
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "打开订单",
+      "取消订单…",
+    ]);
+  });
+
+  it("右键拖拽把手：原生菜单与自定义菜单都不出现", async () => {
+    renderPage();
+    const handle = await screen.findByRole("button", { name: "拖动 AF-2026-0001 调整队列位置" });
+
+    // 返回值 false 表示默认行为已被 preventDefault 拦下（WebView 原生菜单不会弹）
+    expect(fireEvent.contextMenu(handle)).toBe(false);
+    // 我们的菜单同样不该开——把手不是订单操作入口
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+  });
+
+  it("右键拖拽把手不去载入订单", async () => {
+    renderPage();
+    const handle = await screen.findByRole("button", { name: "拖动 AF-2026-0001 调整队列位置" });
+    // 卡片视图挂载时会自动载入一张，先清掉这笔，只看右键有没有新增读取
+    hoisted.getOrder.mockClear();
+
+    fireEvent.contextMenu(handle);
+
+    expect(hoisted.getOrder).not.toHaveBeenCalled();
+  });
+
+  it("右键不改变队列顺序", async () => {
+    renderPage();
+    const before = (await screen.findAllByRole("button", { name: /第一张|第二张/ })).map(
+      (row) => row.textContent,
+    );
+    fireEvent.contextMenu(
+      (await screen.findAllByRole("button", { name: /第一张|第二张/ }))[1]!,
+    );
+    await screen.findByRole("menu", { name: "订单操作" });
+
+    const after = screen
+      .getAllByRole("button", { name: /第一张|第二张/ })
+      .map((row) => row.textContent);
+    expect(after).toEqual(before);
+  });
+
   it("菜单开着时右键另一行：菜单换成新的目标，而不是先关再开", async () => {
     stored.orders_view_mode = "table";
     renderPage();

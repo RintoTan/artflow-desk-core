@@ -1293,6 +1293,16 @@ export default function OrdersPage() {
                     if (!dragging || !canReorder) return;
                     setHoverIndex(queueIndex);
                   }}
+                  onContextMenu={(event) => {
+                    // 把手的职责是调队列顺序，不是订单操作入口：连系统菜单一起挡掉，
+                    // 免得对着 ⠿ 弹出「重新加载 / 检查元素」这种没有任何用处的菜单。
+                    if ((event.target as Element).closest(".drag-handle")) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      return;
+                    }
+                    void openOrderMenu(event, order.id);
+                  }}
                   className={[
                     dragging?.orderId === order.id ? "row-dragging" : "",
                     dragging && hoverIndex === queueIndex && dragging.orderId !== order.id
