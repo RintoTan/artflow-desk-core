@@ -265,12 +265,14 @@
 | Tag / Release | `v0.1.2`，非草稿、非预发布 |
 | 发布提交 | `1935fb0`（tag 指向这个提交） |
 | master | 比 tag 多若干**纯文档**提交（审计/基线、README 重写、仓库整理），不重新打 tag |
-| macOS arm64 | `ArtFlow-Desk-Core-0.1.2-macos-arm64.zip`，6.5 MB，`db5fecd9…746bc1`，adhoc 未公证 |
+| macOS arm64 | `ArtFlow-Desk-Core-0.1.2-macos-arm64.zip`，6.5 MB，`4a9282a1…28a5`，adhoc 未公证 |
 | Windows x64 安装包 | `…-Setup.exe`，4.1 MB，`82fbd0e0…cffca` |
 | Windows x64 便携版 | `…-Portable.exe`，17 MB，`a590e081…7f716` |
 | 校验 | `SHA256SUMS.txt`，三件产物 `shasum -c` 通过 |
 
 **Windows 产物的证据边界**：由 GitHub Actions 原生 `windows-latest` 构建；Runner 上实际启动过两轮（退出码均为 0），启动日志 `identifier=dev.artflow.minidesk version=0.1.2 schema=v14 first_run=true`，共 11 项检查 0 失败。**没有在实体 Windows 机器上做安装与人工验收**，这一项记为未验证。
+
+**第三轮资产更新（2026-11-26 深夜）**：修复「已完成/已取消订单插进手动队列」后重建三件产物并覆盖 Release；截图补拍完成。
 
 **发布资产修正（2026-11-26 晚）**：macOS 包此前缺 `_CodeSignature`（`bundle.macOS` 没有 `signingIdentity`，`tauri build` 只留下 linker-signed 的二进制），Gatekeeper 报「已损坏」。已补 `"signingIdentity": "-"` 重新构建，`codesign --verify --deep --strict` 通过，zip 覆盖上传，哈希随之变更。
 

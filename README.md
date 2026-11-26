@@ -77,9 +77,9 @@ shasum -a 256 -c SHA256SUMS.txt
 
 | 文件 | SHA-256 |
 | --- | --- |
-| macOS arm64 zip | `db5fecd9c1984f3d6a104e76b5ff6c9b7620c4b30ee3102a8c527ec200746bc1` |
-| Windows Setup | `82fbd0e0fccb7df9ccc43252fe839f30f467ed610cb756c1b3d3892c2bbcffca` |
-| Windows Portable | `a590e081d92a42c143096ccbbb8c369ac11fc6617c97fcd2ab6544fc5597f716` |
+| macOS arm64 zip | `4a9282a1bfc99dcf1ecac348a7376a16d9c71cb3755a4b0248620280b3e128a5` |
+| Windows Setup | `be04dd737835a9f981e369b5ad914284e162ea50aa18505733235614bddb39a8` |
+| Windows Portable | `8b01f906eb629eeb3401724da8f718ffb0891eb7ad1730f45836cb532b06a01f` |
 
 ## 数据与隐私
 

@@ -18,9 +18,9 @@
 
 | 文件 | 字节 | SHA-256 |
 | --- | --- | --- |
-| `ArtFlow-Desk-Core-0.1.2-macos-arm64.zip` | 6,712,031 | `db5fecd9c1984f3d6a104e76b5ff6c9b7620c4b30ee3102a8c527ec200746bc1` |
-| `ArtFlowDesk-Core-Windows-v0.1.2-Production-Setup.exe` | 4,295,476 | `82fbd0e0fccb7df9ccc43252fe839f30f467ed610cb756c1b3d3892c2bbcffca` |
-| `ArtFlowDesk-Core-Windows-v0.1.2-Production-Portable.exe` | 17,362,944 | `a590e081d92a42c143096ccbbb8c369ac11fc6617c97fcd2ab6544fc5597f716` |
+| `ArtFlow-Desk-Core-0.1.2-macos-arm64.zip` | 6,711,914 | `4a9282a1bfc99dcf1ecac348a7376a16d9c71cb3755a4b0248620280b3e128a5` |
+| `ArtFlowDesk-Core-Windows-v0.1.2-Production-Setup.exe` | 4,297,447 | `be04dd737835a9f981e369b5ad914284e162ea50aa18505733235614bddb39a8` |
+| `ArtFlowDesk-Core-Windows-v0.1.2-Production-Portable.exe` | 17,362,944 | `8b01f906eb629eeb3401724da8f718ffb0891eb7ad1730f45836cb532b06a01f` |
 | `SHA256SUMS.txt` | 347 | 三件产物 `shasum -a 256 -c` 通过 |
 
 macOS 包内 `Contents/MacOS` 只有 `artflow-minidesk`（22,457,920 B 级别），无 `minidesk-probe` / `attachments-probe` / `qa_seed`；`Info.plist` 为 `dev.artflow.minidesk` / `0.1.2` / 最低 macOS 13.0；签名 `adhoc, runtime`，含 `_CodeSignature`，`codesign --verify --deep --strict` 通过；`TeamIdentifier=not set`（未公证）。
