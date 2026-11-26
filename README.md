@@ -32,6 +32,26 @@ macOS arm64 · Windows x64 · React · Tauri · Rust · SQLite
 | **数据安全** | SQLite + 代际目录；升级自动迁移并保留旧代际；备份前自动快照，恢复在隔离代际完成 |
 | **主题系统** | 浅色 / 深色 / 跟随系统，可调强调色与应用图标（Orbit / Layers / Wave） |
 
+## 界面
+
+| 工作台 | 订单卡片 |
+| --- | --- |
+| ![工作台](docs/assets/screenshots/0.1.2/01-dashboard.png) | ![订单卡片](docs/assets/screenshots/0.1.2/02-orders-cards.png) |
+
+| 看板 | 新建订单 |
+| --- | --- |
+| ![看板](docs/assets/screenshots/0.1.2/03-orders-board.png) | ![新建订单](docs/assets/screenshots/0.1.2/04-order-create.png) |
+
+| 客户管理（含参考图） | 数据统计 |
+| --- | --- |
+| ![客户管理](docs/assets/screenshots/0.1.2/05-clients.png) | ![数据统计](docs/assets/screenshots/0.1.2/06-stats.png) |
+
+| 版本信息 | 深色主题 |
+| --- | --- |
+| ![版本信息](docs/assets/screenshots/0.1.2/07-version.png) | ![深色看板](docs/assets/screenshots/0.1.2/08-orders-board-dark.png) |
+
+截图来自 QA 沙箱，数据为虚构测试数据；拍摄说明见 [SHOTS-0.1.2.md](docs/assets/screenshots/0.1.2/SHOTS-0.1.2.md)。
+
 ## 下载
 
 最新版本见 [Releases · v0.1.2](https://github.com/RintoTan/artflow-desk-core/releases/tag/v0.1.2)，每次发布附 `SHA256SUMS.txt`。
@@ -117,7 +137,6 @@ npm run tauri build -- --bundles app
 - macOS 为 adhoc 签名、未公证；Windows 未做代码签名。
 - Windows 产物由 CI 构建并在 Runner 上完成启动/退出冒烟，**尚未在实体 Windows 机器做安装与日常使用验收**。
 - 单机单用户，不含多端同步与协作。
-- 当前界面截图尚未按 0.1.2 重拍，因此本页暂不放置旧版截图，避免与当前版本不一致。
 
 ## 开发者与版权
 
