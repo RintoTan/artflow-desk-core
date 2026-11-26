@@ -102,6 +102,8 @@ vi.mock("../bridge/commands", async () => {
   );
   return {
     ...actual,
+    // 客户参考图面板在详情里，测试里给一个空列表即可
+    clientRefApi: { list: async () => [], import: async () => [], remove: async () => undefined },
     financeStatsApi: {
       ...actual.financeStatsApi,
       clientSummary: async () => ({

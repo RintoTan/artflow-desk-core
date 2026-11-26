@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { api, describeError } from "./bridge/commands";
 import UnsavedChangesDialog from "./components/UnsavedChangesDialog";
+import VersionDialog from "./components/VersionDialog";
 import { QaRefreshContext } from "./lib/qaRefresh";
 import { AppIconImage } from "./components/AppIconImage";
 import { NavIcon, type NavIconName } from "./components/NavIcon";
@@ -21,7 +22,6 @@ import {
   activeGuard,
   dirtyGuards,
   guardLabel,
-  useHasUnsavedDraft,
 } from "./lib/unsavedRegistry";
 
 type NavItem = {
@@ -79,11 +79,14 @@ export default function App() {
     clients: number;
     templates: number;
   } | null>(null);
+  // 侧栏底部显示的版本号：来自后端 status，取不到就先显示占位
+  const [appVersion, setAppVersion] = useState<string | null>(null);
   const [closeKind, setCloseKind] = useState<CloseKind | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
   const [closeBusy, setCloseBusy] = useState(false);
 
   const applyStatus = useCallback((status: Awaited<ReturnType<typeof api.status>>) => {
+    setAppVersion(status.appVersion);
     setQa(
       status.qaMode
         ? {
@@ -106,8 +109,10 @@ export default function App() {
       });
   }, [applyStatus]);
 
-  const hasDraft = useHasUnsavedDraft();
   const [themeTick, setThemeTick] = useState(0);
+  const [versionOpen, setVersionOpen] = useState(false);
+  const navigate = useNavigate();
+
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return window.localStorage.getItem("minidesk.sidebar") === "collapsed";
@@ -397,12 +402,22 @@ export default function App() {
             <span className="nav-label">{collapsed ? "展开" : "折叠"}</span>
           </button>
 
-          {import.meta.env.DEV && (
-            <footer className="sidebar-foot">
-              <span>{hasDraft ? "有未保存的修改" : "DEV-06A 关窗保护"}</span>
-              <span className="muted">未完成 v1.0</span>
-            </footer>
-          )}
+          {/* 版本入口：贴底、低调，但一直在。折叠时只留缩写，不占宽度。 */}
+          <button
+            type="button"
+            className="sidebar-version"
+            onClick={() => setVersionOpen(true)}
+            aria-label="版本信息"
+            title="版本信息"
+          >
+            <span className="sidebar-version-name">
+              {collapsed ? "AF" : "ArtFlow Desk Core"}
+            </span>
+            <span className="sidebar-version-meta">
+              {appVersion ? `v${appVersion}` : "读取中…"}
+            </span>
+          </button>
+
         </div>
       </aside>
 
@@ -420,6 +435,15 @@ export default function App() {
           </QaRefreshContext.Provider>
         </div>
       </main>
+
+      <VersionDialog
+        open={versionOpen}
+        onClose={() => setVersionOpen(false)}
+        onOpenAbout={() => {
+          setVersionOpen(false);
+          navigate("/about");
+        }}
+      />
 
       <UnsavedChangesDialog
         open={closeKind !== null}

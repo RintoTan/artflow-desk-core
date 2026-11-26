@@ -174,6 +174,139 @@ body {
   flex: 0 0 auto;
 }
 
+/* 版本入口：贴底、低对比，悬停才提亮。不挤占导航区高度。 */
+.sidebar-version {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-version:hover,
+.sidebar-version:focus-visible {
+  color: var(--text);
+  background: var(--surface-soft);
+}
+
+.sidebar-version-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-version-meta {
+  flex: 0 0 auto;
+  opacity: 0.75;
+}
+
+.shell-sidebar-collapsed .sidebar-version {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+/* 折叠后只有 64px：版本号会挤成两行，直接收起，只留缩写 */
+.shell-sidebar-collapsed .sidebar-version-meta {
+  display: none;
+}
+
+.version-dialog {
+  max-width: 560px;
+  width: min(560px, calc(100vw - 48px));
+  max-height: calc(100dvh - 96px);
+  overflow-y: auto;
+}
+
+.version-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.version-head .muted {
+  margin: 4px 0 0;
+  font-size: var(--fs-sm);
+}
+
+.version-facts {
+  margin: 16px 0 0;
+  display: grid;
+  gap: 8px 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.version-facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.version-facts dt {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  flex: 0 0 auto;
+}
+
+.version-facts dd {
+  margin: 0;
+  font-size: var(--fs-md);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.version-modules {
+  margin-top: 18px;
+}
+
+.version-modules h3 {
+  margin: 0 0 8px;
+  font-size: var(--fs-md);
+}
+
+.version-modules ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.version-modules li {
+  display: flex;
+  gap: 8px;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.version-modules strong {
+  flex: 0 0 68px;
+  font-weight: 600;
+}
+
+.version-modules span {
+  color: var(--text-muted);
+}
+
+.version-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .sidebar-collapse {
   display: inline-flex;
   align-items: center;
@@ -682,7 +815,7 @@ code.mono {
 /* ------------------------------------------------------------ 订单页 */
 .orders-layout {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: 384px minmax(0, 1fr);
   gap: 14px;
   align-items: start;
   min-height: 0;
@@ -700,7 +833,7 @@ code.mono {
 /* 客户页：列表略窄，详情拿走剩余宽度；滚动条交给系统原生覆盖式，
    不预留槽位，避免右侧常驻一条轨道。 */
 .clients-page {
-  grid-template-columns: 290px minmax(0, 1fr);
+  grid-template-columns: 344px minmax(0, 1fr);
 }
 
 .clients-page .orders-list {
@@ -911,8 +1044,9 @@ code.mono {
   border-radius: var(--radius-sm);
   padding: 9px 10px;
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
   cursor: pointer;
   font-family: inherit;
   color: var(--text);
@@ -939,9 +1073,13 @@ code.mono {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  /* 缩略图进来后横向空间变紧：编号与状态必须单行，换行会把卡片撑高一倍 */
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .order-code {
+  white-space: nowrap;
   font-family: "SF Mono", ui-monospace, monospace;
   font-size: var(--fs-xs);
   color: var(--text-muted);
@@ -1172,6 +1310,22 @@ code.mono {
 
 .dot-cancelled {
   background: #9aa7b4;
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tag-chip {
+  flex: 0 0 auto;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chip {
@@ -2803,6 +2957,13 @@ body:has(.row-dragging) {
   margin-top: 0;
 }
 
+/* 数据区的每一块都必须横跨两列。
+   grid 里每个直接子元素默认只占一格，于是备份/附件/回收站/平台/存储/重置
+   全挤进左列，右侧整列空着——这是上一版最刺眼的空白。 */
+.settings-grid > *:not(.settings-col) {
+  grid-column: 1 / -1;
+}
+
 /* 成对模块：宽屏并排，窄屏自动落成单列 */
 .settings-pair {
   display: grid;
@@ -3110,6 +3271,182 @@ body:has(.row-dragging) {
   flex-wrap: wrap;
 }
 
+/* 新建订单是这一页最主要的动作：比普通按钮高一档、字重更重，
+   不靠用户在工具栏里找。 */
+/* 客户参考图：与订单卡的缩略图同尺寸语言，但这里是可以点的。 */
+.ref-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 12px;
+}
+
+.ref-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ref-thumb {
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface-soft);
+  cursor: zoom-in;
+}
+
+.ref-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ref-thumb:disabled {
+  cursor: not-allowed;
+}
+
+.ref-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ref-remove:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.ref-name {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-refs.is-drop-target {
+  outline: 2px dashed var(--accent);
+  outline-offset: 2px;
+}
+
+/* 原图查看：一次性遮罩，不参与页面布局。 */
+.ref-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(8, 14, 22, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+
+.ref-viewer img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.ref-viewer-close {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: transparent;
+  color: #fff;
+  font-size: var(--fs-lg);
+  cursor: pointer;
+}
+
+/* 缩略图：容器自己裁切，图片永远 object-fit: cover，不撑破行高。 */
+.order-thumb {
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface-soft);
+  display: block;
+}
+
+.order-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* 占位块：统一的中性方块，不用碎图标吓人。 */
+.order-thumb-empty {
+  border: 1px dashed var(--border);
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 6px,
+    var(--border) 6px 7px
+  );
+}
+
+.order-row-body,
+.flat-card-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.flat-card-body {
+  gap: 6px;
+}
+
+/* 看板卡片更紧凑，图也跟着小一档 */
+.flat-card-open .order-thumb {
+  width: 42px;
+  height: 42px;
+}
+
+.orders-new-btn {
+  min-height: 40px;
+  padding: 9px 24px;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  border-radius: 10px;
+  letter-spacing: 0.01em;
+  box-shadow: 0 8px 18px -10px rgba(16, 32, 48, 0.7);
+}
+
+.orders-new-btn:hover:not(:disabled) {
+  box-shadow: 0 10px 22px -10px rgba(16, 32, 48, 0.75);
+}
+
+/* 委托类型的预设按钮：输入框下面一行，允许换行，不做成封闭枚举。 */
+.type-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .orders-head-filters {
   display: flex;
   align-items: center;
@@ -3223,6 +3560,48 @@ body:has(.row-dragging) {
 .board-unknown {
   font-style: normal;
   opacity: 0.8;
+}
+
+/* 平铺看板：筛选条 + 自适应网格。整页滚动由 .main 负责，这里不再自己开滚动区。 */
+.board-cards-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.board-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.board-filter-select {
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-sm);
+}
+
+.board-cards-wrap .board-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
+  gap: 10px;
+  max-height: none;
+  overflow: visible;
+}
+
+.board-count {
+  font-size: var(--fs-xs);
+  margin-left: auto;
+}
+
+.board-empty-state {
+  padding: 24px 0;
 }
 
 .board-cards {
@@ -4129,6 +4508,75 @@ dl.stat-row {
 .board-empty-state { padding: 24px 0; }
 
 /* 扁平卡片：最小可读宽度 260px，放不下就减列而不是压字 */
+/* 看板按制作阶段分列：列横向滚动，列内纵向堆叠卡片。 */
+.board-columns {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.board-scroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  align-items: flex-start;
+}
+
+.board-column {
+  flex: 0 0 248px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+
+.board-column-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.board-column-head h3 {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.board-column-count {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.board-column-hint,
+.board-column-empty {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.board-column-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sort-label {
+  margin-right: 2px;
+}
+
+.sort-hint {
+  font-size: var(--fs-xs);
+}
+
 .board-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -4145,8 +4593,9 @@ dl.stat-row {
 
 .flat-card-open {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
   width: 100%;
   min-width: 0;
   padding: 10px 12px;
@@ -4344,6 +4793,26 @@ dl.stat-row {
 
 /* ------------------------------------------------------------ STABILIZATION-01 */
 /* 历史统计：标题 + 口径说明 + 范围 + 导出 组成一个工具区，不再挤在左上角。 */
+/* 统计页头部：普通流内页头，向下滚动时自然离开视野。
+   不做吸顶——吸顶要额外背板、阴影和滚动状态去压住正在上滚的内容，
+   为这点收益付出的复杂度不值得。 */
+/* 页头高度两个视图必须一致：口径说明原来会按文字长度换行，
+   切财务/业务时突然高一行，看起来像换了一套头部。锁成单行。 */
+.stats-head-sub {
+  min-height: 1.5em;
+  margin: 4px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stats-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
 .stats-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -9172,28 +9641,186 @@ dl.stat-row {
    之前它们只靠分隔线区分，看上去像另一套产品。 */
 .finance-stats {
   display: grid;
-  /* 340px 在宽屏会排出四列，八块面板挤成竖条、数字换行。
-     财务是文字+金额密集内容，最多两列才读得下去。 */
-  grid-template-columns: repeat(auto-fit, minmax(560px, 1fr));
+  /* 财务是文字+金额密集型内容：单列铺开最稳。
+     两列会让「累计」这类短块与长块并排，出现一侧空一格。 */
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-items: start;
 }
 
-.finance-stats-block {
+/* UI-RESET-01B：财务统计拆成「概览 / 趋势 / 分类」三段。
+   段是阅读顺序，卡是同一段里互不相干的东西。段标题属于整段，卡片属于段内部。 */
+.finance-stats {
+  /* 段与段之间比段内卡片之间更空一点，三段才成为三个可数的区块 */
+  gap: 22px;
+}
+
+.finance-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.finance-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.finance-section-head h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.finance-section-head p {
+  margin: 0;
+  flex: 1 1 420px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+/* 成对的卡片：宽屏并排，内容区变窄（容器查询，不看窗口宽）后落成单列 */
+.finance-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.finance-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
+  min-width: 0;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
-.finance-stats-block h3 {
+.finance-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.finance-card-head h3 {
   margin: 0;
   font-size: var(--fs-md);
+  font-weight: 600;
 }
 
-.finance-figures.is-secondary dd {
-  font-size: var(--fs-md);
+/* 口径标签：说明这块统计的范围，不是可点的筛选项 */
+.finance-card-tag {
+  flex: 0 0 auto;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.finance-card-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+
+.finance-note {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+
+/* 空态只占一行：这里本来可以有内容，但不该为「没有」留出和有一样的空间 */
+.finance-empty {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.finance-stats .finance-figures {
+  /* 外框已经是卡片，指标网格不再自带边框与底色 */
+  padding: 0;
+  border: 0;
+  background: transparent;
+  /* 128px 是实测出来的：默认窗口（1120）内容区约 764px，五列放得下；
+     再窄就落成 3+2，不会出现「5 项排成 4+1、最后一项孤零零一行」。 */
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 14px 16px;
+}
+
+.finance-stats .finance-figures dt {
+  font-size: var(--fs-sm);
+}
+
+/* 金额是这一页唯一的主角：五档字号的最高档 19px + 600 字重 + 等宽数字 */
+.finance-stats .finance-figures dd {
+  font-size: var(--fs-page);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+}
+
+/* 文字列吃掉剩余宽度，数字列保持自然宽度并右对齐。
+   不做这一步，7 列在宽屏会被平均摊开，表头与数字之间空出上百像素。 */
+.finance-stats .finance-table thead th:first-child {
+  width: 100%;
+}
+
+@container workspace (max-width: 900px) {
+  .finance-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 窄窗下五列装不下：把「订单」列里的括号说明整体折到第二行，
+   并允许表头折行、收紧单元格内距。只在内容区 ≤700px 时生效，
+   默认窗口（约 820px）与更宽的窗口完全不受影响。 */
+@container workspace (max-width: 700px) {
+  .finance-stats .finance-table th,
+  .finance-stats .finance-table td {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .finance-stats .finance-table thead th {
+    white-space: normal;
+    /* 只在词之间折行：「实际到账」要么整条放下，要么整条换行，不会被拆成「实际到 / 账」 */
+    word-break: keep-all;
+  }
+
+  .finance-stats .finance-table td.has-note {
+    white-space: normal;
+  }
+
+  .finance-stats .finance-table .cell-note {
+    display: block;
+    white-space: nowrap;
+    word-break: keep-all;
+  }
+
+  /* 七列表列多一列：把单元格内距收到 4px，换来括号说明仍能整行显示。
+     五列表内距保持 6px。 */
+  .finance-stats .finance-table.is-wide th,
+  .finance-stats .finance-table.is-wide td {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  .finance-stats .finance-table.is-wide thead th:first-child {
+    width: auto;
+  }
 }
 
 .finance-legend {

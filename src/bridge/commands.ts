@@ -37,6 +37,13 @@ export type TimezoneInfo = {
   sameAsSystem: boolean;
 };
 
+/** 登录时自动启动的真实状态：enabled 来自系统启动项，不是本地偏好值。 */
+export type AutostartStatus = {
+  enabled: boolean;
+  supported: boolean;
+  detail: string;
+};
+
 export type WorkState = "queued" | "inProgress" | "completed" | "cancelled";
 
 export type DeadlineState = "overdue" | "today" | "dueSoon" | "unscheduled" | "scheduled";
@@ -430,6 +437,10 @@ export const api = {
   timezoneSet: (timezoneName: string) =>
     invoke<TimezoneInfo>("working_timezone_set", { timezoneName }),
 
+  // 登录时自动启动：读写的是系统启动项，不是本地偏好值。
+  autostartGet: () => invoke<AutostartStatus>("autostart_get"),
+  autostartSet: (enabled: boolean) => invoke<AutostartStatus>("autostart_set", { enabled }),
+
   listOrders: () => invoke<OrderView[]>("list_orders"),
   getOrder: (orderId: string) => invoke<OrderView>("get_order", { orderId }),
   listOrderEvents: (orderId: string) => invoke<OrderEvent[]>("list_order_events", { orderId }),
@@ -692,6 +703,18 @@ export const preferenceApi = {
 
 // ---------------------------------------------------------------- DEV-04 附件
 
+export type OrderCover = {
+  orderId: string;
+  attachmentId: string;
+  /** final = 成品，reference = 参考图，null = 未分类 */
+  role: "reference" | "final" | null;
+  /** 缩略图路径；null 表示没有可用缩略图，应回退到原图 */
+  thumbPath: string | null;
+  /** 可发布的原图路径；空串表示文件不在 */
+  originalPath: string;
+  mimeType: string;
+};
+
 export type AttachmentView = {
   id: string;
   orderId: string;
@@ -823,6 +846,8 @@ export type UpdateAttachmentMetaInput = {
 
 export const attachmentApi = {
   list: (orderId: string) => invoke<AttachmentView[]>("attachment_list", { orderId }),
+  /** 列表封面：一次拿一批订单各自的代表图，避免每张卡片单独请求 */
+  covers: (orderIds: string[]) => invoke<OrderCover[]>("attachment_covers", { orderIds }),
   import: (input: { orderId: string; sourcePaths: string[]; tag?: string | null }) =>
     invoke<ImportOutcome[]>("attachment_import", { input }),
   remove: (attachmentId: string) => invoke<void>("attachment_remove", { attachmentId }),
@@ -833,6 +858,51 @@ export const attachmentApi = {
     invoke<AttachmentView>("attachment_repair", { input }),
   updateMeta: (input: UpdateAttachmentMetaInput) =>
     invoke<AttachmentView>("attachment_update_meta", { input }),
+};
+
+// ---------------------------------------------------------------- 客户参考图
+
+/** 客户参考图：归属客户，不属于任何订单。 */
+export type ClientRef = {
+  id: string;
+  clientId: string;
+  originalName: string;
+  mimeType: string;
+  byteSize: number;
+  width: number | null;
+  height: number | null;
+  state: "ok" | "missing" | "corrupt";
+  createdAt: string;
+  /** 可发布路径；空串表示文件不在，界面显示占位 */
+  originalPath: string;
+  thumbPath: string | null;
+  fileExists: boolean;
+  thumbExists: boolean;
+};
+
+export type ClientRefOutcome = {
+  sourceName: string;
+  ok: boolean;
+  attachment: ClientRef | null;
+  error: string | null;
+};
+
+/** 客户列表封面：复用参考图的第一张。 */
+export type ClientCover = {
+  clientId: string;
+  attachmentId: string;
+  thumbPath: string | null;
+  originalPath: string;
+};
+
+export const clientRefApi = {
+  list: (clientId: string) => invoke<ClientRef[]>("client_ref_list", { clientId }),
+  /** 列表封面：一次拿一批客户各自的代表图 */
+  covers: (clientIds: string[]) => invoke<ClientCover[]>("client_ref_covers", { clientIds }),
+  import: (input: { clientId: string; sourcePaths: string[] }) =>
+    invoke<ClientRefOutcome[]>("client_ref_import", { input }),
+  remove: (clientId: string, attachmentId: string) =>
+    invoke<void>("client_ref_remove", { clientId, attachmentId }),
 };
 
 // ---------------------------------------------------------------- 回收站

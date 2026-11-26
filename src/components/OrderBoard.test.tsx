@@ -5,12 +5,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { OrderView, TemplateView } from "../bridge/commands";
 import OrderBoard from "./OrderBoard";
 
-function template(id: string, name: string, stages: [string, string][]): TemplateView {
+function template(id: string, name: string, stages: [string, string][], isDefault = false): TemplateView {
   const steps = stages.map(([stepId, title], index) => ({ stepId, title, position: index }));
   return {
     id,
     name,
-    isDefault: false,
+    isDefault,
     revision: 1,
     steps,
     stepCount: steps.length,
@@ -22,8 +22,8 @@ function template(id: string, name: string, stages: [string, string][]): Templat
 
 function order(partial: Partial<OrderView>): OrderView {
   return {
-    id: "o",
-    code: "AF-2026-0001",
+    id: partial.id ?? "o",
+    code: partial.code ?? "AF-2026-0001",
     title: "示例订单",
     clientId: "c1",
     clientName: "林小满",
@@ -53,15 +53,16 @@ function order(partial: Partial<OrderView>): OrderView {
   } as OrderView;
 }
 
-const TPL_A = template("tpl-a", "插画 A", [
-  ["a1", "草稿"],
-  ["a2", "线稿"],
-  ["a3", "固有色"],
-]);
-const TPL_B = template("tpl-b", "插画 B", [
-  ["b1", "构思"],
-  ["b2", "定稿"],
-]);
+const TPL_A = template(
+  "tpl-a",
+  "插画 A",
+  [
+    ["a1", "草稿"],
+    ["a2", "线稿"],
+  ],
+  true,
+);
+const TPL_B = template("tpl-b", "插画 B", [["b1", "构思"]]);
 
 function props(overrides: Partial<Parameters<typeof OrderBoard>[0]> = {}) {
   return {
@@ -70,94 +71,100 @@ function props(overrides: Partial<Parameters<typeof OrderBoard>[0]> = {}) {
     onOpen: vi.fn(),
     formatMoney: (cents: number | null) => (cents === null ? "未知" : `¥${cents / 100}`),
     formatDate: (value: string | null) => value ?? "未排期",
+    sortMode: "manual" as const,
     ...overrides,
   };
 }
 
-describe("OrderBoard（扁平总览）", () => {
-  it("不再有总览/聚焦子模式，也不再有阶段列", () => {
-    render(<OrderBoard {...props({ orders: [order({})] })} />);
-    expect(document.querySelector(".board-mode")).toBeNull();
-    expect(document.querySelector(".board-nav")).toBeNull();
-    expect(document.querySelector(".board-col")).toBeNull();
+/** 平铺网格里的订单编号顺序。 */
+function codes(): string[] {
+  return Array.from(document.querySelectorAll(".flat-card-code")).map(
+    (node) => node.textContent?.replace(/[^A-Z0-9-]/g, "") ?? "",
+  );
+}
+
+describe("平铺看板", () => {
+  it("默认按默认模板平铺，卡片带缩略图位", () => {
+    render(
+      <OrderBoard
+        {...props({
+          orders: [
+            order({ id: "a", code: "AF-0001" }),
+            order({ id: "b", code: "AF-0002", stageTemplateId: "tpl-b", currentStageId: "b1" }),
+          ],
+        })}
+      />,
+    );
+    // 默认模板是 A，B 的订单不在其中
+    expect(codes()).toEqual(["AF-0001"]);
+    expect(document.querySelectorAll(".flat-card .order-thumb").length).toBe(1);
   });
 
-  it("展示全部订单，包含已结束订单且排在活动订单之后", () => {
-    const list = [
-      order({ id: "done", code: "AF-0003", status: "complete" }),
-      order({ id: "live", code: "AF-0001" }),
-    ];
-    render(<OrderBoard {...props({ orders: list })} />);
-    const cards = Array.from(document.querySelectorAll(".flat-card code, .flat-card-code"));
-    expect(cards.map((n) => n.textContent)).toEqual(["AF-0001", "AF-0003"]);
-  });
-
-  it("按流程模板筛选后只留该模板订单，并列出该模板自己的阶段", async () => {
+  it("切到全部流程时两个模板的订单都在", async () => {
     const user = userEvent.setup();
     render(
       <OrderBoard
         {...props({
           orders: [
-            order({ id: "a", stageTemplateId: "tpl-a", currentStageId: "a1" }),
-            order({ id: "b", stageTemplateId: "tpl-b", currentStageId: "b1", currentStageTitle: "构思" }),
+            order({ id: "a", code: "AF-0001" }),
+            order({ id: "b", code: "AF-0002", stageTemplateId: "tpl-b", currentStageId: "b1" }),
           ],
         })}
       />,
     );
-    await user.selectOptions(screen.getByLabelText("按流程模板筛选"), "tpl-b");
-    expect(screen.getAllByRole("listitem")).toHaveLength(1);
-    const chips = Array.from(document.querySelectorAll(".stage-chip")).map((n) => n.textContent);
-    expect(chips[0]).toBe("全部阶段");
-    expect(chips.slice(1).map((t) => t?.replace(/\d+$/, ""))).toEqual(["构思", "定稿"]);
+    await user.selectOptions(screen.getByLabelText("按流程模板筛选"), "all");
+    expect(new Set(codes())).toEqual(new Set(["AF-0001", "AF-0002"]));
   });
 
-  it("阶段筛选按 (模板, 阶段) 匹配，同名阶段不会互相命中", async () => {
+  it("阶段筛选只保留该阶段的订单", async () => {
     const user = userEvent.setup();
-    // 两个模板都有「草稿」，ID 不同
-    const tplC = template("tpl-c", "插画 C", [["c1", "草稿"]]);
     render(
       <OrderBoard
         {...props({
-          templates: [TPL_A, tplC],
           orders: [
-            order({ id: "a", stageTemplateId: "tpl-a", currentStageId: "a1", currentStageTitle: "草稿" }),
-            order({ id: "c", stageTemplateId: "tpl-c", currentStageId: "c1", currentStageTitle: "草稿" }),
+            order({ id: "a", code: "AF-0001", currentStageId: "a1" }),
+            order({ id: "b", code: "AF-0002", currentStageId: "a2" }),
           ],
         })}
       />,
     );
-    await user.selectOptions(screen.getByLabelText("按阶段筛选（按流程分组）"), "tpl-c:c1");
-    const items = screen.getAllByRole("listitem");
-    expect(items).toHaveLength(1);
-    expect(within(items[0]!).getByText("AF-2026-0001")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "线稿" }));
+    expect(codes()).toEqual(["AF-0002"]);
   });
 
-  it("切换模板会清掉与新模板不兼容的阶段条件", async () => {
-    const user = userEvent.setup();
-    render(<OrderBoard {...props({ orders: [order({})] })} />);
-    await user.selectOptions(screen.getByLabelText("按阶段筛选（按流程分组）"), "tpl-a:a1");
-    expect(document.querySelector(".board-count")?.textContent).toContain("1 / 1");
-    await user.selectOptions(screen.getByLabelText("按流程模板筛选"), "tpl-b");
-    expect(document.querySelector(".board-count")?.textContent).toContain("/ 1");
-    expect((screen.getByLabelText("按流程模板筛选") as HTMLSelectElement).value).toBe("tpl-b");
-  });
-
-  it("卡片只有打开详情，没有阶段操作按钮", () => {
-    render(<OrderBoard {...props({ orders: [order({})] })} />);
-    expect(screen.queryByRole("button", { name: /阶段操作/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /→/ })).toBeNull();
-    expect(screen.getByRole("button", { name: /打开 AF-2026-0001/ })).toBeInTheDocument();
-  });
-
-  it("无结果时给出空状态与清除入口", async () => {
-    const user = userEvent.setup();
+  it("置顶订单排在普通订单之前", () => {
     render(
       <OrderBoard
-        {...props({ orders: [order({ currentStageId: "a1" })] })}
+        {...props({
+          orders: [
+            order({ id: "n", code: "AF-0001", queuePosition: 0 }),
+            order({ id: "p", code: "AF-0002", queuePosition: 9, pinnedAt: "2026-11-20T00:00:00Z" }),
+          ],
+        })}
       />,
     );
-    await user.selectOptions(screen.getByLabelText("按阶段筛选（按流程分组）"), "tpl-a:a3");
-    expect(document.querySelector(".board-empty-state")).not.toBeNull();
-    expect(screen.getAllByRole("button", { name: "清除看板筛选" }).length).toBeGreaterThan(0);
+    expect(codes()).toEqual(["AF-0002", "AF-0001"]);
+  });
+
+  it("交付日期排序在整块网格内生效", () => {
+    render(
+      <OrderBoard
+        {...props({
+          sortMode: "deadline",
+          orders: [
+            order({ id: "late", code: "AF-0001", plannedDeliveryDate: "2026-12-20" }),
+            order({ id: "early", code: "AF-0002", plannedDeliveryDate: "2026-11-01" }),
+          ],
+        })}
+      />,
+    );
+    expect(codes()).toEqual(["AF-0002", "AF-0001"]);
+  });
+
+  it("筛完没有结果时给出说明", async () => {
+    const user = userEvent.setup();
+    render(<OrderBoard {...props({ orders: [order({ code: "AF-0001", currentStageId: "a1" })] })} />);
+    await user.click(screen.getByRole("button", { name: "线稿" }));
+    expect(within(document.body).getByText("这个条件下没有订单。")).toBeInTheDocument();
   });
 });

@@ -17,6 +17,7 @@ import CancelOrderDialog, { type CancelOrderPayload } from "../components/Cancel
 import ContextMenu, { type ContextMenuItem } from "../components/ContextMenu";
 import PinBadge from "../components/PinBadge";
 import OrderFinancePanel from "../components/OrderFinancePanel";
+import OrderThumb from "../components/OrderThumb";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { ScheduleOverview } from "../components/ScheduleOverview";
 import { TruncatedTitle } from "../components/TitleTooltip";
@@ -46,6 +47,7 @@ import {
   type StatusFilter,
   type WorkFilter,
 } from "../lib/ordersView";
+import { SORT_LABELS, SORT_MODES, canReorderIn, sortOrders, type SortMode } from "../lib/orderSort";
 import { usePageShortcuts } from "../lib/shortcuts";
 import { useUnsavedGuard } from "../lib/unsavedRegistry";
 import {
@@ -63,11 +65,15 @@ import {
   type ListDensity,
   type TemplateView,
   type CreateOrderInput,
+  type OrderCover,
   type OrderEvent,
   type OrderView,
   type UpdateDetailsInput,
 } from "../bridge/commands";
+import ClientPicker from "../components/ClientPicker";
+import CommissionTypeField from "../components/CommissionTypeField";
 import EmptyState from "../components/EmptyState";
+import { suggestOrderTitle } from "../lib/commissionType";
 
 // ---------------------------------------------------------------- 展示辅助
 
@@ -214,9 +220,37 @@ type CopySource = {
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<OrderView[]>([]);
+  // 列表封面：orderId -> 代表图。表格视图不用它，但一起加载，切换视图时不再闪一次。
+  const [covers, setCovers] = useState<Record<string, OrderCover>>({});
   const [clients, setClients] = useState<ClientView[]>([]);
   const [templates, setTemplates] = useState<TemplateView[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // 一张封面一次查询：不给每张卡片单独发一次附件请求。
+  useEffect(() => {
+    const ids = orders.map((order) => order.id);
+    if (ids.length === 0) {
+      setCovers({});
+      return;
+    }
+    let alive = true;
+    // 封面只是装饰：拿不到就让列表显示占位图，不打断主流程。
+    // 放在 async 里包一层 try，桥层缺失时也不会把整页alert炸出来。
+    void (async () => {
+      try {
+        const list = await attachmentApi.covers(ids);
+        if (!alive) return;
+        const next: Record<string, OrderCover> = {};
+        for (const cover of list) next[cover.orderId] = cover;
+        setCovers(next);
+      } catch {
+        if (alive) setCovers({});
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [orders]);
   const [detail, setDetail] = useState<OrderView | null>(null);
   const [events, setEvents] = useState<OrderEvent[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -231,6 +265,8 @@ export default function OrdersPage() {
   const [workFilter, setWorkFilter] = useState<WorkFilter>("all");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
+  // 展示排序：只改顺序，不动 queue_position。表格有自己的列头排序，不受这里影响。
+  const [sortMode, setSortMode] = useState<SortMode>("manual");
   /** 普通列表与归档空间是两个归属，不混在同一张列表里。 */
   const [archiveScope, setArchiveScope] = useState<ArchiveScope>("live");
   /** 归档/取消归档的进行中状态：只锁这一个动作，不影响其他按钮。 */
@@ -761,6 +797,12 @@ export default function OrdersPage() {
     () => clients.find((client) => client.id === clientFilter)?.displayName ?? null,
     [clients, clientFilter],
   );
+  /** 卡片与看板用的展示顺序；表格走自己的列头排序，仍用原始的 visible。 */
+  const displayOrders = useMemo(
+    () => (viewMode === "table" ? visible : sortOrders(visible, sortMode)),
+    [visible, sortMode, viewMode],
+  );
+
   const activeQueue = useMemo(
     () =>
       orders
@@ -1142,12 +1184,32 @@ export default function OrdersPage() {
           <div className="orders-head-actions">
             <ViewSwitch value={viewMode} onChange={(next) => void changeView(next)} />
             {archiveScope === "live" && (
-              <button type="button" className="btn btn-primary btn-sm" onClick={attemptCreate}>
+              <button type="button" className="btn btn-primary orders-new-btn" onClick={attemptCreate}>
                 新建
               </button>
             )}
           </div>
         </div>
+
+        {viewMode !== "table" && (
+          <div className="orders-head-filters" role="group" aria-label="排序方式">
+            <span className="muted sort-label">排序</span>
+            {SORT_MODES.map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={`filter-chip${sortMode === mode ? " filter-chip-active" : ""}`}
+                aria-pressed={sortMode === mode}
+                onClick={() => setSortMode(mode)}
+              >
+                {SORT_LABELS[mode]}
+              </button>
+            ))}
+            {sortMode !== "manual" && (
+              <span className="muted sort-hint">临时排序：只改展示顺序，不改真实排单</span>
+            )}
+          </div>
+        )}
 
         <div className="orders-head-filters">
           <div className="view-switch" role="group" aria-label="订单归属">
@@ -1319,9 +1381,14 @@ export default function OrdersPage() {
           </div>
         ) : (
           <ul className={`order-rows ${densityClass(density)}`}>
-            {visible.map((order) => {
+            {displayOrders.map((order) => {
               const queueIndex = activeQueue.findIndex((item) => item.id === order.id);
-              const canReorder = order.status === "active" && statusFilter !== "complete" && statusFilter !== "cancelled";
+              // 临时排序下顺序由排序键决定，拖拽与上下移会误导「改了排单」，一律禁用。
+              const canReorder =
+                canReorderIn(sortMode) &&
+                order.status === "active" &&
+                statusFilter !== "complete" &&
+                statusFilter !== "cancelled";
               return (
                 <li
                   key={order.id}
@@ -1376,6 +1443,8 @@ export default function OrdersPage() {
                     }`}
                     onClick={() => attemptSelect(order.id)}
                   >
+                    <OrderThumb cover={covers[order.id]} />
+                    <span className="order-row-body">
                     <span className="order-row-top">
                       <code className="order-code">{order.code}</code>
                       {isPinned(order) && <PinBadge />}
@@ -1395,6 +1464,7 @@ export default function OrdersPage() {
                       {workStateLabel(order.workState)}
                       {order.currentStageTitle ? ` · ${order.currentStageTitle}` : ""}
                       {order.clientName ? ` · ${order.clientName}` : ""}
+                    </span>
                     </span>
                   </button>
                   {canReorder && activeQueue.length > 1 && (
@@ -1448,13 +1518,15 @@ export default function OrdersPage() {
 
         {viewMode === "board" ? (
           <OrderBoard
-            orders={visible}
+            orders={displayOrders}
+            sortMode={sortMode}
             templates={templates}
             onOpen={(orderId) => void attemptSelect(orderId)}
             onContextMenu={(event, orderId) => void openOrderMenu(event, orderId)}
             formatMoney={formatMoney}
             // planned 日期本身就是 YYYY-MM-DD，不要再走带时间的格式化
             formatDate={(value) => (value ? value : "未排期")}
+            covers={covers}
           />
         ) : (
           <OrderTable
@@ -2441,32 +2513,31 @@ function DetailsForm({
         />
       </label>
 
-      <label className="field">
-        <span>客户</span>
-        <select
-          value={draft.clientId}
-          onChange={(e) => patch({ clientId: e.target.value })}
+      <div className="field">
+        <label htmlFor="edit-order-client">
+          <span>客户</span>
+        </label>
+        {/* 与新建共用同一个选择器：搜索、选中、新建、不关联都在一个控件里 */}
+        <ClientPicker
+          id="edit-order-client"
+          clients={clients}
+          value={draft.clientId === "" ? null : draft.clientId}
+          onChange={(clientId) => patch({ clientId: clientId ?? "" })}
           disabled={disabled}
-        >
-          <option value="">不关联客户</option>
-          {clients.map((client) => (
-            <option key={client.id} value={client.id}>
-              {client.displayName}（{client.orderCount} 单）
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="field">
-        <span>委托类型</span>
-        <input
-          value={draft.commissionType}
-          onChange={(e) => patch({ commissionType: e.target.value })}
-          disabled={disabled}
-          maxLength={80}
-          placeholder="例如 半身立绘"
         />
-      </label>
+      </div>
+
+      <div className="field">
+        <label htmlFor="edit-order-type">
+          <span>委托类型</span>
+        </label>
+        <CommissionTypeField
+          id="edit-order-type"
+          value={draft.commissionType}
+          onChange={(value) => patch({ commissionType: value })}
+          disabled={disabled}
+        />
+      </div>
 
       <label className="field">
         <span>来源</span>
@@ -2890,10 +2961,12 @@ function CreateOrderPanel({
   const source = copyFrom?.order ?? null;
   const attachmentCount = copyFrom?.attachmentCount ?? 0;
   const [title, setTitle] = useState(source?.title ?? "");
-  const [clientMode, setClientMode] = useState<"none" | "existing" | "new">(
-    source?.clientId ? "existing" : "none",
-  );
-  const [clientId, setClientId] = useState(source?.clientId ?? "");
+  // 标题只有在用户没亲手改过时才跟着「客户 + 委托类型」自动更新。
+  const [titleEdited, setTitleEdited] = useState(source !== null);
+  // 客户选择收成一个控件：搜索、选中、新建、或者干脆不关联。
+  const [clientId, setClientId] = useState<string | null>(source?.clientId ?? null);
+  // 选择器里新建的客户先放本地，立刻能显示名字；页面刷新后自然并入
+  const [createdClients, setCreatedClients] = useState<ClientView[]>([]);
   /** 复制附件默认开启；来源没有附件时该项不可用。 */
   const [copyAttachments, setCopyAttachments] = useState(true);
   // 默认选中当前默认模板；用户可主动切换（D-00-07）
@@ -2903,7 +2976,6 @@ function CreateOrderPanel({
   useEffect(() => {
     if (templateId === "" && defaultTemplateId !== "") setTemplateId(defaultTemplateId);
   }, [defaultTemplateId, templateId]);
-  const [newClientName, setNewClientName] = useState("");
   const [commissionType, setCommissionType] = useState(source?.commissionType ?? "");
   const [orderSource, setOrderSource] = useState(source?.source ?? "");
   const [amount, setAmount] = useState(centsToYuan(source?.amountCents ?? null));
@@ -2917,18 +2989,15 @@ function CreateOrderPanel({
     setBusy(true);
     onError("");
     try {
+      // 新建客户已经在选择器里落库并选中，这里只可能是不关联或已有客户
       const client: CreateOrderInput["client"] =
-        clientMode === "existing"
-          ? { mode: "existing", clientId }
-          : clientMode === "new"
-            ? { mode: "new", displayName: newClientName.trim() }
-            : { mode: "none" };
+        clientId === null ? { mode: "none" } : { mode: "existing", clientId };
 
       const order = source
         ? await api.duplicateOrder({
             sourceOrderId: source.id,
             title,
-            clientId: clientMode === "existing" && clientId !== "" ? clientId : null,
+            clientId,
             commissionType: commissionType.trim() === "" ? null : commissionType,
             source: orderSource.trim() === "" ? null : orderSource.trim(),
             amountCents: yuanToCents(amount),
@@ -2959,13 +3028,27 @@ function CreateOrderPanel({
     }
   }
 
+  // 客户名称取自当前选择，不额外请求后端。
+  const clientOptions = useMemo(() => {
+    const map = new Map(clients.map((client) => [client.id, client] as const));
+    for (const client of createdClients) if (!map.has(client.id)) map.set(client.id, client);
+    return [...map.values()];
+  }, [clients, createdClients]);
+  const clientName = clientOptions.find((c) => c.id === clientId)?.displayName ?? "";
+
+  useEffect(() => {
+    if (titleEdited) return;
+    const suggested = suggestOrderTitle(clientName, commissionType);
+    if (suggested !== null) setTitle(suggested);
+  }, [clientName, commissionType, titleEdited]);
+
   const creatingDirty =
-    title.trim() !== "" ||
+    // 自动生成的标题不算用户填的内容，否则选完客户就会被当成「有未保存修改」
+    (titleEdited && title.trim() !== "") ||
     commissionType.trim() !== "" ||
     amount.trim() !== "" ||
     note.trim() !== "" ||
-    newClientName.trim() !== "" ||
-    clientMode !== "none";
+    clientId !== null;
   // 新建面板自己也能被关窗保护：内层 guard 优先于外层的详情 guard。
   useUnsavedGuard({
     id: "orders-create",
@@ -2989,55 +3072,47 @@ function CreateOrderPanel({
       </header>
 
       <div className="form-grid">
+        {/* 先定「给谁做、做什么」，标题再按这两项带出来 */}
+        <div className="field">
+          <label htmlFor="create-order-client">
+            <span>客户</span>
+          </label>
+          <ClientPicker
+            id="create-order-client"
+            clients={clientOptions}
+            value={clientId}
+            onChange={setClientId}
+            onClientCreated={(client) => setCreatedClients((list) => [...list, client])}
+            disabled={busy}
+          />
+        </div>
+
+        {/* 预设按钮在 label 里会被当成标签的控件一起激活，所以拆成显式 label + 容器 */}
+        <div className="field">
+          <label htmlFor="create-order-type">
+            <span>委托类型</span>
+          </label>
+          <CommissionTypeField
+            id="create-order-type"
+            value={commissionType}
+            onChange={setCommissionType}
+            disabled={busy}
+          />
+        </div>
+
         <label className="field field-wide">
           <span>委托标题 *</span>
           <input
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              setTitleEdited(true);
+            }}
             maxLength={120}
             autoFocus
             disabled={busy}
           />
         </label>
-
-        <label className="field">
-          <span>客户</span>
-          <select
-            value={clientMode}
-            onChange={(e) => setClientMode(e.target.value as "none" | "existing" | "new")}
-            disabled={busy}
-          >
-            <option value="none">不关联客户</option>
-            <option value="existing">选择已有客户</option>
-            <option value="new">新建客户</option>
-          </select>
-        </label>
-
-        {clientMode === "existing" && (
-          <label className="field">
-            <span>已有客户</span>
-            <select value={clientId} onChange={(e) => setClientId(e.target.value)} disabled={busy}>
-              <option value="">请选择</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.displayName}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        {clientMode === "new" && (
-          <label className="field">
-            <span>新客户名称</span>
-            <input
-              value={newClientName}
-              onChange={(e) => setNewClientName(e.target.value)}
-              maxLength={120}
-              disabled={busy}
-            />
-          </label>
-        )}
 
         {/* 说明文字放在 label 之外：否则它会被算进 select 的可访问名称里 */}
         <div className="field">
@@ -3068,16 +3143,6 @@ function CreateOrderPanel({
             <p className="hint">创建时会把该流程的阶段复制成这张订单的独立流程。</p>
           )}
         </div>
-
-        <label className="field">
-          <span>委托类型</span>
-          <input
-            value={commissionType}
-            onChange={(e) => setCommissionType(e.target.value)}
-            maxLength={80}
-            disabled={busy}
-          />
-        </label>
 
         <label className="field">
           <span>来源</span>
@@ -3172,8 +3237,7 @@ function CreateOrderPanel({
           type="button"
           className="btn btn-primary"
           onClick={() => void submit()}
-          disabled={busy || title.trim() === "" || (clientMode === "existing" && clientId === "") ||
-            (clientMode === "new" && newClientName.trim() === "")}
+          disabled={busy || title.trim() === ""}
         >
           {busy ? "创建中…" : source ? "创建副本" : "创建订单"}
         </button>

@@ -30,6 +30,11 @@ vi.mock("../bridge/commands", async () => {
         pointerPath: "/data/root.json",
         custom: false,
       }),
+      autostartGet: async () => ({
+        enabled: false,
+        supported: true,
+        detail: "未注册登录启动项",
+      }),
       timezoneGet: async () => ({
         workingTimezone: "Asia/Shanghai",
         systemTimezone: "Asia/Shanghai",

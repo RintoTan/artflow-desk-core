@@ -6,6 +6,7 @@ import { buildId, buildKindLabel } from "../lib/buildInfo";
 /** 尚未确认的信息一律显式标注，不编造姓名、地址、许可证或年份。 */
 const TBD = "待补充";
 
+
 type Module = {
   title: string;
   icon: string;
@@ -13,7 +14,8 @@ type Module = {
   points: string[];
 };
 
-const MODULES: Module[] = [
+/** 模块简介：版本弹窗与关于页共用同一份文案，不各写一份。 */
+export const ABOUT_MODULES: Module[] = [
   {
     title: "工作台",
     icon: "dashboard",
@@ -296,7 +298,7 @@ export default function AboutPage() {
           <span className="muted">只介绍当前版本已经可用的功能</span>
         </header>
         <div className="about-modules">
-          {MODULES.map((module) => (
+          {ABOUT_MODULES.map((module) => (
             <article className="about-module" key={module.title}>
               <h3>{module.title}</h3>
               <p className="about-module-summary">{module.summary}</p>

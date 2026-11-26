@@ -1,5 +1,6 @@
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EnvironmentStatus } from "./bridge/commands";
@@ -90,5 +91,21 @@ describe("QA 模式标识", () => {
     await renderShell();
     expect(await screen.findByText("内容区")).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+});
+
+describe("版本信息入口", () => {
+  it("左下角常驻入口，点击打开版本弹窗", async () => {
+    status.mockImplementation(async () => ({ qaMode: false, appVersion: "0.1.2", schemaVersion: 14 } as unknown as EnvironmentStatus));
+    await renderShell();
+    const user = userEvent.setup();
+
+    const entry = screen.getByRole("button", { name: "版本信息" });
+    expect(within(entry).getByText("ArtFlow Desk Core")).toBeInTheDocument();
+
+    await user.click(entry);
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => expect(within(dialog).getByText("0.1.2")).toBeInTheDocument());
+    expect(within(dialog).getByText("v14")).toBeInTheDocument();
   });
 });

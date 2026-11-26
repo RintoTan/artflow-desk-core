@@ -240,6 +240,30 @@ describe("数据统计", () => {
     expect(financeReportFn).not.toHaveBeenCalled();
   });
 
+  it("切到财务统计时内容回到顶部，页头不吸顶", async () => {
+    const user = userEvent.setup();
+    const { default: StatsPage } = await import("./StatsPage");
+    const { container } = render(
+      <MemoryRouter initialEntries={["/stats"]}>
+        <div className="main">
+          <StatsPage />
+        </div>
+      </MemoryRouter>,
+    );
+    await screen.findByText("数据统计");
+    const box = container.querySelector(".main") as HTMLElement;
+    const head = container.querySelector(".stats-head") as HTMLElement;
+    expect(head.className).toBe("stats-head");
+
+    // 滚动不应改变页头：它是普通页头，不跟着滚动收紧
+    box.scrollTop = 400;
+    box.dispatchEvent(new Event("scroll"));
+    expect(head.className).toBe("stats-head");
+
+    await user.click(screen.getByRole("tab", { name: "财务统计" }));
+    expect(box.scrollTop).toBe(0);
+  });
+
   it("切到财务统计后单独加载财务数据，业务统计的接口不再重复请求", async () => {
     const user = userEvent.setup();
     await setup();

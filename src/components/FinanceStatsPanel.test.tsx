@@ -1,6 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { FinanceStatsReport } from "../bridge/commands";
@@ -125,14 +124,13 @@ function report(over: Partial<FinanceStatsReport> = {}): FinanceStatsReport {
 
 async function setup(payload: FinanceStatsReport, range = "all") {
   reportMock.mockImplementation(async () => payload);
-  const onRangeChange = vi.fn();
   render(
     <MemoryRouter>
-      <FinanceStatsPanel range={range} onRangeChange={onRangeChange} />
+      <FinanceStatsPanel range={range} />
     </MemoryRouter>,
   );
   await waitFor(() => expect(reportMock).toHaveBeenCalled());
-  return { onRangeChange };
+  return {};
 }
 
 beforeEach(() => {
@@ -193,11 +191,15 @@ describe("财务统计面板", () => {
     expect(screen.getByText("没有可用于统计的有效订单金额。")).toBeTruthy();
   });
 
-  it("切换范围会回调上层，由上层统一改 URL", async () => {
-    const user = userEvent.setup();
-    const { onRangeChange } = await setup(report(), "thisMonth");
-    await user.click(screen.getByRole("button", { name: "近 12 个月" }));
-    expect(onRangeChange).toHaveBeenCalledWith("last12");
+  it("取到数据后把实际月份窗口交给页头，页头不用自己再算一遍", async () => {
+    const onPeriodChange = vi.fn();
+    reportMock.mockImplementation(async () => report());
+    render(
+      <MemoryRouter>
+        <FinanceStatsPanel range="all" onPeriodChange={onPeriodChange} />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(onPeriodChange).toHaveBeenCalledWith({ from: "2025-11", to: "2026-11" }));
   });
 
   it("快速切换时旧请求不许覆盖新结果", async () => {
@@ -212,15 +214,14 @@ describe("财务统计面板", () => {
       )
       .mockImplementationOnce(async () => fast);
 
-    const onRangeChange = vi.fn();
     const { rerender } = render(
       <MemoryRouter>
-        <FinanceStatsPanel range="all" onRangeChange={onRangeChange} />
+        <FinanceStatsPanel range="all" />
       </MemoryRouter>,
     );
     rerender(
       <MemoryRouter>
-        <FinanceStatsPanel range="last6" onRangeChange={onRangeChange} />
+        <FinanceStatsPanel range="last6" />
       </MemoryRouter>,
     );
     await waitFor(() => expect(screen.getByText("¥ 2.22")).toBeTruthy());
@@ -234,10 +235,9 @@ describe("财务统计面板", () => {
 
   it("请求失败时保留上一份数据并提示", async () => {
     reportMock.mockImplementationOnce(async () => report());
-    const onRangeChange = vi.fn();
     const { rerender } = render(
       <MemoryRouter>
-        <FinanceStatsPanel range="all" onRangeChange={onRangeChange} />
+        <FinanceStatsPanel range="all" />
       </MemoryRouter>,
     );
     await waitFor(() => expect(screen.getAllByText("¥ 1,000.00").length).toBeGreaterThan(0));
@@ -248,7 +248,7 @@ describe("财务统计面板", () => {
     reportMock.mockImplementation(async () => report());
     rerender(
       <MemoryRouter>
-        <FinanceStatsPanel range="last6" onRangeChange={onRangeChange} />
+        <FinanceStatsPanel range="last6" />
       </MemoryRouter>,
     );
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
@@ -260,5 +260,60 @@ describe("财务统计面板", () => {
     expect(screen.getByText("按客户（累计）")).toBeTruthy();
     expect(screen.getByText(/同名客户不会合并/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "客户甲" })).toBeTruthy();
+  });
+
+  it("三个口径各带自己的范围标签，谁也不冒充谁", async () => {
+    await setup(report());
+    expect(screen.getByText("累计（全部历史）")).toBeTruthy();
+    expect(screen.getByText("所选区间合计")).toBeTruthy();
+    expect(screen.getByText("当前状态")).toBeTruthy();
+    expect(screen.getByText("不随上方区间变化")).toBeTruthy();
+    expect(screen.getByText("此刻快照，不随区间变化")).toBeTruthy();
+    // 区间块的标签必须写在自己的卡上，写出真实月份，而不是跟着「累计」说「全部历史」
+    const periodCard = screen.getByText("所选区间合计").closest(".finance-card");
+    expect(periodCard).toBeTruthy();
+    expect(within(periodCard as HTMLElement).getByText("2025-11 ~ 2026-11")).toBeTruthy();
+  });
+
+  it("按客户行的未记录收款单数只在大于 0 时出现", async () => {
+    const base = report().byClient[0];
+    if (!base) throw new Error("夹具缺少客户行");
+    await setup(report({ byClient: [{ ...base, unrecordedOrders: 2 }] }));
+    expect(screen.getByText(/（2 单未记录收款信息）/)).toBeTruthy();
+  });
+
+  it("未记录收款单数为 0 时不留一对空括号", async () => {
+    await setup(report());
+    expect(screen.queryByText(/单未记录收款信息）/)).toBeNull();
+  });
+
+  it("没有已安排日期的应收时，预计收款只留一行说明", async () => {
+    const base = report();
+    await setup(
+      report({
+        expected: { ...base.expected, months: [], unscheduledCents: 60_000, unscheduledCount: 1 },
+      }),
+    );
+    expect(
+      screen.getByText("没有设置预计收款日期的付款计划，只有未安排金额。").className,
+    ).toContain("finance-empty");
+  });
+
+  it("没有流水时图表区只占一行，不是一块空画布", async () => {
+    await setup(
+      report({
+        lifetime: totals({
+          grossReceivedCents: 0,
+          feeTotalCents: 0,
+          netReceivedCents: 0,
+          refundTotalCents: 0,
+          netRetainedCents: 0,
+        }),
+        monthly: [],
+        annual: [],
+      }),
+    );
+    expect(screen.getByText("当前没有已记录的收款流水。").className).toContain("finance-empty");
+    expect(screen.getByText("还没有可用于统计的年度收款").className).toContain("finance-empty");
   });
 });

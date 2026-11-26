@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, describeError, type TimezoneInfo } from "../bridge/commands";
+import { api, describeError, type AutostartStatus, type TimezoneInfo } from "../bridge/commands";
 import { AppIconImage } from "../components/AppIconImage";
 import AttachmentMaintenancePanel from "../components/AttachmentMaintenancePanel";
 import DataResetPanel from "../components/DataResetPanel";
@@ -79,6 +79,10 @@ export default function SettingsPage() {
   const [resetOpen, setResetOpen] = useState(false);
   const [tzOpen, setTzOpen] = useState(false);
   const [tzActive, setTzActive] = useState(0);
+  // 自动启动直接改系统启动项，立即生效，不进「保存设置」草稿。
+  const [autostart, setAutostart] = useState<AutostartStatus | null>(null);
+  const [autostartBusy, setAutostartBusy] = useState(false);
+  const [autostartError, setAutostartError] = useState<string | null>(null);
 
   const [themeDraft, setThemeDraft] = useState<ThemeChoice>(() => savedChoice());
   const [themeSaved, setThemeSaved] = useState<ThemeChoice>(() => savedChoice());
@@ -97,6 +101,14 @@ export default function SettingsPage() {
         setDraft(value.workingTimezone);
       })
       .catch((e) => setError(describeError(e)));
+  }, []);
+
+  // 开关状态必须读系统：数据库里留着「开」但系统里没有条目，是最难发现的那种谎。
+  useEffect(() => {
+    api
+      .autostartGet()
+      .then(setAutostart)
+      .catch((e) => setAutostartError(describeError(e)));
   }, []);
 
   // 主题可能在设置页打开后才加载完成；只有"当前没有草稿"时才同步，避免覆盖用户的修改。
@@ -187,6 +199,23 @@ export default function SettingsPage() {
       return text;
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function toggleAutostart() {
+    if (!autostart || autostartBusy) return;
+    setAutostartBusy(true);
+    setAutostartError(null);
+    try {
+      const next = await api.autostartSet(!autostart.enabled);
+      setAutostart(next);
+      // 打开成功但系统里没写成，必须在界面上说清楚，不能显示成已开启。
+      // 具体原因留在下面的状态说明里，这里只讲结论，避免同一句话出现两遍。
+      if (!next.enabled) setAutostartError("自动启动没有生效：系统启动项里仍然没有这一条。");
+    } catch (e) {
+      setAutostartError(describeError(e));
+    } finally {
+      setAutostartBusy(false);
     }
   }
 
@@ -533,6 +562,50 @@ export default function SettingsPage() {
           </p>
         </div>
       </section>
+
+      {/* 启动与行为：唯一一个不走「保存设置」的模块——它改的是系统启动项，点了就生效。 */}
+      <section className="panel settings-module">
+        <header className="module-head">
+          <div>
+            <h2>启动与行为</h2>
+            <p className="muted">
+              这一项直接写入系统的登录启动项，点了立刻生效，不需要点「保存设置」。
+            </p>
+          </div>
+        </header>
+
+        <div className="row">
+          <span className="row-label">系统启动项</span>
+          <span className="row-value">
+            {autostart ? (autostart.enabled ? "已注册" : "未注册") : "读取中…"}
+          </span>
+        </div>
+
+        <div className="field">
+          <span>登录时自动启动</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autostart?.enabled ?? false}
+            aria-label="登录时自动启动"
+            className="btn"
+            disabled={!autostart || !autostart.supported || autostartBusy}
+            onClick={() => void toggleAutostart()}
+          >
+            {autostartBusy ? "处理中…" : autostart?.enabled ? "已开启" : "已关闭"}
+          </button>
+          <p className="hint">
+            {autostart?.detail ?? "正在读取系统启动项…"}
+            {autostart && !autostart.supported ? "；本阶段只在 macOS 上做过验证，Windows 端待实机确认。" : ""}
+          </p>
+        </div>
+
+        {autostartError && (
+          <p className="notice notice-error" role="alert">
+            {autostartError}
+          </p>
+        )}
+      </section>
       </div>
 
       {/* 分区二：数据与维护。备份/附件、平台/存储位置各自成对，不再逐个占满整行。 */}
@@ -572,7 +645,8 @@ export default function SettingsPage() {
       <section className="panel panel-quiet settings-module settings-module-full">
         <h2>本阶段尚未提供的设置</h2>
         <p className="muted">
-          启动页面、自动定时备份属于后续阶段，界面在此明确标注，不会用占位控件伪装成已实现功能。
+          启动页面（登录后默认停在哪个页面）、自动定时备份属于后续阶段，界面在此明确标注，
+          不会用占位控件伪装成已实现功能。
         </p>
       </section>
       </div>

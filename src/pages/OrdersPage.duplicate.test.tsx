@@ -381,7 +381,8 @@ describe("ORDER-01 复制订单", () => {
     expect(screen.getByLabelText(/委托说明/)).toHaveValue("");
     expect(screen.getByLabelText(/^来源/)).toHaveValue("米画师");
     expect(screen.getByLabelText(/委托金额/)).toHaveValue("600");
-    expect((screen.getByLabelText("已有客户") as HTMLSelectElement).value).toBe("c1");
+    // 客户选择器是一个组合框，复制时带过来的客户直接显示在触发按钮上
+    expect(screen.getByRole("combobox", { name: "客户" })).toHaveTextContent("林小满");
 
     await user.click(screen.getByRole("button", { name: "创建副本" }));
     await waitFor(() => expect(duplicateOrder).toHaveBeenCalledTimes(1));

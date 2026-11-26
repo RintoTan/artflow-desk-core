@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import ClientReferencePanel from "../components/ClientReferencePanel";
+import OrderThumb from "../components/OrderThumb";
 import ConfirmDialog from "../components/ConfirmDialog";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import ClientFinancePanel from "../components/ClientFinancePanel";
@@ -13,9 +15,11 @@ import {
   api,
   clientApi,
   clientTagApi,
+  clientRefApi,
   describeError,
   isConflict,
   trashApi,
+  type ClientCover,
   type ClientDeleteImpact,
   type ClientDetail,
   type ClientTag,
@@ -49,7 +53,33 @@ function sameDraft(a: Draft, b: Draft): boolean {
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<ClientView[]>([]);
+  // 客户列表封面：clientId -> 该客户最近一张参考图
+  const [covers, setCovers] = useState<Record<string, ClientCover>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const ids = clients.map((client) => client.id);
+    if (ids.length === 0) {
+      setCovers({});
+      return;
+    }
+    let alive = true;
+    void (async () => {
+      try {
+        const list = await clientRefApi.covers(ids);
+        if (!alive) return;
+        const next: Record<string, ClientCover> = {};
+        for (const cover of list) next[cover.clientId] = cover;
+        setCovers(next);
+      } catch {
+        // 封面只是装饰，拿不到就显示占位块，不影响列表本身
+        if (alive) setCovers({});
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [clients]);
   const [detail, setDetail] = useState<ClientDetail | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [creating, setCreating] = useState(false);
@@ -508,6 +538,21 @@ export default function ClientsPage() {
                   className={`order-row${client.id === selectedId ? " order-row-active" : ""}`}
                   onClick={() => attemptSelect(client.id)}
                 >
+                  <OrderThumb
+                    cover={
+                      covers[client.id]
+                        ? {
+                            orderId: client.id,
+                            attachmentId: covers[client.id]!.attachmentId,
+                            role: null,
+                            thumbPath: covers[client.id]!.thumbPath,
+                            originalPath: covers[client.id]!.originalPath,
+                            mimeType: "image/*",
+                          }
+                        : undefined
+                    }
+                  />
+                  <span className="order-row-body">
                   <span className="order-row-title">{client.displayName}</span>
                   <span className="order-row-meta">
                     {client.orderCount} 单
@@ -523,6 +568,7 @@ export default function ClientsPage() {
                       ))}
                     </span>
                   )}
+                  </span>
                 </button>
               </li>
             ))}
@@ -649,6 +695,7 @@ export default function ClientsPage() {
             </section>
             </div>
 
+
               <section className="panel client-orders">
                 <header className="panel-head compact">
                   <h2>关联订单</h2>
@@ -709,6 +756,7 @@ export default function ClientsPage() {
               </section>
 
             <div className="client-col client-col-side">
+              <ClientReferencePanel clientId={detail.client.id} />
             <section className="panel">
               <header className="panel-head compact">
                 <h2>客户概览</h2>

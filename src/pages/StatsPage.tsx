@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 
 import FinanceStatsPanel from "../components/FinanceStatsPanel";
-import PageHeader from "../components/PageHeader";
 import { save } from "@tauri-apps/plugin-dialog";
 
 import { placeTooltip, type TooltipPlacement } from "../components/TitleTooltip";
@@ -71,11 +70,26 @@ export default function StatsPage() {
   const focus = params.get("focus");
   // 默认仍是原来的业务统计；财务统计是一个独立视图，与业务统计不混排。
   const tab: "business" | "finance" = params.get("tab") === "finance" ? "finance" : "business";
+  // 页头与财务导出的状态都提到页面层：两个视图共用一条页头，切换时只有下面的内容区换。
+  const headRef = useRef<HTMLElement | null>(null);
+  const [finPeriod, setFinPeriod] = useState<{ from: string; to: string } | null>(null);
+  const [finExporting, setFinExporting] = useState<"stats" | "payments" | null>(null);
+  const [finNotice, setFinNotice] = useState<string | null>(null);
+  const [finError, setFinError] = useState<string | null>(null);
+
+  // 真正滚动的是外壳的 .main，不是文档：切视图后"回到顶部"要找它。
+  const scrollBox = () => (headRef.current?.closest(".main") as HTMLElement | null) ?? null;
+  const resetScroll = () => {
+    const box = scrollBox();
+    if (box) box.scrollTop = 0;
+  };
   const switchTab = (next: "business" | "finance") => {
     const query = new URLSearchParams(params);
     if (next === "finance") query.set("tab", "finance");
     else query.delete("tab");
     setParams(query, { replace: true });
+    // 新视图从顶部开始：否则切过去会停在上一页的滚动位置，看到的是页面中段。
+    resetScroll();
   };
   // tab 条做成函数：提前 return 之后 TS 会把 tab 收窄，直接比较会报错。
   const tabBar = (active: "business" | "finance") => (
@@ -210,13 +224,144 @@ export default function StatsPage() {
     }
   }
 
-  if (loading) return <section className="panel">正在统计…</section>;
+  async function exportFinanceStats() {
+    setFinError(null);
+    setFinNotice(null);
+    try {
+      const path = await save({
+        title: "导出财务统计 CSV",
+        defaultPath: `artflow-财务统计-${range}.csv`,
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+      // 用户取消：不建文件、不提示成功
+      if (!path) return;
+      setFinExporting("stats");
+      await statsApi.exportFinanceStats({ path, range: range as "thisMonth" });
+      setFinNotice(`已导出财务统计到 ${path}`);
+    } catch (e) {
+      setFinError(describeError(e));
+    } finally {
+      setFinExporting(null);
+    }
+  }
+
+  async function exportPayments() {
+    setFinError(null);
+    setFinNotice(null);
+    try {
+      const path = await save({
+        title: "导出收款流水 CSV",
+        defaultPath: "artflow-收款流水.csv",
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+      if (!path) return;
+      setFinExporting("payments");
+      await statsApi.exportPayments({ path });
+      setFinNotice(`已导出收款流水到 ${path}`);
+    } catch (e) {
+      setFinError(describeError(e));
+    } finally {
+      setFinExporting(null);
+    }
+  }
+
+  const subtitle =
+    tab === "finance"
+      ? `只统计真实资金流动：到账按收款日、退款按退款日，取消单不计入金额。${
+          finPeriod ? ` · ${finPeriod.from} ~ ${finPeriod.to}` : ""
+        }`
+      : report
+        ? `${report.fromMonth} ~ ${report.toMonth} · ${report.timezone} · 按自然月 · 完成与取消按事件时间计入`
+        : "按自然月统计订单的新建、完成与取消。";
+
+  const head = (
+    <header className="stats-head" ref={headRef}>
+      <div className="stats-toolbar">
+        <div className="stats-heading">
+          <h1 className="page-title">数据统计</h1>
+          <p className="muted stats-head-sub">{subtitle}</p>
+        </div>
+        {tabBar(tab)}
+        <div className="stats-tools">
+          <div className="segmented" role="group" aria-label="统计范围">
+            {RANGES.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className={`filter-chip${range === item.key ? " filter-chip-active" : ""}`}
+                aria-pressed={range === item.key}
+                onClick={() => switchRange(item.key)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          {tab === "finance" ? (
+            <>
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={finExporting !== null}
+                onClick={() => void exportFinanceStats()}
+              >
+                {finExporting === "stats" ? "导出中…" : "导出财务统计 CSV"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={finExporting !== null}
+                onClick={() => void exportPayments()}
+              >
+                {finExporting === "payments" ? "导出中…" : "导出收款流水 CSV"}
+              </button>
+            </>
+          ) : (
+            <button type="button" className="btn btn-sm" onClick={() => void exportSummary()} disabled={busy}>
+              导出汇总 CSV
+            </button>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+
+  const notices = (
+    <>
+      {tab === "finance" ? (
+        <>
+          {finError && (
+            <p className="notice notice-error" role="alert">
+              {finError}
+            </p>
+          )}
+          {finNotice && <p className="notice notice-ok">{finNotice}</p>}
+        </>
+      ) : (
+        <>
+          {error && <p className="notice notice-error">{error}</p>}
+          {notice && <p className="notice notice-ok">{notice}</p>}
+        </>
+      )}
+    </>
+  );
+
+  if (loading) {
+    return (
+      <>
+        {head}
+        <section className="panel stats-overview">正在统计…</section>
+      </>
+    );
+  }
   if (error && !report) {
     return (
-      <section className="panel panel-error">
-        <h2>统计失败</h2>
-        <p className="mono">{error}</p>
-      </section>
+      <>
+        {head}
+        <section className="panel panel-error">
+          <h2>统计失败</h2>
+          <p className="mono">{error}</p>
+        </section>
+      </>
     );
   }
   if (!report) return null;
@@ -234,59 +379,21 @@ export default function StatsPage() {
 
   if (tab === "finance") {
     return (
-      <section className="panel stats-overview">
-        <PageHeader
-          className="stats-toolbar"
-          textClassName="stats-heading"
-          actionsClassName="stats-tools"
-          title="数据统计"
-          description={<>{'只统计真实资金流动：到账按收款日、退款按退款日，取消单不计入金额。'}</>}
-          actions={tabBar("finance")}
-        />
-        <FinanceStatsPanel range={range} onRangeChange={switchRange} />
-      </section>
+      <>
+        {head}
+        {notices}
+        <section className="panel stats-overview">
+          <FinanceStatsPanel range={range} onPeriodChange={setFinPeriod} />
+        </section>
+      </>
     );
   }
 
   return (
     <>
+      {head}
+      {notices}
       <section className="panel stats-overview">
-        <header className="stats-toolbar">
-          <div className="stats-heading">
-            <h1 className="page-title">数据统计</h1>
-            <p className="muted">
-              {report.fromMonth} ~ {report.toMonth} · {report.timezone} · 按自然月 ·
-              完成与取消按事件时间计入
-            </p>
-          </div>
-          <div className="stats-tools">
-            {tabBar("business")}
-            <div className="segmented" role="group" aria-label="统计范围">
-              {RANGES.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  className={`filter-chip${range === item.key ? " filter-chip-active" : ""}`}
-                  aria-pressed={range === item.key}
-                  onClick={() => switchRange(item.key)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => void exportSummary()}
-              disabled={busy}
-            >
-              导出汇总 CSV
-            </button>
-          </div>
-        </header>
-
-        {error && <p className="notice notice-error">{error}</p>}
-        {notice && <p className="notice notice-ok">{notice}</p>}
 
         <div className="kpi-grid">
           <div className="metric-card tone-plain">
