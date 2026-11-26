@@ -187,6 +187,10 @@ for ($i = 1; $i -le $Cycles; $i++) {
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $deadline)
 
+    # 主进程退出后 PID 可能被系统复用，按父进程链追溯会把 csrss / winlogon /
+    # fontdrvhost / dwm 这类会话进程也算进来。只认我们自己启动的进程名。
+    $alive = @($alive | Where-Object { $_.ProcessName -match '^(ArtFlowDesk|msedgewebview2)' })
+
     if ($alive.Count -gt 0) {
         $desc = ($alive | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ','
         Record "$tag-children" 'FAIL' "主进程退出 $ChildGraceSec 秒后仍有子进程存活：$desc"
