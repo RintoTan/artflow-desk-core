@@ -74,7 +74,9 @@ npx tauri build --config src-tauri/tauri.qa.conf.json --bundles app  # QA 版
 产物在 `src-tauri/target/release/bundle/macos/`。
 
 - 当前是 ad-hoc 签名（`codesign --sign -`），未公证；
-- 打包会把开发 CLI（`minidesk-probe` / `attachments-probe` / `qa_seed`）放进 `Contents/MacOS/`，**发布前剔除并重签**；
+- 开发 CLI（`minidesk-probe` / `attachments-probe` / `qa_seed`）挂在 `devtools` 特性下，默认不构建、不会进 `.app`；
+  需要它们时显式加特性：`cargo run --features devtools --bin qa_seed -- --scenario seeded`（`npm run qa:seed` 已带该特性）。
+  **完整 Rust 测试要用 `cargo test --features devtools`**，否则 `lock` / `numbering` / `attachments_recovery` 三组子进程用例会被跳过；
 - DMG 用 `hdiutil create -volname … -srcfolder <stage> -format UDZO` 制作，stage 内放 `.app` 与 `Applications` 软链接。
 
 ### Windows

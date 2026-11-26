@@ -246,7 +246,7 @@ AND archived_at IS NULL` 才算（`domain/orders.rs::PIN_EFFECTIVE_SQL`）。数
 4. **新增事件类型必须同步三处**：迁移、领域层校验、前端展示。
 5. **跨平台测试不能带平台假设**：`HOME`、路径分隔符、unix 符号链接都要处理（`#[cfg(unix)]` 或归一化）。
 6. **Windows release 无控制台**：任何诊断信息必须落到 `logs/app.log`。
-7. **打包不要带上开发 CLI**（`minidesk-probe` / `attachments-probe` / `qa_seed`）。它们是测试依赖，只能从打包配置里排除，不能删源码。
+7. **开发 CLI 由 `devtools` 特性隔离**（`minidesk-probe` / `attachments-probe` / `qa_seed`，三者都带 `required-features`）。`tauri build` 会用 `--bins` 构建并把所有二进制拷进 `Contents/MacOS`，所以「打包时排除」只能靠不构建，不能靠事后删除；依赖这些二进制的三组集成测试同样用 `#![cfg(feature = "devtools")]` 收在特性后面。
 8. **子进程退出是异步的**：Windows 冒烟测试判定残留要给收敛窗口（15 秒），固定 800 ms 会误报。
 9. **单个数据目录只允许一个实例**（`.write.lock`）。第二个实例提示后退出，不聚焦已有窗口——已知取舍。
 10. **macOS 的 Dock「退出」拦不住，这是框架边界而非疏漏**。tao 0.37.2 的 AppDelegate 只实现
