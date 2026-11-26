@@ -140,7 +140,7 @@ fn print_report(scenario: qa::Scenario, report: &SeedReport) {
         println!("  {line}");
     }
     println!(
-        "\n启动该场景：\n  cd /Users/rinto/Documents/ChatGPT/ArtFlow-miniDesk\n  npm run qa:{}",
+        "\n启动该场景：\n  cd <仓库根目录>\n  npm run qa:{}",
         scenario.as_str()
     );
 }
