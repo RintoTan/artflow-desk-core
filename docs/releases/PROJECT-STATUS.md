@@ -272,6 +272,8 @@
 
 **Windows 产物的证据边界**：由 GitHub Actions 原生 `windows-latest` 构建；Runner 上实际启动过两轮（退出码均为 0），启动日志 `identifier=dev.artflow.minidesk version=0.1.2 schema=v14 first_run=true`，共 11 项检查 0 失败。**没有在实体 Windows 机器上做安装与人工验收**，这一项记为未验证。
 
+**发布资产修正（2026-11-26 晚）**：macOS 包此前缺 `_CodeSignature`（`bundle.macOS` 没有 `signingIdentity`，`tauri build` 只留下 linker-signed 的二进制），Gatekeeper 报「已损坏」。已补 `"signingIdentity": "-"` 重新构建，`codesign --verify --deep --strict` 通过，zip 覆盖上传，哈希随之变更。
+
 **发布后再修正（已随本次重建进入 0.1.2）**：客户搜索框漏 `list-search` 类、客户页财务概览被 `dl.stat-row` 的 flex 挤成不等宽三列、看板默认选中无订单的默认模板导致开局空白。三处修完后重新打包三件产物并覆盖 Release，Tag 指到 `4a991e8`。
 
 **CI 过程中修掉的四个问题**（三个 Windows 专属，一个测试竞态）：
