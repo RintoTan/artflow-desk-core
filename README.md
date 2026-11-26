@@ -119,16 +119,19 @@ npm run tauri build -- --bundles app
 
 | 入口 | 内容 |
 | --- | --- |
+| [文档地图](docs/README.md) | 全部文档的分类、阅读路线与冲突时的权威顺序 |
 | [产品概览](docs/product/PRODUCT-OVERVIEW.md) | 定位、用户、业务流程、功能体系 |
 | [产品决策](docs/product/PRODUCT-DECISIONS.md) | 已确认的取舍与不可擅改的业务规则 |
 | [路线图](docs/product/ROADMAP.md) | 已完成 / 当前 / 规划 |
 | [技术架构](docs/architecture/ARCHITECTURE.md) | 技术栈、模块边界、数据模型 |
 | [数据安全](docs/architecture/DATA-SAFETY.md) | 存储、迁移、备份、恢复、故障处理 |
 | [开发与构建](docs/development/DEVELOPMENT.md) | 环境、测试、构建、发布 |
+| [开发交接](docs/handoff/DEVELOPMENT-HANDOFF.md) | 接手入口：目录、数据层、硬规则、坑、验收状态 |
+| [项目历史](docs/history/PROJECT-HISTORY.md) | 阶段、版本谱系、schema 演进、被否决的方案 |
 | [发布指南](docs/releases/RELEASE-GUIDE.md) | 构建命令、产物、签名与公证说明 |
 | [项目状态](docs/releases/PROJECT-STATUS.md) | 版本、平台状态、已知问题 |
 | [最终审计](docs/releases/FINAL-AUDIT-0.1.2.md) | 0.1.2 的验收证据与未验证项 |
-| [开发基线](docs/NEXT-DEVELOPMENT-BASELINE.md) | 接手入口：目录、schema、边界、遗留项 |
+| [文档审计 2026-11-26](docs/AUDIT-2026-11-26.md) | 本轮审计发现与修复 |
 | [用户手册](docs/user-guide/USER-MANUAL.md) | 安装、使用、备份、排错 |
 | [变更记录](CHANGELOG.md) | 版本变更 |
 

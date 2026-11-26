@@ -7,7 +7,7 @@
 | 应用版本 | `0.1.2` |
 | 数据库 schema | **v14**（v8 软删除 → v9 归档 → v10 财务三表 → v11 STRICT 重建 → v12 退款 → v13 订单置顶 → v14 客户参考图） |
 | 备份格式 | v1（未变；v10 起包内含财务四表与条数摘要） |
-| Git | `master`，HEAD `f18de06`，另有未提交的 UI/自启动/打包改动；Demo 标签 `v0.1.0-demo.1` / `v0.1.0-demo.2` |
+| Git | `master`，HEAD `fec7f16`，工作区干净；Tag `v0.1.2` → `1935fb0`（master 之后均为纯文档提交）；Demo 标签 `v0.1.0-demo.1` / `v0.1.0-demo.2` |
 | 当前 Release | **`v0.1.2`（已发布）**：https://github.com/RintoTan/artflow-desk-core/releases/tag/v0.1.2 |
 
 ## 一、平台状态
@@ -168,7 +168,9 @@
 **自动化**：`tests/storage_migrate.rs` 11 例、`tests/lock.rs` 13 例（含 3 例身份校验）。
 **NOT RUN**：Windows 真机（命名管道与文件索引均未在实机运行）、macOS 双进程激活端到端、原生迁移全流程。
 
-## 三之七、DEV-0.1.1-06 双平台验收（进行中）
+## 三之七、DEV-0.1.1-06 双平台验收（历史时点）
+
+> 本节记录 2026-11-20 ～ 11-21 的状态快照。此后 Windows CI 与产物已于 11-26 补齐、macOS 包已补签名（见 §三之九），「BLOCKED / 无产物」按历史读，不是现状。
 
 自动化全部通过，**实机层为零**：本机无法投递原生鼠标键盘（TCC 拒绝），Windows 无机器、无产物、无 CI。
 
@@ -212,7 +214,7 @@
 
 **测试口径变化（必须记住）**：完整 Rust 测试改为 `cargo test --features devtools`。不加特性时，上述三组子进程用例整份跳过，不是「通过」。
 
-**实测基线（2026-11-26）**：`cargo test --features devtools --no-fail-fast` → **Rust 720 passed / 0 failed**；前端 `npx vitest run` → **96 文件 / 953 passed**；`tsc --noEmit` 与 `npm run build` 通过。不带特性的 `cargo test --no-run` 也能编译，只是少跑那三组。
+**实测基线（2026-11-26，本节写作时）**：`cargo test --features devtools --no-fail-fast` → **Rust 720 passed / 0 failed**；前端 `npx vitest run` → **96 文件 / 953 passed**；`tsc --noEmit` 与 `npm run build` 通过。不带特性的 `cargo test --no-run` 也能编译，只是少跑那三组。**当前基线见 §三之十**（723 / 956）。
 
 ### 2. 登录时自动启动（此前 0 代码）
 
@@ -265,10 +267,10 @@
 | Tag / Release | `v0.1.2`，非草稿、非预发布 |
 | 发布提交 | `1935fb0`（tag 指向这个提交） |
 | master | 比 tag 多若干**纯文档**提交（审计/基线、README 重写、仓库整理），不重新打 tag |
-| macOS arm64 | `ArtFlow-Desk-Core-0.1.2-macos-arm64.zip`，6.5 MB，`4a9282a1…28a5`，adhoc 未公证 |
-| Windows x64 安装包 | `…-Setup.exe`，4.1 MB，`82fbd0e0…cffca` |
-| Windows x64 便携版 | `…-Portable.exe`，17 MB，`a590e081…7f716` |
-| 校验 | `SHA256SUMS.txt`，三件产物 `shasum -c` 通过 |
+| macOS arm64 | `ArtFlow-Desk-Core-0.1.2-macos-arm64.zip`，6,711,914 B，`4a9282a1…28a5`，adhoc 未公证 |
+| Windows x64 安装包 | `…-Production-Setup.exe`，4,297,447 B，`be04dd73…b39a8` |
+| Windows x64 便携版 | `…-Production-Portable.exe`，17,362,944 B，`8b01f906…6a01f` |
+| 校验 | `SHA256SUMS.txt`（347 B），三件产物 `shasum -c` 通过 |
 
 **Windows 产物的证据边界**：由 GitHub Actions 原生 `windows-latest` 构建；Runner 上实际启动过两轮（退出码均为 0），启动日志 `identifier=dev.artflow.minidesk version=0.1.2 schema=v14 first_run=true`，共 11 项检查 0 失败。**没有在实体 Windows 机器上做安装与人工验收**，这一项记为未验证。
 
@@ -276,13 +278,30 @@
 
 **发布资产修正（2026-11-26 晚）**：macOS 包此前缺 `_CodeSignature`（`bundle.macOS` 没有 `signingIdentity`，`tauri build` 只留下 linker-signed 的二进制），Gatekeeper 报「已损坏」。已补 `"signingIdentity": "-"` 重新构建，`codesign --verify --deep --strict` 通过，zip 覆盖上传，哈希随之变更。
 
-**发布后再修正（已随本次重建进入 0.1.2）**：客户搜索框漏 `list-search` 类、客户页财务概览被 `dl.stat-row` 的 flex 挤成不等宽三列、看板默认选中无订单的默认模板导致开局空白。三处修完后重新打包三件产物并覆盖 Release，Tag 指到 `4a991e8`。
+**发布后再修正（已随本次重建进入 0.1.2）**：客户搜索框漏 `list-search` 类、客户页财务概览被 `dl.stat-row` 的 flex 挤成不等宽三列、看板默认选中无订单的默认模板导致开局空白。三处修完后重新打包三件产物并覆盖 Release。**Tag 未移动，仍指 `1935fb0`**——重建产物与文档提交都不构成「重新发版」。
 
 **CI 过程中修掉的四个问题**（三个 Windows 专属，一个测试竞态）：
 1. `activate.rs` 的 `CreateFileW` 把 `*const null` 传给 `HANDLE` 类型参数（E0308）→ 改 `null_mut()`；
 2. 参考图路径断言写死正斜杠 → 断言前归一化分隔符；
 3. 两条 reset 故障注入用例依赖 unix 只读目录 → Windows 上显式 `ignore` 并注明原因；
 4. 冒烟的子进程残留检查按 PID 追溯，主进程退出后 PID 被复用会把 `csrss/winlogon/dwm` 误算成残留 → 改为只认 `ArtFlowDesk*` 与 `msedgewebview2*`。
+
+## 三之十、整理复验（2026-11-26，`fec7f16`）
+
+本节的数字是整理当轮实跑的结果，用于替换此前散落在各文档里的旧基线。详细清单见 [2026-11-26 文档审计](../AUDIT-2026-11-26.md)。
+
+| 项 | 结果 |
+| --- | --- |
+| `cargo test --features devtools --no-fail-fast` | **723 passed / 0 failed / 1 ignored**（73 个测试套件） |
+| `npx vitest run` | **97 文件 / 956 passed** |
+| `npx tsc --noEmit` | 通过 |
+| `npm run build` | 通过 |
+| 版本四处一致 | `0.1.2`（`version_consistency` 3 例通过） |
+| 数据库 schema | v14（`APP_SCHEMA_VERSION`，迁移链 v1→v14 连续） |
+| 签名 | `codesign --verify --deep --strict` 通过，`flags=0x10002(adhoc,runtime)`，含 `_CodeSignature` |
+| 远端 Release 资产 | 4 件，字节数与 0.1.2 审计一致；非草稿、非预发布 |
+| 文档链接 | 20 个 Markdown 文件，0 条死链 |
+| 工作区 | 干净；HEAD = origin/master = `fec7f16` |
 
 ## 四、已知问题
 

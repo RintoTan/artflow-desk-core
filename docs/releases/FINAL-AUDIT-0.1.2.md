@@ -1,6 +1,8 @@
 # ArtFlow Desk Core v0.1.2 最终审计
 
-审计基线：`master = 4a31eb3`，`tag v0.1.2` 指向同一提交，工作区干净。
+初版审计基线：`master = 4a31eb3`，`tag v0.1.2` 指向同一提交，工作区干净。
+此后 `41a41b4` 修了订单排序并重建三件产物、`8c290c6` 补了 8 张截图、`fec7f16` 同步文档；
+**Tag 未移动**，本文的资产表与状态已按最终产物同步，审计结论未变。
 审计时间：2026-11-26。本文只写有证据的结论，未跑过的一律标「未验证」。
 
 ---
@@ -9,8 +11,8 @@
 
 | 项 | 值 | 证据 |
 | --- | --- | --- |
-| master | `4a31eb3` | `git rev-parse --short HEAD` |
-| Tag | `v0.1.2` → `4a31eb3` | `git rev-parse --short 'v0.1.2^{commit}'` |
+| master | `fec7f16` | `git rev-parse --short HEAD` |
+| Tag | `v0.1.2` → `1935fb0`（tag 对象 `740233b`） | `git rev-list -n1 v0.1.2` |
 | Release | https://github.com/RintoTan/artflow-desk-core/releases/tag/v0.1.2 | `gh release view` |
 | 工作区 | 干净 | `git status --porcelain` 无输出 |
 
@@ -67,6 +69,8 @@ macOS 包内 `Contents/MacOS` 只有 `artflow-minidesk`（22,457,920 B 级别）
 | Rust `cargo test --features devtools` | **723 passed**（历史基线） | **本轮未重跑**，不计作本轮复验 |
 | Windows CI | Production / QA 双任务 success | Runner 上两轮启停退出码 0，11 项检查 0 失败 |
 
+> 2026-11-26 整理时的复验（资产重建后）：`npx vitest run` → 97 文件 / 956 passed，`tsc --noEmit` 通过；Rust 全量与 `.app` 体积见 [文档审计](../AUDIT-2026-11-26.md)。上表为初版审计当时的读数，保留不改。
+
 ---
 
 ## 五、本轮修掉的缺陷（含仅 Windows 暴露的）
@@ -85,7 +89,7 @@ macOS 包内 `Contents/MacOS` 只有 `artflow-minidesk`（22,457,920 B 级别）
 
 | 项 | 状态 |
 | --- | --- |
-| 截图交付 | **未完成**。采集脚本存在窗口串扰（前一实例未退干净会抓到旧窗口），错误图片已全部撤下，`docs/assets/screenshots/0.1.2/` 为空 |
+| 截图交付 | **已补**（`8c290c6`）：`docs/assets/screenshots/0.1.2/` 8 张（1120×760，含深色看板）+ 清单，README 已引用。880×500 窄窗仍未拍 |
 | macOS 正式包实机启动 | **未验证**（启动会迁移生产数据根，留给产品负责人执行） |
 | macOS 干净机器首次打开 | **未验证**（本机 Gatekeeper 评估被关闭，`spctl accepted` 不具代表性） |
 | Windows 真机安装与人工验收 | **未验证**（仅 CI Runner 冒烟） |
@@ -103,7 +107,7 @@ macOS 包内 `Contents/MacOS` 只有 `artflow-minidesk`（22,457,920 B 级别）
 4. 列表缩略图不支持在列表内直接放大原图（由订单详情的附件查看器承担）。
 5. 存储用量统计未实现（设计已冻结，无命令与界面）。
 6. 结构校验失败时无救援模式（P2，此前裁定不做）。
-7. README 展示图仍为 0.1.2 之前的界面。
+7. README 展示图已换成 0.1.2 界面（8 张），但窄窗与部分交互只有自动化覆盖。
 
 ---
 

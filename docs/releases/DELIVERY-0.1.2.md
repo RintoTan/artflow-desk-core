@@ -31,15 +31,15 @@
 
 | 项 | 内容 | 状态 |
 | --- | --- | --- |
-| macOS 产物 | `ArtFlow-Desk-Core-0.1.2-macos-arm64.zip`（6.5 MB） | 已产出 |
-| 校验文件 | `SHA256SUMS.txt`（`shasum -a 256 -c` 通过） | 已产出 |
-| Windows 产物 | — | **未产出** |
+| macOS 产物 | `ArtFlow-Desk-Core-0.1.2-macos-arm64.zip`（6,711,914 B，adhoc 签名） | 已产出并上传 |
+| Windows 产物 | `…-Production-Setup.exe`（4,297,447 B）/ `…-Production-Portable.exe`（17,362,944 B） | 已产出并上传（CI 构建，未实机验收） |
+| 校验文件 | `SHA256SUMS.txt`（347 B，`shasum -a 256 -c` 通过） | 已产出并上传 |
 | 发布说明 | `CHANGELOG.md` v0.1.2 段 | 已更新 |
 | 发布指南 | `docs/releases/RELEASE-GUIDE.md` | 已新增 |
 | 项目状态 | `docs/releases/PROJECT-STATUS.md` | 已更新到 v14 |
 | 开发清单 | 本文第一节 | 已整理 |
-| 截图 | `docs/assets/screenshots/*` 仍是旧版 UI | **待更新** |
-| GitHub Tag / Release | — | **未执行**（需推送授权） |
+| 截图 | `docs/assets/screenshots/0.1.2/` 8 张 + 清单 | 已交付 |
+| GitHub Tag / Release | `v0.1.2` → `1935fb0`，非草稿非预发布 | 已发布 |
 
 ---
 
@@ -77,7 +77,7 @@
 
 1. macOS 为 adhoc 签名、未公证；首次打开需右键「打开」。
 2. Windows 无产物，无 CI 记录。
-3. 截图与 README 展示图仍是旧版界面。
+3. 截图已更新为 0.1.2 界面（8 张，`41a41b4` 构建），但 880×500 窄窗没有实机图，只有自动化覆盖。
 4. 看板只按「一个流程模板 + 阶段筛选」展示，不提供多模板并排分组。
 5. 列表缩略图不支持在列表内直接放大原图（订单详情的附件查看器承担）。
 6. 存储用量统计仍未实现（设计已冻结，无命令与界面）。
@@ -89,8 +89,8 @@
 
 | 命令 | 结果 |
 | --- | --- |
-| `cargo test --features devtools --no-fail-fast` | 723 passed / 0 failed |
-| `npx vitest run` | 97 文件 / 955 passed |
+| `cargo test --features devtools --no-fail-fast` | 723 passed / 0 failed / 1 ignored |
+| `npx vitest run` | 97 文件 / 956 passed |
 | `npx tsc --noEmit` | 通过 |
 | `npm run build` | 通过 |
-| `npm run tauri build -- --bundles app` | 成功，`.app` 22.11 MiB |
+| `npm run tauri build -- --bundles app` | 成功；二进制 22,327,488 B，`.app` 目录 23,064,576 B |

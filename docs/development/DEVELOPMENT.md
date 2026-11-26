@@ -41,16 +41,18 @@ npm run qa:timeline-empty   # 时间线空态（另有 -unscheduled / -no-dates 
 | `npm run qa:seed` | 重灌 seeded 场景数据 |
 | `npm run qa:rebuild` | 重建 seeded 场景 |
 | `npm run layout:check` | 布局探针 |
-| `cargo test --manifest-path src-tauri/Cargo.toml` | Rust 测试 |
+| `cargo test --manifest-path src-tauri/Cargo.toml --features devtools` | Rust 测试（带特性才是完整集合） |
 | `npx tauri build` | 本机打包（默认正式版） |
 
-当前基线（2026-11-20 提交 `c332ad7`）：Rust 383 个测试、前端 54 个测试文件 / 596 个用例，`tsc` 与 `build` 通过。数字会变，重跑后再引用。
+当前基线（2026-11-26 提交 `fec7f16` 实跑）：Rust **723 passed / 0 failed / 1 ignored**（需 `--features devtools`）、前端 **97 文件 / 956 passed**，`tsc --noEmit` 与 `npm run build` 通过。数字会变，重跑后再引用，别照抄。
 
 ## 5. 测试
 
 ```bash
-cargo test --manifest-path src-tauri/Cargo.toml   # 迁移 / 生命周期 / 备份 / 维护 / 并发
-npm test                                          # 页面与纯函数
+# 完整集合：迁移 / 生命周期 / 备份 / 维护 / 并发 + 三组探针子进程用例
+cargo test --manifest-path src-tauri/Cargo.toml --features devtools --no-fail-fast
+
+npm test          # 页面与纯函数（vitest run）
 npm run typecheck
 npm run build
 ```

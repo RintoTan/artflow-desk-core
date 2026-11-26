@@ -45,19 +45,22 @@ npm run tauri build -- --bundles app
 
 ---
 
-## 三、本次产出的资产（0.1.2 / macOS arm64）
+## 三、本次产出的资产（0.1.2）
 
 | 文件 | 大小 | SHA-256 |
 | --- | --- | --- |
-| `ArtFlow-Desk-Core-0.1.2-macos-arm64.zip` | 6.5 MB | `3bdd0b5685f3a0910bb3b934c9e27a33c99c6b7df4691037340de6f5c5e57029` |
-| `SHA256SUMS.txt` | — | 内容同上，`shasum -a 256 -c` 可校验 |
+| `ArtFlow-Desk-Core-0.1.2-macos-arm64.zip` | 6,711,914 B | `4a9282a1bfc99dcf1ecac348a7376a16d9c71cb3755a4b0248620280b3e128a5` |
+| `ArtFlowDesk-Core-Windows-v0.1.2-Production-Setup.exe` | 4,297,447 B | `be04dd737835a9f981e369b5ad914284e162ea50aa18505733235614bddb39a8` |
+| `ArtFlowDesk-Core-Windows-v0.1.2-Production-Portable.exe` | 17,362,944 B | `8b01f906eb629eeb3401724da8f718ffb0891eb7ad1730f45836cb532b06a01f` |
+| `SHA256SUMS.txt` | 347 B | 三件产物 `shasum -a 256 -c` 可校验 |
 
-包内结构（`unzip -l` 只有 7 项）：
+包内结构（`Contents/` 四项，`MacOS` 只有一个可执行文件）：
 
 ```
-ArtFlow Desk Core.app/Contents/MacOS/artflow-minidesk    22,457,920 B
+ArtFlow Desk Core.app/Contents/MacOS/artflow-minidesk
 ArtFlow Desk Core.app/Contents/Resources/icon.icns
 ArtFlow Desk Core.app/Contents/Info.plist
+ArtFlow Desk Core.app/Contents/_CodeSignature/CodeResources
 ```
 
 校验方式：
@@ -75,11 +78,14 @@ unzip -l ArtFlow-Desk-Core-0.1.2-macos-arm64.zip | grep Contents/MacOS/
 ## 四、签名与公证：adhoc、未公证
 
 ```
-Identifier=artflow_minidesk
-CodeDirectory ... flags=0x20002(adhoc,linker-signed)
+Identifier=dev.artflow.minidesk
+CodeDirectory v=20500 ... flags=0x10002(adhoc,runtime) location=embedded
 Signature=adhoc
 TeamIdentifier=not set
 ```
+
+`bundle.macOS.signingIdentity` 设为 `"-"` 才会产生 `Contents/_CodeSignature/CodeResources`。
+少了这一步，包只剩 linker-signed 的裸二进制，用户侧报的是**「已损坏」**而不是「未验证的开发者」。
 
 这是**明确选择**的当前方案，不是遗漏：个人项目不为 0.1.2 单独购买 Apple Developer 账号。
 
@@ -92,25 +98,27 @@ TeamIdentifier=not set
 2. 弹窗里再点一次「打开」；
 3. 之后这台机器就不再拦它。
 
-命令行方式：`xattr -dr com.apple.quarantine "/Applications/ArtFlow Desk Core.app"`。
+不提供关闭全局 Gatekeeper 或批量移除隔离标记的做法：右键一次即可，代价更低，也不会留下长期放松的系统设置。
 
 > 本机 `spctl -a` 显示 `accepted / override=security disabled`，说明这台开发机的 Gatekeeper 评估被关闭过。
 > **因此本机的 `accepted` 不能证明用户机器上会接受**——这一项只能记为「未在干净机器验证」。
 
 ---
 
-## 五、Windows：尚未产出
+## 五、Windows：CI 原生构建
 
-当前状态：**未构建**。本机 `cargo xwin` 缺 `llvm-rc`，没有可用的 Windows 交叉编译链。
+本机不做交叉编译：`cargo xwin` 卡在缺 `llvm-rc` / `llvm-lib`，补齐工具链的成本高于收益。
+产物由 GitHub Actions 原生 `windows-latest` Runner 构建 x64（`.github/workflows/windows-build.yml`）：
 
-计划路线（按产品决定）：GitHub Actions 原生 `windows-latest` Runner 构建 x64，不继续在本机折腾交叉编译。
-前置条件是仓库已推送并存在对应 workflow 文件；这一步尚未执行。
+```bash
+gh workflow run windows-build --ref master
+```
 
-Windows 产物一旦生成，必须同时记录：
+每次构建产出 Production 与 QA 两套，Runner 上会启动、等待窗口、优雅关闭、确认进程退出、再启动一次，
+共 11 项检查；冒烟脚本见 `scripts/windows/smoke-test.ps1`。
 
-- 构建日志（哪次 workflow run）
-- 产物文件名、大小、SHA-256
-- 明确标注「已构建，未完成 Windows 真机安装与运行验收」
+必须同时记录：workflow run 编号、产物文件名 / 字节 / SHA-256，以及一句
+**「已构建，未完成 Windows 真机安装与运行验收」**。
 
 **不得**把「CI 构建成功」写成「Windows 验收通过」。
 
@@ -120,15 +128,16 @@ Windows 产物一旦生成，必须同时记录：
 
 | 检查项 | 状态 |
 | --- | --- |
-| 四处版本号一致 | 通过（`version_consistency` 3 例） |
-| 前端构建标识来自干净提交 | 通过（`17fd755`，无 `-dirty`） |
+| 四处版本号一致 | 通过（`version_consistency` 守护） |
+| 前端构建标识来自干净提交 | 通过（无 `-dirty`） |
 | `Contents/MacOS` 无开发 CLI | 通过（只有 `artflow-minidesk`） |
 | Info.plist identifier / 版本 | 通过（`dev.artflow.minidesk` / `0.1.2` / 最低 macOS 13.0） |
-| ZIP 校验文件可复算 | 通过（`shasum -c` OK） |
-| 正式包启动验证 | **未执行**（会打开并迁移生产数据根） |
-| Windows 产物 | **未产出** |
-| 截图更新 | **未执行** |
-| GitHub Tag / Release | **未执行** |
+| bundle 签名可校验 | 通过（`codesign --verify --deep --strict`，含 `_CodeSignature`） |
+| ZIP / EXE 校验文件可复算 | 通过（`shasum -a 256 -c` OK） |
+| 正式包启动验证 | **未执行**（会打开并迁移生产数据根，留给产品负责人） |
+| Windows 真机安装与人工验收 | **未执行**（仅 CI Runner 冒烟） |
+| 截图 | 已交付 8 张（`41a41b4` 构建） |
+| GitHub Tag / Release | 已发布（`v0.1.2` → `1935fb0`，非草稿非预发布） |
 
 ---
 
