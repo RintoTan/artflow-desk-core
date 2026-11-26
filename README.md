@@ -1,124 +1,137 @@
-# ArtFlow Desk Core · 画师助手
+# ArtFlow Desk Core
 
-> 面向独立画师的本地优先桌面委托管理工具。
-> A local-first commission management desktop app for independent artists.
+**v0.1.2**
 
-![工作台](docs/assets/screenshots/01-dashboard.png)
+**A local-first desktop workspace for independent artists to run commissions.**
+面向独立画师的本地化委托管理工具：接稿、排单、制作进度、客户资料与财务记录集中在一个工作空间里。
 
-## 这是什么
+macOS arm64 · Windows x64 · React · Tauri · Rust · SQLite
 
-ArtFlow Desk Core 是一款为独立画师设计的桌面委托管理工具，把订单、客户、制作流程、交付排期和数据管理收在一个清晰的工作空间里，减少来回翻聊天记录和表格的时间。
+---
 
-- **本地优先**：所有数据存在你自己的电脑上，不依赖云同步，客户也不需要注册账号。
-- **单画师工作流**：从接单、排期、画到第几阶段、什么时候交付，一条线走完。
-- **可迁移**：数据可整体导出为备份包，换电脑时带走即可。
+## 它解决什么
 
-> Web 端 ArtFlow Desk 与桌面端 ArtFlow Desk Core 属于同一产品体系下的两个独立产品：工程、数据与发布相互独立，不共享数据库。本仓库只包含桌面端。
+独立画师的委托信息通常散在聊天记录、表格和相册里：谁排在第几单、客户上次的参考图在哪、这单做到第几步、什么时候该交、这个月收了多少。ArtFlow Desk Core 把这些收进一个本地应用，一台电脑、一份数据、不需要账号也不需要联网。
 
-## 界面
+- **本地优先**：数据只存在你自己的机器上，不依赖云同步，客户不需要注册。
+- **一条线走完**：从接单、排期、制作阶段推进到交付与归档，不必来回切工具。
+- **可带走**：整库快照 + 附件 + 校验清单打包成 ZIP，换机器时带走即可。
 
-| 订单列表 | 订单详情与制作阶段 |
+> 桌面端 ArtFlow Desk Core 与 Web 端 ArtFlow Desk 是同一产品体系下的两个独立产品，工程、数据与发布互不共享。本仓库只包含桌面端。
+
+## 功能
+
+| 模块 | 说明 |
 | --- | --- |
-| ![订单列表](docs/assets/screenshots/02-orders.png) | ![订单详情](docs/assets/screenshots/03-order-detail.png) |
+| **委托管理** | 卡片 / 看板 / 表格三种视图；卡片与看板带封面缩略图（成品 → 参考图 → 占位）；新建、编辑、复制、取消；委托类型七种高频预设 + 自由输入；标题可按「客户 · 类型」自动生成 |
+| **排单与排序** | 手动队列可拖拽、可上下移；另有按交付日期 / 创建时间 / 委托金额的临时排序，只改展示不改真实排单；置顶订单始终在前 |
+| **制作流程** | 自定义阶段模板，每张订单持有自己的阶段副本；推进、返工、跳级，改动模板不影响历史订单 |
+| **日历排期** | 月 / 周视图，按计划起止日期铺排，拖拽改期并写入排期历史 |
+| **客户档案** | 客户资料、标签、关联订单下钻；参考图可上传或拖入，缩略图点开看原图，删除需确认 |
+| **数据统计** | 业务统计与财务统计共用页头；三种财务口径互相独立；按当前筛选导出 CSV |
+| **数据安全** | SQLite + 代际目录；升级自动迁移并保留旧代际；备份前自动快照，恢复在隔离代际完成 |
+| **主题系统** | 浅色 / 深色 / 跟随系统，可调强调色与应用图标（Orbit / Layers / Wave） |
 
-| 日历排期 | 数据备份与恢复 |
-| --- | --- |
-| ![日历](docs/assets/screenshots/04-calendar.png) | ![备份](docs/assets/screenshots/07-backup.png) |
+## 下载
 
-| 关于软件 | 使用指引 |
-| --- | --- |
-| ![关于](docs/assets/screenshots/05-about.png) | ![指引](docs/assets/screenshots/06-guide.png) |
+最新版本见 [Releases · v0.1.2](https://github.com/RintoTan/artflow-desk-core/releases/tag/v0.1.2)，每次发布附 `SHA256SUMS.txt`。
 
-截图来自 QA 测试环境（虚构数据），非真实客户信息。
-**当前展示图为 0.1.2 之前的界面**：缩略图、四种排序、客户参考图与左下角版本入口尚未出现在这些图里，
-0.1.2 正式发布前会统一重拍（见 `docs/releases/DELIVERY-0.1.2.md` 的「待更新」项）。
-
-## 核心功能
-
-- **工作台**：进行中/排队中/制作中订单计数，三日内到期、今天到期、已逾期的交付提醒，本月完成次数，跨订单项目时间线。
-- **订单管理**：卡片 / 看板 / 表格三种视图，卡片与看板带封面缩略图（成品优先，其次参考图，缺图给占位块）；新建、编辑、复制、取消；委托类型支持七种高频预设与自由输入，标题可按「客户 · 类型」自动生成；队列排序，另有按交付日期 / 创建时间 / 委托金额的临时排序（只改展示，不改真实排单）；制作阶段推进、返工与跳级；完整制作历史。
-- **客户管理**：客户资料与标签；客户可存参考图（选择或拖拽上传、缩略图、点开看原图、删除需确认），参考图随备份包一起迁移；订单可关联客户并下钻查看该客户的全部委托。
-- **回收站**：入口在「设置 → 数据维护」。客户组支持整批恢复，独立订单支持单独恢复；也可永久删除或手动清空。永久删除后，关联附件进入延迟清理流程，失败时可重试。
-- **流程模板**：自定义制作阶段模板，新订单按模板生成自己的阶段副本，改模板不影响已有订单的历史。
-- **日历排期**：月视图 / 周视图，按计划起止日期铺排，拖动或选日期即可改期，改期写入排期历史。
-- **历史统计**：按月查看完成情况与收入分布，客户/模板维度下钻，按当前筛选导出 CSV。
-- **附件管理**：参考图片多选导入、拖拽导入、缩略图与原图预览；隔离文件与导入记录可手动维护。
-- **数据备份与恢复**：整库快照 + 附件 + 校验清单打包成 ZIP；恢复前自动安全快照，全程在隔离代际里完成。
-- **系统设置**：主题（浅色 / 深色 / 跟随系统）、强调色、应用图标、工作时区、备份与附件维护、数据维护（回收站）。
-
-## 视觉体系
-
-- **Arctic Blue**：默认浅色主题，冷调、低饱和，长时间看不累。
-- **Arctic Line**：图标与应用图标的线条语言。
-- **Orbit / Layers / Wave**：三套可切换的应用图标主题。
-
-## 支持平台
-
-| 平台 | 状态 | 说明 |
+| 平台 | 文件 | 说明 |
 | --- | --- | --- |
-| macOS 13.0+ (Apple Silicon) | Demo 可用 | ad-hoc 签名，未公证 |
-| Windows 10 1809+ / 11 (x64) | Demo 可用（实机验收） | 2026-11-20 真机两阶段 56 项：核心功能基本通过；安装/卸载、DPI 125%/200%、中文路径、断网仍未验证 |
+| macOS 13+ (Apple Silicon) | `ArtFlow-Desk-Core-0.1.2-macos-arm64.zip` | adhoc 签名、**未公证** |
+| Windows 10 1809+ / 11 (x64) | `…-Production-Setup.exe` / `…-Production-Portable.exe` | CI 构建，**未经实体机器验收** |
 
-## 下载 Demo
+### 安装
 
-见 [Releases](https://github.com/RintoTan/artflow-desk-core/releases) 页（仓库为 Private，需有权限的账号访问）。每次 Demo 附 `SHA256SUMS.txt`。
+**macOS**：解压后把 `ArtFlow Desk Core.app` 拖进「应用程序」。首次打开会被 Gatekeeper 拦一次：在 Finder 里**右键 →「打开」**，弹窗再点一次「打开」。也可以用命令行去掉隔离标记：
 
-- **正式版**（`ArtFlow Desk Core`）：用你自己的真实数据，标识 `dev.artflow.minidesk`。
-- **QA 版**（`ArtFlow Desk Core QA`）：演示与试玩用，标识 `dev.artflow.minidesk.qa`，数据与正式版完全隔离。
+```bash
+xattr -dr com.apple.quarantine "/Applications/ArtFlow Desk Core.app"
+```
 
-> 当前版本**未做 Apple Developer ID 签名与公证**，macOS 首次打开需「右键 → 打开」；Windows 首次运行会有 SmartScreen 提示。这不是缺陷，是尚未配置签名证书。
+不要关闭系统全局 Gatekeeper。
 
-## 安装与首次启动
+**Windows**：运行 `Setup.exe` 安装，或直接用 `Portable.exe`。未做代码签名，首次运行会有 SmartScreen 提示（「更多信息」→「仍要运行」）。
 
-完整手册：[docs/user-guide/USER-MANUAL.md](docs/user-guide/USER-MANUAL.md)
-（macOS 首次打开需「右键 → 打开」；Windows 有 SmartScreen 提示，均为未配置签名所致。）
+### 校验
+
+```bash
+shasum -a 256 -c SHA256SUMS.txt
+```
+
+当前版本的三件产物：
+
+| 文件 | SHA-256 |
+| --- | --- |
+| macOS arm64 zip | `87b8bd58423b831b05fcc75de9999510dc97189848d2e98cd4a7858ab7c7e5d6` |
+| Windows Setup | `82fbd0e0fccb7df9ccc43252fe839f30f467ed610cb756c1b3d3892c2bbcffca` |
+| Windows Portable | `a590e081d92a42c143096ccbbb8c369ac11fc6617c97fcd2ab6544fc5597f716` |
 
 ## 数据与隐私
 
-- 数据默认位置：macOS `~/Library/Application Support/dev.artflow.minidesk`；Windows `%APPDATA%\dev.artflow.minidesk`。
-- 不联网、不上传、不集成任何第三方分析或云服务。
-- 备份包**未加密**，内含客户与订单信息，请妥善保存。
+- 数据位置：macOS `~/Library/Application Support/dev.artflow.minidesk`；Windows `%APPDATA%\dev.artflow.minidesk`。
+- 不联网、不上传、不接入任何分析或云服务。
+- 备份包**未加密**，内含客户与订单信息，请自行妥善保存。
 
-数据存储、代际、备份格式、恢复流程与故障恢复：见 [DATA-SAFETY.md](docs/architecture/DATA-SAFETY.md)。
+## 技术栈
 
-## 项目文档
-
-| 入口 | 内容 |
+| 层 | 选型 |
 | --- | --- |
-| [产品概览](docs/product/PRODUCT-OVERVIEW.md) | 定位、用户、业务流程、功能体系、范围 |
-| [产品决策](docs/product/PRODUCT-DECISIONS.md) | 已确认的取舍与不可擅自改变的业务规则 |
-| [路线图](docs/product/ROADMAP.md) | 已完成 / 当前 / 未来规划与优先级 |
-| [技术架构](docs/architecture/ARCHITECTURE.md) | 技术栈、模块边界、数据模型、关键约束 |
-| [数据安全](docs/architecture/DATA-SAFETY.md) | 存储、迁移、备份、恢复、故障处理 |
-| [开发与构建](docs/development/DEVELOPMENT.md) | 环境、启动、测试、构建、发布 |
-| [项目状态](docs/releases/PROJECT-STATUS.md) | 版本、平台状态、已知问题、未关闭事项 |
-| [用户手册](docs/user-guide/USER-MANUAL.md) | 安装、使用、备份、排错 |
-| [变更记录](CHANGELOG.md) | 正式版本变更 |
+| 外壳 | Tauri 2 |
+| 前端 | React 19 + TypeScript + Vite，原生 CSS + Arctic Blue 设计令牌 |
+| 后端 | Rust + rusqlite（bundled SQLite） |
+| 数据 | 单机 SQLite，schema v14，代际目录 + 指针切换 |
+| 测试 | Vitest + Testing Library；Rust 集成测试 |
+| 发布 | macOS 本机构建；Windows 由 GitHub Actions 原生 Runner 构建 |
 
 ## 开发
 
 ```bash
 npm ci
-npm run tauri dev            # 开发模式
-npm run tauri build          # 本机构建
-npx tauri build --config src-tauri/tauri.qa.conf.json  # QA 版
+npm run tauri dev            # 开发模式（正式 identifier，不要拿它试数据）
+npm run qa:seeded            # QA 沙箱，独立数据根，日常开发用这个
+
+npx tsc --noEmit
+npx vitest run
+cargo test --manifest-path src-tauri/Cargo.toml --features devtools --no-fail-fast
+
+npm run tauri build -- --bundles app
 ```
 
-测试：`cargo test --manifest-path src-tauri/Cargo.toml`、`npm test`、`npm run typecheck`。
-开发时请用 QA 配置启动（`npm run qa:seeded`），不要用正式 identifier。
+- 完整 Rust 测试**必须带 `--features devtools`**，否则探针相关的三组用例是被跳过，不是通过。
+- 开发 CLI（`minidesk-probe` / `attachments-probe` / `qa_seed`）挂在 `devtools` 特性下，不进正式包。
 
-完整说明见 [DEVELOPMENT.md](docs/development/DEVELOPMENT.md)；Windows 构建走 [.github/workflows/windows-build.yml](.github/workflows/windows-build.yml)（GitHub Actions 手动触发）。
+## 文档
+
+| 入口 | 内容 |
+| --- | --- |
+| [产品概览](docs/product/PRODUCT-OVERVIEW.md) | 定位、用户、业务流程、功能体系 |
+| [产品决策](docs/product/PRODUCT-DECISIONS.md) | 已确认的取舍与不可擅改的业务规则 |
+| [路线图](docs/product/ROADMAP.md) | 已完成 / 当前 / 规划 |
+| [技术架构](docs/architecture/ARCHITECTURE.md) | 技术栈、模块边界、数据模型 |
+| [数据安全](docs/architecture/DATA-SAFETY.md) | 存储、迁移、备份、恢复、故障处理 |
+| [开发与构建](docs/development/DEVELOPMENT.md) | 环境、测试、构建、发布 |
+| [发布指南](docs/releases/RELEASE-GUIDE.md) | 构建命令、产物、签名与公证说明 |
+| [项目状态](docs/releases/PROJECT-STATUS.md) | 版本、平台状态、已知问题 |
+| [最终审计](docs/releases/FINAL-AUDIT-0.1.2.md) | 0.1.2 的验收证据与未验证项 |
+| [开发基线](docs/NEXT-DEVELOPMENT-BASELINE.md) | 接手入口：目录、schema、边界、遗留项 |
+| [用户手册](docs/user-guide/USER-MANUAL.md) | 安装、使用、备份、排错 |
+| [变更记录](CHANGELOG.md) | 版本变更 |
+
+## 已知限制
+
+- macOS 为 adhoc 签名、未公证；Windows 未做代码签名。
+- Windows 产物由 CI 构建并在 Runner 上完成启动/退出冒烟，**尚未在实体 Windows 机器做安装与日常使用验收**。
+- 单机单用户，不含多端同步与协作。
+- 当前界面截图尚未按 0.1.2 重拍，因此本页暂不放置旧版截图，避免与当前版本不一致。
 
 ## 开发者与版权
 
-| 项目 | 信息 |
+| 项 | 信息 |
 | --- | --- |
-| 开发者 | RINTO |
-| 维护者 | RINTO |
-| 版权所有者 | RINTO |
+| 开发者 / 维护者 / 版权所有者 | RINTO |
 | 所属产品体系 | ArtFlow Desk |
 
 ## 许可证
 
-**尚未指定公开许可证。** 仓库中不包含 LICENSE 文件，也不代表以任何开源协议授权使用、分发或修改。
-如需授权，请联系版权所有者 RINTO。
+**尚未指定公开许可证。** 仓库不包含 LICENSE 文件，也不代表以任何开源协议授权使用、分发或修改。如需授权，请联系版权所有者 RINTO。
