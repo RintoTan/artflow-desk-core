@@ -263,17 +263,20 @@
 | 项 | 值 |
 | --- | --- |
 | Tag / Release | `v0.1.2`，非草稿、非预发布 |
-| macOS arm64 | `ArtFlow-Desk-Core-0.1.2-macos-arm64.zip`，6.5 MB，`3bdd0b56…5e57029`，adhoc 未公证 |
-| Windows x64 安装包 | `…-Setup.exe`，4.1 MB，`da227a9a…f4b57c` |
-| Windows x64 便携版 | `…-Portable.exe`，17 MB，`071b47d6…3de507` |
+| macOS arm64 | `ArtFlow-Desk-Core-0.1.2-macos-arm64.zip`，6.5 MB，`87b8bd58…c7e5d6`，adhoc 未公证 |
+| Windows x64 安装包 | `…-Setup.exe`，4.1 MB，`82fbd0e0…cffca` |
+| Windows x64 便携版 | `…-Portable.exe`，17 MB，`a590e081…7f716` |
 | 校验 | `SHA256SUMS.txt`，三件产物 `shasum -c` 通过 |
 
 **Windows 产物的证据边界**：由 GitHub Actions 原生 `windows-latest` 构建；Runner 上实际启动过两轮（退出码均为 0），启动日志 `identifier=dev.artflow.minidesk version=0.1.2 schema=v14 first_run=true`，共 11 项检查 0 失败。**没有在实体 Windows 机器上做安装与人工验收**，这一项记为未验证。
 
-**CI 过程中修掉的三个 Windows 专属问题**（macOS 本地测试发现不了）：
+**发布后再修正（已随本次重建进入 0.1.2）**：客户搜索框漏 `list-search` 类、客户页财务概览被 `dl.stat-row` 的 flex 挤成不等宽三列、看板默认选中无订单的默认模板导致开局空白。三处修完后重新打包三件产物并覆盖 Release，Tag 指到 `4a991e8`。
+
+**CI 过程中修掉的四个问题**（三个 Windows 专属，一个测试竞态）：
 1. `activate.rs` 的 `CreateFileW` 把 `*const null` 传给 `HANDLE` 类型参数（E0308）→ 改 `null_mut()`；
 2. 参考图路径断言写死正斜杠 → 断言前归一化分隔符；
-3. 两条 reset 故障注入用例依赖 unix 只读目录 → Windows 上显式 `ignore` 并注明原因。
+3. 两条 reset 故障注入用例依赖 unix 只读目录 → Windows 上显式 `ignore` 并注明原因；
+4. 冒烟的子进程残留检查按 PID 追溯，主进程退出后 PID 被复用会把 `csrss/winlogon/dwm` 误算成残留 → 改为只认 `ArtFlowDesk*` 与 `msedgewebview2*`。
 
 ## 四、已知问题
 
