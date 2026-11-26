@@ -342,6 +342,7 @@ fn logs_and_quarantine_are_cleared_within_their_own_bounds() {
     assert_eq!(fs::read_dir(&quarantine).unwrap().count(), 0);
 }
 
+#[cfg_attr(windows, ignore = "故障注入依赖 unix 只读目录权限；Windows 上无法用这种方式制造写入失败")]
 #[test]
 fn failed_business_reset_keeps_the_pointer_and_skips_file_work() {
     let ctx = Ctx::new();
@@ -542,6 +543,7 @@ fn settings_only_reset_leaves_platforms_alone() {
     assert_eq!(after, before, "只重置设置时平台表不该被触碰");
 }
 
+#[cfg_attr(windows, ignore = "故障注入依赖 unix 只读目录权限；Windows 上无法用这种方式制造写入失败")]
 #[test]
 fn a_failed_reset_does_not_touch_platforms() {
     let ctx = Ctx::new();
