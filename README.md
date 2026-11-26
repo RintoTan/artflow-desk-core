@@ -43,13 +43,7 @@ macOS arm64 · Windows x64 · React · Tauri · Rust · SQLite
 
 ### 安装
 
-**macOS**：解压后把 `ArtFlow Desk Core.app` 拖进「应用程序」。首次打开会被 Gatekeeper 拦一次：在 Finder 里**右键 →「打开」**，弹窗再点一次「打开」。也可以用命令行去掉隔离标记：
-
-```bash
-xattr -dr com.apple.quarantine "/Applications/ArtFlow Desk Core.app"
-```
-
-不要关闭系统全局 Gatekeeper。
+**macOS**：解压后把 `ArtFlow Desk Core.app` 拖进「应用程序」。首次打开会被 Gatekeeper 拦一次：在 Finder 里**右键 →「打开」**，弹窗再点一次「打开」。不要关闭系统全局 Gatekeeper，也不建议用命令行移除隔离标记——右键「打开」只需一次，之后这台机器就会记住。
 
 **Windows**：运行 `Setup.exe` 安装，或直接用 `Portable.exe`。未做代码签名，首次运行会有 SmartScreen 提示（「更多信息」→「仍要运行」）。
 
@@ -70,7 +64,7 @@ shasum -a 256 -c SHA256SUMS.txt
 ## 数据与隐私
 
 - 数据位置：macOS `~/Library/Application Support/dev.artflow.minidesk`；Windows `%APPDATA%\dev.artflow.minidesk`。
-- 不联网、不上传、不接入任何分析或云服务。
+- 应用以本地存储为核心，不提供账号系统、云同步或遥测功能；客户资料、订单信息和附件保存在你自己的设备上。
 - 备份包**未加密**，内含客户与订单信息，请自行妥善保存。
 
 ## 技术栈
