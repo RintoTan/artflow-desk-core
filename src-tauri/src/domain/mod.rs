@@ -1,6 +1,7 @@
 pub mod dashboard;
 pub mod deadline;
 pub mod attachments;
+pub mod client_attachments;
 pub mod clients;
 pub mod events;
 pub mod lifecycle;

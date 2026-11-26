@@ -1,6 +1,8 @@
 pub mod app_icon;
+pub mod autostart;
 pub mod backup;
 pub mod attachments;
+pub mod client_refs;
 pub mod clients;
 pub mod diag;
 pub mod finance;

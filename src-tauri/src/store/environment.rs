@@ -368,16 +368,22 @@ pub fn validate(conn: &Connection) -> AppResult<()> {
 /// 补表的唯一合法路径是走迁移或恢复一份有效备份。
 fn require_tables(conn: &Connection) -> AppResult<()> {
     let version = migrations::schema_version(conn)?;
-    if version < 12 {
-        return Ok(());
+    // 按「从哪个版本开始必须有」收集：老库不该因为新表还没出现就拒绝启动，
+    // 但版本号已经写到 14 却缺少 v14 的表，就是结构不完整。
+    let mut required: Vec<&str> = Vec::new();
+    if version >= 12 {
+        required.extend([
+            "payment_platforms",
+            "payment_schedules",
+            "payment_records",
+            "refund_records",
+        ]);
+    }
+    if version >= 14 {
+        required.push("client_attachments");
     }
     let mut missing: Vec<&str> = Vec::new();
-    for table in [
-        "payment_platforms",
-        "payment_schedules",
-        "payment_records",
-        "refund_records",
-    ] {
+    for table in required {
         let found: i64 = conn.query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
             [table],

@@ -49,16 +49,22 @@ pub fn run() {
                 crate::infra::diag::log("window", &format!("destroyed: {label}"));
             }
             tauri::RunEvent::ExitRequested { api, code, .. } => {
-                let gate = handle.state::<infra::close::ExitGate>();
+                // 单实例路径不会执行 setup（另一个进程已持有数据目录锁），
+                // 这时 ExitGate 还没注册。用 try_state 兜住，否则退出回调会 panic：
+                // "state() called before manage() for ExitGate"。
+                let gate_open = handle
+                    .try_state::<infra::close::ExitGate>()
+                    .map(|gate| gate.is_allowed())
+                    .unwrap_or(true);
                 let has_window = !handle.webview_windows().is_empty();
-                let block = infra::close::should_block_exit(gate.is_allowed(), has_window, code);
+                let block = infra::close::should_block_exit(gate_open, has_window, code);
                 crate::infra::diag::log(
                     "exit",
                     &format!(
                         "requested code={} windows={} gate_open={} block={}",
                         code.map(|c| c.to_string()).unwrap_or_else(|| "none".into()),
                         has_window,
-                        gate.is_allowed(),
+                        gate_open,
                         block
                     ),
                 );
@@ -96,6 +102,8 @@ fn build_app() -> Result<tauri::App, String> {
         })
         .invoke_handler(tauri::generate_handler![
             commands::status::environment_status,
+            commands::autostart::autostart_get,
+            commands::autostart::autostart_set,
             commands::preferences::working_timezone_get,
             commands::preferences::working_timezone_set,
             commands::orders::create_order,
@@ -151,6 +159,11 @@ fn build_app() -> Result<tauri::App, String> {
             commands::preferences::preference_get,
             commands::preferences::preference_set,
             commands::attachments::attachment_list,
+            commands::attachments::attachment_covers,
+            commands::client_refs::client_ref_list,
+            commands::client_refs::client_ref_covers,
+            commands::client_refs::client_ref_import,
+            commands::client_refs::client_ref_remove,
             commands::attachments::attachment_import,
             commands::attachments::attachment_remove,
             commands::attachments::attachment_verify,

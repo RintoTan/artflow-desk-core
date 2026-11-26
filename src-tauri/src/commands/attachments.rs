@@ -6,8 +6,8 @@ use serde::Deserialize;
 use tauri::State;
 
 use crate::domain::attachments::{
-    self, AttachmentView, ImportOutcome, RepairInput, ThumbReport, UpdateAttachmentMetaInput,
-    VerifyReport,
+    self, AttachmentView, ImportOutcome, OrderCover, RepairInput, ThumbReport,
+    UpdateAttachmentMetaInput, VerifyReport,
 };
 use crate::error::AppResult;
 use crate::infra::state::AppState;
@@ -32,6 +32,21 @@ pub fn attachment_list(
         state.env.layout(),
         state.env.active_generation(),
         &order_id,
+    )
+}
+
+/// 列表页的封面：一次请求拿到一批订单各自的代表图。
+#[tauri::command]
+pub fn attachment_covers(
+    state: State<'_, AppState>,
+    order_ids: Vec<String>,
+) -> AppResult<Vec<OrderCover>> {
+    let conn = state.env.open_db()?;
+    attachments::covers(
+        &conn,
+        state.env.layout(),
+        state.env.active_generation(),
+        &order_ids,
     )
 }
 

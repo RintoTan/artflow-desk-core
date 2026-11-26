@@ -1,5 +1,9 @@
 //! 编号高水位（FIX-01 / R-02）：序号只增、不复用、不因代际恢复而回退。
 
+// 这些用例靠真实子进程跑探针程序；探针只在 devtools 特性下构建。
+// 跑全部 Rust 测试：cargo test --features devtools
+#![cfg(feature = "devtools")]
+
 mod common;
 
 use std::fs;

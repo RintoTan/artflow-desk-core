@@ -27,8 +27,8 @@ use crate::store::paths::Layout;
 use crate::store::visibility;
 use crate::store::timezone;
 
-const DIR_ORIGINALS: &str = "attachments/originals";
-const DIR_THUMBS: &str = "attachments/thumbs";
+pub(crate) const DIR_ORIGINALS: &str = "attachments/originals";
+pub(crate) const DIR_THUMBS: &str = "attachments/thumbs";
 const DIR_STAGING: &str = "attachments/staging";
 const DIR_BACKUP: &str = "attachments/backup";
 const DIR_QUARANTINE: &str = "attachments/quarantine";
@@ -117,11 +117,11 @@ pub struct CleanupReport {
 
 // ---------------------------------------------------------------- 路径
 
-fn gen_root(layout: &Layout, generation: &str) -> PathBuf {
+pub(crate) fn gen_root(layout: &Layout, generation: &str) -> PathBuf {
     layout.generation_dir(generation)
 }
 
-fn abs_path(layout: &Layout, generation: &str, rel: &str) -> AppResult<PathBuf> {
+pub(crate) fn abs_path(layout: &Layout, generation: &str, rel: &str) -> AppResult<PathBuf> {
     media::safe_join(&gen_root(layout, generation), rel)
 }
 
@@ -155,7 +155,7 @@ fn order_exists(conn: &Connection, order_id: &str) -> AppResult<()> {
 
 /// 只把"确定在代际目录内"的路径交给前端。
 /// 路径可疑（含 `..`、解析后越界、无可信父目录）时返回空串，前端因此拿不到可用 URL。
-fn published_path(root: &Path, abs: &Path) -> String {
+pub(crate) fn published_path(root: &Path, abs: &Path) -> String {
     let canonical_root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     if abs.exists() {
         if let Ok(real) = std::fs::canonicalize(abs) {
@@ -276,7 +276,7 @@ pub fn list(
 
 // ---------------------------------------------------------------- 落盘
 
-fn write_atomic(target: &Path, bytes: &[u8]) -> AppResult<()> {
+pub(crate) fn write_atomic(target: &Path, bytes: &[u8]) -> AppResult<()> {
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -1429,4 +1429,102 @@ pub fn discard_staged(conn: &Connection, layout: &Layout, generation: &str, stag
         }
         let _ = finish_job(conn, &item.job_id, "failed", Some("复制订单失败，已清理副本"));
     }
+}
+
+// ---------------------------------------------------------------- 订单列表封面
+
+/// 列表页每一行只需要一张图，不为一张封面把整个附件列表拉一遍。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderCover {
+    pub order_id: String,
+    pub attachment_id: String,
+    pub role: Option<String>,
+    /// 只有缩略图确实落盘且可发布时才给，前端据此决定是否回退到原图。
+    pub thumb_path: Option<String>,
+    /// 可发布的原图路径；为空表示文件不在，前端应显示占位图。
+    pub original_path: String,
+    pub mime_type: String,
+}
+
+/// 每个订单挑一张封面：成品优先，其次参考图，最后是未分类附件。
+///
+/// 同一优先级里取最近导入的一张——画师改稿通常是新图替换旧图。
+/// `state = 'ok'` 过滤掉损坏与缺失的记录；原图文件不存在时继续往后找，
+/// 不会把一行"其实没有图"的订单显示成有图。
+pub fn covers(
+    conn: &Connection,
+    layout: &Layout,
+    generation: &str,
+    order_ids: &[String],
+) -> AppResult<Vec<OrderCover>> {
+    if order_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders = vec!["?"; order_ids.len()].join(",");
+    let sql = format!(
+        // 不 JOIN 订单视图：调用方传进来的就是当前可见列表里的 id，
+        // 而测试与迁移期的库不一定带 vis_* 视图。
+        "SELECT a.id, a.order_id, a.role, a.rel_path, a.thumb_rel_path, a.mime_type
+         FROM attachments a
+         WHERE a.state = 'ok' AND a.order_id IN ({placeholders})
+         ORDER BY a.order_id,
+                  CASE a.role WHEN 'final' THEN 0 WHEN 'reference' THEN 1 ELSE 2 END,
+                  a.created_at DESC, a.id DESC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let params: Vec<&dyn rusqlite::ToSql> = order_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+    let rows = stmt.query_map(params.as_slice(), |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, Option<String>>(2)?,
+            r.get::<_, String>(3)?,
+            r.get::<_, Option<String>>(4)?,
+            r.get::<_, String>(5)?,
+        ))
+    })?;
+
+    let root = gen_root(layout, generation);
+    let mut out: Vec<OrderCover> = Vec::new();
+    let mut taken: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for row in rows {
+        let (id, order_id, role, rel_path, thumb_rel, mime) = row?;
+        if taken.contains(&order_id) {
+            continue;
+        }
+        let original = abs_path(layout, generation, &rel_path)?;
+        // published_path 在文件缺失时仍会回一个路径（详情页需要它来显示"文件不在"），
+        // 列表封面不能沿用这个行为：给出去就是一个坏图。
+        if !original.is_file() {
+            continue;
+        }
+        let original_published = published_path(&root, &original);
+        if original_published.is_empty() {
+            // 文件不在了：换这张订单的下一张候选，而不是当场放弃。
+            continue;
+        }
+        let thumb_published = match &thumb_rel {
+            Some(rel) => {
+                let thumb_abs = abs_path(layout, generation, rel)?;
+                let published = published_path(&root, &thumb_abs);
+                if thumb_abs.is_file() && !published.is_empty() {
+                    Some(published)
+                } else {
+                    None
+                }
+            }
+            None => None,
+        };
+        taken.insert(order_id.clone());
+        out.push(OrderCover {
+            order_id,
+            attachment_id: id,
+            role,
+            thumb_path: thumb_published,
+            original_path: original_published,
+            mime_type: mime,
+        });
+    }
+    Ok(out)
 }

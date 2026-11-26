@@ -32,13 +32,26 @@ iana-time-zone = "0.1"
 tempfile = "3.27.0"
 glob = "0.3"
 
+# 开发 / 测试专用程序（探针与 QA 种子）只在显式打开 devtools 特性时构建。
+# 不加这个开关时，`tauri build` 会把它们一起编出来并拷进 .app/Contents/MacOS，
+# 正式包因此多出约 13.6MB 的测试程序。需要它们时用：cargo test --features devtools
+[features]
+devtools = []
+
 [[bin]]
 name = "minidesk-probe"
 path = "src/bin/minidesk_probe.rs"
+required-features = ["devtools"]
 
 [[bin]]
 name = "attachments-probe"
 path = "src/bin/attachments_probe.rs"
+required-features = ["devtools"]
+
+[[bin]]
+name = "qa_seed"
+path = "src/bin/qa_seed.rs"
+required-features = ["devtools"]
 
 # Windows 的锁身份校验需要 GetFileInformationByHandle（卷序号 + 文件索引）。
 [target.'cfg(windows)'.dependencies]

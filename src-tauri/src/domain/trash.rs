@@ -806,6 +806,12 @@ pub fn purge_client_group(
             ids.append(&mut task_ids);
         }
 
+        // 客户参考图的文件不在 orders/attachments 那套清理路径里：删客户之前
+        // 先把它们登记进清理队列，否则行被 CASCADE 带走，文件永远没人认领。
+        files_registered +=
+            crate::domain::client_attachments::enqueue_all_for_client(&tx, generation, client_id)?
+                as i64;
+
         // 标签关联随客户移除，标签本身不动。
         tx.execute("DELETE FROM client_tag_link WHERE client_id = ?1", [client_id])?;
         tx.execute("DELETE FROM clients WHERE id = ?1", [client_id])?;

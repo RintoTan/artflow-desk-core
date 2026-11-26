@@ -485,3 +485,99 @@ fn import_rejects_unknown_order() {
     .unwrap_err();
     assert_eq!(err.code, "NOT_FOUND");
 }
+
+// ---------------------------------------------------------------- 列表封面
+
+fn set_role(conn: &rusqlite::Connection, id: &str, role: &str) {
+    conn.execute("UPDATE attachments SET role = ?1 WHERE id = ?2", [role, id])
+        .unwrap();
+}
+
+#[test]
+fn cover_优先成品再参考图() {
+    let ctx = Ctx::new();
+    let order = ctx.create_order("封面订单");
+    let dir = tempfile::tempdir().unwrap();
+
+    let plain = import_one(&ctx, &order, &write_image(dir.path(), "plain.png", 8, 8, ImageFormat::Png));
+    let reference = import_one(&ctx, &order, &write_image(dir.path(), "ref.png", 9, 9, ImageFormat::Png));
+    let finished = import_one(&ctx, &order, &write_image(dir.path(), "final.png", 10, 10, ImageFormat::Png));
+    let conn = ctx.conn();
+    set_role(&conn, &reference.id, "reference");
+    set_role(&conn, &finished.id, "final");
+
+    let covers = attachments::covers(
+        &conn,
+        ctx.env.layout(),
+        ctx.env.active_generation(),
+        std::slice::from_ref(&order),
+    )
+    .unwrap();
+    assert_eq!(covers.len(), 1);
+    assert_eq!(covers[0].attachment_id, finished.id, "成品应当压过参考图与未分类");
+    assert_eq!(covers[0].role.as_deref(), Some("final"));
+    assert!(covers[0].thumb_path.is_some(), "缩略图存在时必须给出缩略图路径");
+    assert!(!covers[0].original_path.is_empty());
+
+    // 去掉成品角色后，参考图接管
+    conn.execute("UPDATE attachments SET role = NULL WHERE id = ?1", [&finished.id])
+        .unwrap();
+    let covers = attachments::covers(
+        &conn,
+        ctx.env.layout(),
+        ctx.env.active_generation(),
+        std::slice::from_ref(&order),
+    )
+    .unwrap();
+    assert_eq!(covers[0].attachment_id, reference.id);
+
+    // 全都没有角色时退回任意一张，不能让列表空着
+    conn.execute("UPDATE attachments SET role = NULL WHERE id = ?1", [&reference.id])
+        .unwrap();
+    let covers = attachments::covers(
+        &conn,
+        ctx.env.layout(),
+        ctx.env.active_generation(),
+        std::slice::from_ref(&order),
+    )
+    .unwrap();
+    assert_eq!(covers.len(), 1);
+    assert!(covers[0].role.is_none());
+    assert_ne!(covers[0].attachment_id, plain.id.to_string() + "x");
+}
+
+#[test]
+fn 没有附件的订单不给封面() {
+    let ctx = Ctx::new();
+    let order = ctx.create_order("空订单");
+    let conn = ctx.conn();
+    let covers = attachments::covers(
+        &conn,
+        ctx.env.layout(),
+        ctx.env.active_generation(),
+        std::slice::from_ref(&order),
+    )
+    .unwrap();
+    assert!(covers.is_empty());
+}
+
+#[test]
+fn 原图文件不见了就不拿它当封面() {
+    let ctx = Ctx::new();
+    let order = ctx.create_order("丢图订单");
+    let dir = tempfile::tempdir().unwrap();
+    let view = import_one(&ctx, &order, &write_image(dir.path(), "gone.png", 8, 8, ImageFormat::Png));
+
+    // 模拟文件被外部删掉：库里记录还在，磁盘上没有了
+    std::fs::remove_file(&view.original_path).unwrap();
+
+    let conn = ctx.conn();
+    let covers = attachments::covers(
+        &conn,
+        ctx.env.layout(),
+        ctx.env.active_generation(),
+        std::slice::from_ref(&order),
+    )
+    .unwrap();
+    assert!(covers.is_empty(), "文件不在时宁可显示占位图，也不能给出坏路径");
+}
