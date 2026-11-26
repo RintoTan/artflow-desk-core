@@ -119,7 +119,9 @@ mod imp {
                 std::ptr::null(),
                 OPEN_EXISTING,
                 FILE_ATTRIBUTE_NORMAL,
-                std::ptr::null(),
+                // htemplatefile 的类型是 HANDLE（*mut c_void），
+                // 传 *const 的 null 会在 Windows 上编译失败（E0308）。
+                std::ptr::null_mut(),
             );
             if handle == INVALID_HANDLE_VALUE {
                 return false;
