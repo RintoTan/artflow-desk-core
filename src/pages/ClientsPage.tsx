@@ -478,6 +478,7 @@ export default function ClientsPage() {
           <div className="search-box">
             <input
               type="search"
+              className="list-search"
               value={query}
               placeholder="搜索客户名称"
               aria-label="搜索客户名称"
