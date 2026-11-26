@@ -18,6 +18,11 @@ fn write_image(dir: &Path, name: &str, w: u32, h: u32, format: ImageFormat) -> s
     path
 }
 
+/// Windows 的路径分隔符是反斜杠，断言语义前先归一化，否则跨平台测试会假红。
+fn norm(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
 fn seed_client(ctx: &Ctx, id: &str, name: &str) {
     let conn = ctx.conn();
     let now = minidesk::store::timezone::now_timestamp();
@@ -50,7 +55,7 @@ fn 参考图导入后原图与缩略图都落盘() {
     assert_eq!(view.state, "ok");
     assert!(view.file_exists);
     assert!(view.thumb_exists, "缩略图应当生成");
-    assert!(view.original_path.contains("attachments/originals/clients/client-a/"));
+    assert!(norm(&view.original_path).contains("attachments/originals/clients/client-a/"));
 
     // 文件真的在磁盘上，不是只有数据库一行
     assert!(std::fs::metadata(&view.original_path).is_ok());
@@ -306,8 +311,8 @@ fn 客户封面按客户返回且互不串图() {
     assert_eq!(covers.len(), 2, "每个客户一张，不多不少");
     let a = covers.iter().find(|c| c.client_id == "client-a").expect("client-a 封面");
     let b = covers.iter().find(|c| c.client_id == "client-b").expect("client-b 封面");
-    assert!(a.original_path.contains("/clients/client-a/"), "{}", a.original_path);
-    assert!(b.original_path.contains("/clients/client-b/"), "{}", b.original_path);
+    assert!(norm(&a.original_path).contains("/clients/client-a/"), "{}", a.original_path);
+    assert!(norm(&b.original_path).contains("/clients/client-b/"), "{}", b.original_path);
     assert_ne!(a.attachment_id, b.attachment_id);
     assert!(a.thumb_path.is_some());
 }
