@@ -8,7 +8,7 @@
 | 数据库 schema | **v14**（v8 软删除 → v9 归档 → v10 财务三表 → v11 STRICT 重建 → v12 退款 → v13 订单置顶 → v14 客户参考图） |
 | 备份格式 | v1（未变；v10 起包内含财务四表与条数摘要） |
 | Git | `master`，HEAD `f18de06`，另有未提交的 UI/自启动/打包改动；Demo 标签 `v0.1.0-demo.1` / `v0.1.0-demo.2` |
-| 当前 Release | 最近一次打过的 tag 是 `v0.1.0-demo.2`；**0.1.2 尚未发布** |
+| 当前 Release | **`v0.1.2`（已发布）**：https://github.com/RintoTan/artflow-desk-core/releases/tag/v0.1.2 |
 
 ## 一、平台状态
 
@@ -257,6 +257,23 @@
 **明确不做**（不再设计、不再拆任务）：时间线同月堆叠 4 行 + `+N`、登录后启动页面选择、自动定时备份、备份包加密、旧代际清理入口。
 
 **不在本轮范围**：设置页平台手续费 UI 重做（另行决定）、五档字号等已冻结的视觉规范改动。
+
+## 三之九、v0.1.2 发布记录（2026-11-26）
+
+| 项 | 值 |
+| --- | --- |
+| Tag / Release | `v0.1.2`，非草稿、非预发布 |
+| macOS arm64 | `ArtFlow-Desk-Core-0.1.2-macos-arm64.zip`，6.5 MB，`3bdd0b56…5e57029`，adhoc 未公证 |
+| Windows x64 安装包 | `…-Setup.exe`，4.1 MB，`da227a9a…f4b57c` |
+| Windows x64 便携版 | `…-Portable.exe`，17 MB，`071b47d6…3de507` |
+| 校验 | `SHA256SUMS.txt`，三件产物 `shasum -c` 通过 |
+
+**Windows 产物的证据边界**：由 GitHub Actions 原生 `windows-latest` 构建；Runner 上实际启动过两轮（退出码均为 0），启动日志 `identifier=dev.artflow.minidesk version=0.1.2 schema=v14 first_run=true`，共 11 项检查 0 失败。**没有在实体 Windows 机器上做安装与人工验收**，这一项记为未验证。
+
+**CI 过程中修掉的三个 Windows 专属问题**（macOS 本地测试发现不了）：
+1. `activate.rs` 的 `CreateFileW` 把 `*const null` 传给 `HANDLE` 类型参数（E0308）→ 改 `null_mut()`；
+2. 参考图路径断言写死正斜杠 → 断言前归一化分隔符；
+3. 两条 reset 故障注入用例依赖 unix 只读目录 → Windows 上显式 `ignore` 并注明原因。
 
 ## 四、已知问题
 
