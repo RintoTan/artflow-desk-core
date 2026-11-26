@@ -76,6 +76,16 @@ describe("sortOrders", () => {
     expect(list[0]?.queuePosition).toBe(2);
   });
 
+  it("已完成 / 已取消订单沉底，不插进手动队列", () => {
+    const list = [
+      order({ code: "cancelled", status: "cancelled" as OrderView["status"], queuePosition: 0 }),
+      order({ code: "active", status: "active", queuePosition: 5 }),
+      order({ code: "done", status: "complete" as OrderView["status"], queuePosition: 0 }),
+      order({ code: "active-2", status: "active", queuePosition: 6 }),
+    ];
+    expect(codes(sortOrders(list, "manual"))).toEqual(["active", "active-2", "cancelled", "done"]);
+  });
+
   it("只有手动模式允许重排", () => {
     expect(canReorderIn("manual")).toBe(true);
     expect(canReorderIn("deadline")).toBe(false);

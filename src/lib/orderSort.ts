@@ -57,6 +57,11 @@ function compareByMode(a: OrderView, b: OrderView, mode: SortMode): number {
  */
 export function sortOrders(orders: OrderView[], mode: SortMode): OrderView[] {
   return [...orders].sort((a, b) => {
+    // 已完成 / 已取消不属于「待排产」的队列：无论哪种排序都沉到活动订单之后。
+    // 手动队列尤其依赖这一点——结束的订单 queue_position 可能是 0，
+    // 只按位置排会把它们顶到列表最前面。
+    const status = Number(b.status === "active") - Number(a.status === "active");
+    if (status !== 0) return status;
     const pin = Number(pinned(b)) - Number(pinned(a));
     if (pin !== 0) return pin;
     const byMode = compareByMode(a, b, mode);
