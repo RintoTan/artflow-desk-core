@@ -265,7 +265,7 @@
 | Tag / Release | `v0.1.2`，非草稿、非预发布 |
 | 发布提交 | `1935fb0`（tag 指向这个提交） |
 | master | 比 tag 多若干**纯文档**提交（审计/基线、README 重写、仓库整理），不重新打 tag |
-| macOS arm64 | `ArtFlow-Desk-Core-0.1.2-macos-arm64.zip`，6.5 MB，`87b8bd58…c7e5d6`，adhoc 未公证 |
+| macOS arm64 | `ArtFlow-Desk-Core-0.1.2-macos-arm64.zip`，6.5 MB，`db5fecd9…746bc1`，adhoc 未公证 |
 | Windows x64 安装包 | `…-Setup.exe`，4.1 MB，`82fbd0e0…cffca` |
 | Windows x64 便携版 | `…-Portable.exe`，17 MB，`a590e081…7f716` |
 | 校验 | `SHA256SUMS.txt`，三件产物 `shasum -c` 通过 |
