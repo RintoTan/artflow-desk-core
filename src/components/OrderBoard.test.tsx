@@ -84,7 +84,7 @@ function codes(): string[] {
 }
 
 describe("平铺看板", () => {
-  it("默认按默认模板平铺，卡片带缩略图位", () => {
+  it("默认展示全部流程，卡片带缩略图位", () => {
     render(
       <OrderBoard
         {...props({
@@ -95,9 +95,9 @@ describe("平铺看板", () => {
         })}
       />,
     );
-    // 默认模板是 A，B 的订单不在其中
-    expect(codes()).toEqual(["AF-0001"]);
-    expect(document.querySelectorAll(".flat-card .order-thumb").length).toBe(1);
+    // 默认不再按某个模板过滤：两个模板的订单都在
+    expect(new Set(codes())).toEqual(new Set(["AF-0001", "AF-0002"]));
+    expect(document.querySelectorAll(".flat-card .order-thumb").length).toBe(2);
   });
 
   it("切到全部流程时两个模板的订单都在", async () => {
@@ -112,8 +112,8 @@ describe("平铺看板", () => {
         })}
       />,
     );
-    await user.selectOptions(screen.getByLabelText("按流程模板筛选"), "all");
-    expect(new Set(codes())).toEqual(new Set(["AF-0001", "AF-0002"]));
+    await user.selectOptions(screen.getByLabelText("按流程模板筛选"), "tpl-a");
+    expect(codes()).toEqual(["AF-0001"]);
   });
 
   it("阶段筛选只保留该阶段的订单", async () => {
@@ -128,6 +128,8 @@ describe("平铺看板", () => {
         })}
       />,
     );
+    // 阶段筛选属于某个模板，先选模板再选阶段
+    await user.selectOptions(screen.getByLabelText("按流程模板筛选"), "tpl-a");
     await user.click(screen.getByRole("button", { name: "线稿" }));
     expect(codes()).toEqual(["AF-0002"]);
   });
@@ -164,6 +166,7 @@ describe("平铺看板", () => {
   it("筛完没有结果时给出说明", async () => {
     const user = userEvent.setup();
     render(<OrderBoard {...props({ orders: [order({ code: "AF-0001", currentStageId: "a1" })] })} />);
+    await user.selectOptions(screen.getByLabelText("按流程模板筛选"), "tpl-a");
     await user.click(screen.getByRole("button", { name: "线稿" }));
     expect(within(document.body).getByText("这个条件下没有订单。")).toBeInTheDocument();
   });

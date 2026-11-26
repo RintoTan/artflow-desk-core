@@ -37,12 +37,9 @@ export default function OrderBoard({
   covers,
   sortMode,
 }: Props) {
-  const defaultTemplateId = useMemo(
-    () => (templates.find((t) => t.isDefault) ?? templates[0])?.id ?? "all",
-    [templates],
-  );
-  const [templateId, setTemplateId] = useState<string>("");
-  const activeTemplateId = templateId === "" ? defaultTemplateId : templateId;
+  // 默认「全部流程」：默认模板未必有订单，开局就空一屏会让人以为数据没了。
+  const [templateId, setTemplateId] = useState<string>("all");
+  const activeTemplateId = templateId;
   const activeTemplate = templates.find((t) => t.id === activeTemplateId) ?? null;
   const [stageId, setStageId] = useState<string>("");
 
