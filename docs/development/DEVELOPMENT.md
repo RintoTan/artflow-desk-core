@@ -109,7 +109,8 @@ npx tauri build --target x86_64-pc-windows-msvc --bundles nsis
   `src-tauri/tauri.conf.json`（安装包元数据）、`package.json`、
   `.github/workflows/windows-build.yml` 的 `APP_VERSION`（决定 CI 产物文件名）。
 - `cargo test --test version_consistency` 会实际读取这四个文件比对，任意一处漂移即失败。
-- Release 标签 `v<版本>-demo.<序号>`（如 `v0.1.2-demo.1`）**不代表**修改应用版本号。
+- Release 标签：正式版 `v<版本>`（`v0.1.2` 起不再用 `-demo.N` 后缀）；旧 Demo 标签 `v0.1.0-demo.1/2` **不代表**修改应用版本号。
+- **Tag 必须打在实际构建的源码上**：先提交，再打 tag，最后用该提交构建。0.1.2 的 Tag（`1935fb0`）早于排序修复 `41a41b4`，导致同版本安装包与 Tag 不是同一快照——这是要避免的历史教训，不是可复制的流程。
 
 ### 构建身份
 
@@ -130,17 +131,20 @@ SHA256SUMS.txt
 
 ### 流程
 
-1. `master` 干净、四项测试全绿；
-2. macOS：构建两个 `.app` → 剔除开发 CLI → 重签 → 打 ZIP / DMG；
-3. 触发 Windows CI，下载两个 artifact；
-4. 本地复核：文件类型（`PE32` / `PE32+`）、大小、VersionInfo；
-5. 生成 `SHA256SUMS.txt`（两平台放一起）；
-6. `gh release create v0.1.0-demo.N --prerelease --title … --notes-file …` 上传全部资产（`--target` 需要完整 SHA）；
-7. 更新 `CHANGELOG.md` 与 [PROJECT-STATUS.md](../releases/PROJECT-STATUS.md)。
+1. `master` 干净（`git status --porcelain` 为空）、全量测试 + `tsc` + `build` 通过，**先提交**；
+2. 打 Tag：`git tag -a v<版本> -m "…"`，指向将要构建的那个提交；
+3. macOS：`npm run tauri build -- --bundles app` → `codesign --verify --deep --strict` → 打 ZIP → 算 SHA-256。
+   **不需要手工剔除开发 CLI**：三个 CLI 挂在 `devtools` 特性下，不加特性根本不构建、不进包；若包里出现它们，说明打包配置被改坏了；
+4. 推送 `master` 与 tag；
+5. `gh workflow run windows-build --ref <tag 或 master>`，等 runner 完成，下载 **Production** artifact，核对文件名 / 字节 / SHA-256；
+6. 生成 `SHA256SUMS.txt`（三件产物放一起），`gh release create v<版本>` 上传全部资产（正式版不加 `--prerelease`）；
+7. 同步五处文档：`CHANGELOG`、[PROJECT-STATUS](../releases/PROJECT-STATUS.md) 产物表、README 哈希表、[FINAL-AUDIT](../releases/FINAL-AUDIT-0.1.2.md) 类审计、[交接](../handoff/DEVELOPMENT-HANDOFF.md) 验收矩阵。
+
+**构建前置**：`tauri.conf.json` 的 `bundle.macOS.signingIdentity` 必须是 `"-"`。缺了它不会报错，只会产出没有 `_CodeSignature` 的包，用户侧报「已损坏」。
 
 ### 注意
 
-- 仓库 Private，Release 只有有权限的账号能下载；
+- 仓库已公开（2026-11-26），Release 匿名可下载；**公开不等于授权**，仓库未附许可证，默认保留所有权利；
 - 安装包不进 Git 历史，只作 Release 资产；
 - 不伪造签名，不伪造实机验收结论；
 - 校验哈希时注意 `SHA256SUMS.txt` 由 PowerShell 生成、行尾 CRLF，先在 macOS 上 `tr -d '\r'`。

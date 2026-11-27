@@ -60,7 +60,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | `bridge/commands.ts` | 命令类型与 `api` 封装，**invoke 的唯一出口** |
 | `styles.css` | 原生 CSS + 设计令牌（Arctic Blue） |
 
-## 数据模型（schema v13）
+## 数据模型（schema v14）
 
 > 删除、回收站、数据重置与存储位置迁移的详细设计与实现约束见 [DATA-LIFECYCLE.md](DATA-LIFECYCLE.md)（已实施并验收）。
 
@@ -68,10 +68,11 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 
 | 表 | 说明 |
 | --- | --- |
-| `orders` | 订单主体：`code`（唯一）、`status`（active/complete/cancelled）、`amount_cents`、计划开始/交付日期、队列位置、`revision` |
+| `orders` | 订单主体：`code`（唯一）、`status`（active/complete/cancelled）、`amount_cents`、计划开始/交付日期、队列位置、`revision`、`deleted_at` / `deleted_batch`（v8）、`archived_at`（v9）、`pinned_at`（v13） |
 | `order_stages` | 每个订单**自己的阶段副本**（来自模板），按 `position` 排序 |
 | `order_events` | 只追加的事件流：创建、开工、推进、返工、跳级、改期、完成、取消、重开 |
-| `attachments` | 附件元数据（相对路径），原图必须在，缩略图可重建 |
+| `attachments` | 订单附件元数据（相对路径），原图必须在，缩略图可重建 |
+| `client_attachments` | 客户参考图（v14）：归属客户，独立于订单附件表；订单删除不影响，客户永久删除时入队清理 |
 | `attachment_jobs` | 导入/修复作业（pending / done / failed） |
 | `cleanup_tasks` | 待清理文件（含代际归属） |
 | `clients` / `client_tags` | 客户与标签 |
@@ -79,6 +80,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | `payment_platforms` | 接单/收款平台与默认手续费率（v10） |
 | `payment_schedules` | 付款计划：应收金额、可选预计日期（v10） |
 | `payment_records` | 实际到账流水：金额、到账日、费率与手续费快照（v10） |
+| `refund_records` | 真实退款（v12）：与计划/流水独立，作废不等于退款 |
 
 ### 软删除与可见性（v8）
 
@@ -95,7 +97,7 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 - 计划日期是纯日历日期；实际发生时间只来自事件（真实时间点 + 时区）。两者不互相覆盖。
 - `order_events` 的 `kind` 是 CHECK 枚举。SQLite 不能改 CHECK，v6（改期）与 v7（跳级）都是「建新表 → 搬迁 → 建索引 → 改名为原表」的重建式迁移，整步在事务里，失败整体回滚。
 
-### 财务三表（v10）
+### 财务模型（三表 v10 + 退款 v12）
 
 - **计划与流水分开**：`payment_schedules` 描述「应收」，`payment_records` 描述「已收」。一笔计划可以由多笔流水分摊，因此收款状态与净到账都**不落库**：`net = amount_cents - fee_cents`、状态由「计划金额 vs 未作废流水合计」派生。
 - **`orders.amount_cents` 仍是订单总额**，没有第二套总额字段。旧订单迁移后不生成任何计划或流水，界面显示「未记录收款信息」，不显示「未收款 ¥X」。
@@ -185,9 +187,17 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
   业务历史三表永不回填，迁移前后比对行数，变化即拒绝。
 - 所有判定都在隔离代际内完成，失败不切 `active.json`、不删旧代际与恢复前快照。
 
+### 客户参考图（v14）
+
+- **独立归属**：`client_attachments` 归属客户；`attachments` 仍是订单附件。两者不合并，也不给 `attachments` 加 `client_id`——订单删除时客户图不该跟着消失。
+- **共用文件树**：文件在 `attachments/originals/clients/<客户ID>/` 与 `attachments/thumbs/clients/<客户ID>/`，与订单附件同属一棵受管目录，备份、恢复、完整性校验、隔离区因此天然覆盖。
+- **写入顺序**：先插 `state='missing'` 行 → 写文件 → 更新为 `ok`；失败不会留下「有文件没记录」或「有记录没文件」的中间态。
+- **生命周期**：客户永久删除前把该客户的全部参考图入 `cleanup_tasks`，再删客户行；订单删除不影响参考图。
+- **列表封面**：批量命令 `client_ref_covers`，禁止逐行请求；`published_path` 即使文件缺失也可能返回路径，取用前必须 `is_file()` 过滤。
+
 ### 迁移链
 
-`APP_SCHEMA_VERSION = 12`，迁移 append-only：只允许新增 `vN → vN+1`，不允许改写历史迁移文件。
+`APP_SCHEMA_VERSION = 14`，迁移 append-only：只允许新增 `vN → vN+1`，不允许改写历史迁移文件。
 
 | 版本 | 内容 |
 | --- | --- |
@@ -198,9 +208,12 @@ ArtFlow Desk Core 是一个本地优先的单机桌面应用：Tauri 壳 + React
 | v8 | `orders` / `clients` 增加 `deleted_at`、`deleted_batch` 与部分索引；新增 `orders_visible` / `orders_trashed` / `clients_visible` 视图 |
 | v9 | `orders` 增加 `archived_at` 与部分索引；**重建两个订单视图**（SQLite 的 `SELECT *` 在建视图时冻结列清单）。归档只影响「订单信息」页普通列表的归属，其余查询口径不变 |
 | v10 | 新增 `payment_platforms` / `payment_schedules` / `payment_records` 三表与索引；**不改 `orders`**、不建视图、不写任何种子数据或历史流水 |
+| v11 | 三张财务表重建为 `STRICT`，补主键 `NOT NULL`、名称 trim、日期真实性、平台名快照约束，新增同订单关联三触发器与两个查询索引；迁移前断言三表为空，非空中止 |
 | v12 | 新增 `refund_records` 与三条「流水类型 = 计划类型」触发器；迁移前自检历史数据，发现跨类型关联即中止 |
 | v13 | 新增 `orders.pinned_at`（可空时间戳）与部分索引；因 `SELECT *` 列冻结，重建 `orders_visible` / `orders_trashed` |
-| v11 | 三张财务表重建为 `STRICT`，补主键 `NOT NULL`、名称 trim、日期真实性、平台名快照约束，新增同订单关联三触发器与两个查询索引；迁移前断言三表为空，非空中止 |
+| v14 | 新增 `client_attachments`（客户参考图，归属客户，`ON DELETE CASCADE`，`state ∈ ok/missing/corrupt`）；文件落在同一棵受管附件树 `attachments/originals/clients/<客户ID>/`；不改 `orders`，不重建视图 |
+
+**版本门**：`store/environment.rs` 的 `require_tables` 按「从哪个版本开始必须有」检查——v12 起必须有四张财务表，v14 起还必须有 `client_attachments`。只检查不修补，缺表即拒绝启动。
 
 ## 关键机制
 

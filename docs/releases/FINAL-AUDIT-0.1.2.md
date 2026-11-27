@@ -11,8 +11,9 @@
 
 | 项 | 值 | 证据 |
 | --- | --- | --- |
-| master | `fec7f16` | `git rev-parse --short HEAD` |
+| master（审计时） | `fec7f16`；此后仅有文档提交（`90312d8` 与本轮修订） | `git rev-parse --short HEAD` |
 | Tag | `v0.1.2` → `1935fb0`（tag 对象 `740233b`） | `git rev-list -n1 v0.1.2` |
+| 安装包源码 | Windows：run `45820351883` @ `41a41b4`；macOS：产物内无可读构建号，按时间序为 `41a41b4` 之后的构建（**不可自证**） | `gh run list` / 产物时间 |
 | Release | https://github.com/RintoTan/artflow-desk-core/releases/tag/v0.1.2 | `gh release view` |
 | 工作区 | 干净 | `git status --porcelain` 无输出 |
 
@@ -25,7 +26,7 @@
 | `ArtFlowDesk-Core-Windows-v0.1.2-Production-Portable.exe` | 17,362,944 | `8b01f906eb629eeb3401724da8f718ffb0891eb7ad1730f45836cb532b06a01f` |
 | `SHA256SUMS.txt` | 347 | 三件产物 `shasum -a 256 -c` 通过 |
 
-macOS 包内 `Contents/MacOS` 只有 `artflow-minidesk`（22,457,920 B 级别），无 `minidesk-probe` / `attachments-probe` / `qa_seed`；`Info.plist` 为 `dev.artflow.minidesk` / `0.1.2` / 最低 macOS 13.0；签名 `adhoc, runtime`，含 `_CodeSignature`，`codesign --verify --deep --strict` 通过；`TeamIdentifier=not set`（未公证）。
+macOS 包内 `Contents/MacOS` 只有 `artflow-minidesk`（当前重建产物 22,327,488 B），无 `minidesk-probe` / `attachments-probe` / `qa_seed`；`Info.plist` 为 `dev.artflow.minidesk` / `0.1.2` / 最低 macOS 13.0；签名 `adhoc, runtime`，含 `_CodeSignature`，`codesign --verify --deep --strict` 通过；`TeamIdentifier=not set`（未公证）。
 
 ---
 
@@ -125,5 +126,6 @@ macOS 包内 `Contents/MacOS` 只有 `artflow-minidesk`（22,457,920 B 级别）
 
 ## 九、审计判断
 
-- **可以结项**：代码、测试、双平台产物、Tag/Release/master 一致性均有证据。
-- **但发布不等于验收**：macOS 正式包从未启动过，Windows 从未在实体机器安装过，截图未交付。这三项必须在后续基线中继续挂着，不能被「已发布」覆盖。
+- **可以结项**：代码、测试、双平台产物、Tag、Release 都有可核对证据。
+- **但 Tag 与安装包不是同一源码快照**：Tag 停 `1935fb0`，两个平台的最终安装包都包含其后的运行时修复 `41a41b4`（Windows 由 run `45820351883` 的 `headSha` 直接证明；macOS 只能按构建时间与哈希变更时点推断，产物内无可读构建号）。这属于「已记录的差异」，不是待修缺陷；下次发布应保证 Tag = 构建源码。
+- **发布不等于验收**：macOS 正式包从未启动过，Windows 从未在实体机器安装过。这两项必须在后续基线中继续挂着，不能被「已发布」覆盖。截图已交付（8 张），不再列入缺口。

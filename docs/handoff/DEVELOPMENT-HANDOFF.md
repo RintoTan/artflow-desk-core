@@ -6,7 +6,7 @@
 | --- | --- |
 | 应用 | ArtFlow Desk Core（独立画师的本地委托管理桌面应用） |
 | 版本 / schema | `0.1.2` / **v14** |
-| 发布状态 | `v0.1.2` 已发布（tag → `1935fb0`）；master 之后只有纯文档提交 |
+| 发布状态 | `v0.1.2` 已发布（tag 对象 `740233b` → `1935fb0`）；master 领先 tag，其中含签名配置 `2626f3b` 与排序修复 `41a41b4`，最终安装包由 `41a41b4` 构建 |
 | 栈 | Tauri 2 + React 19 + TypeScript + Vite + Rust + rusqlite（bundled SQLite） |
 | 平台 | macOS 13+ (Apple Silicon) 本机构建；Windows x64 由 GitHub Actions 原生 Runner 构建 |
 | 数据 | 单机 SQLite + 代际目录 + 附件文件树；无服务端、无账号、无遥测 |
@@ -15,15 +15,17 @@
 
 ## 一、角色与决策权
 
-| 角色 | 谁 | 管什么 |
-| --- | --- | --- |
-| 产品负责人 | 用户 | 路线与优先级、功能规格、验收标准、产品口径裁定 |
-| 开发执行 | 你 | 按已确认规格实现；px 取值、z-index、命名、测试写法自决 |
-| 最终验收 | 用户 | 真机走查、体验拍板；**自动化 PASS ≠ 实机 PASS** |
+三方分工，缺一层就会有人替别人做决定：
 
-必须上报的三类情况：与已确认规格冲突、触及已确认设计原则（见 [PRODUCT-DECISIONS](../product/PRODUCT-DECISIONS.md)）、不可逆或外部副作用（发版、覆盖 Release 资产、删数据）。
+| 角色 | 谁 | 负责 | 不负责 |
+| --- | --- | --- | --- |
+| 产品负责人 / 最终验收 | 用户 | 路线与优先级、产品口径裁定、真机走查与体验拍板 | 不写实现细节，不代替开发判断 px / 命名 / 测试写法 |
+| 产品策划与审查 | ChatGPT | 功能规格、任务拆分、开发 Prompt、报告审查与验收结论 | 不改代码，不代替产品做「要不要做」的决定 |
+| 开发执行 | 你（Accio 或其它编码代理） | 按已确认规格实现、自动化测试、构建、交付、如实报告未验证项 | 不自行改产品口径，不把实现层选择包装成产品问题 |
 
-不允许做的两件事：把实现层的不确定性包装成「产品问题」抛回去；把没跑过的验证写成 PASS。
+**必须上报的三类情况**：与已确认规格冲突、触及已确认设计原则（见 [PRODUCT-DECISIONS](../product/PRODUCT-DECISIONS.md)）、不可逆或外部副作用（发版、覆盖 Release 资产、删数据）。
+
+**不允许做的两件事**：把实现层的不确定性包装成「产品问题」抛回去；把没跑过的验证写成 PASS。遇到材料互相冲突（例如救援模式的归属），标「待产品裁定」，不自行定性。
 
 ---
 
@@ -137,7 +139,7 @@ gh release upload v0.1.2 <files> --clobber
 
 - **构建必须来自干净提交**，否则前端构建标识带 `-dirty`。
 - macOS 的 `bundle.macOS.signingIdentity` 必须是 `"-"`。少了它，`tauri build` 只留 linker-signed 二进制、没有 `_CodeSignature`，别人机器上 Gatekeeper 报**「已损坏」**而不是「未验证开发者」——右键「打开」也救不回来。
-- Tag 一旦发布，**不因纯文档提交而移动**。
+- **先提交、再打 Tag、最后用该提交构建**。0.1.2 的 Tag 早于排序修复 `41a41b4`，最终安装包与该 Tag 不是同一源码快照；差异已记录在 [PROJECT-STATUS](../releases/PROJECT-STATUS.md)，Tag 不回头移动。
 - 「CI 构建成功」不准写成「Windows 验收通过」。
 
 产物与哈希的当前值见 [PROJECT-STATUS](../releases/PROJECT-STATUS.md)；逐步操作见 [RELEASE-GUIDE](../releases/RELEASE-GUIDE.md)。
@@ -209,4 +211,4 @@ gh release upload v0.1.2 <files> --clobber
 - [ ] `cargo test --features devtools` 绿（知道为什么必须带特性）
 - [ ] 读过 [PRODUCT-DECISIONS](../product/PRODUCT-DECISIONS.md)，知道哪些是已裁定不能改的
 - [ ] 知道「发布 ≠ 验收」，能说出当前三项未验证
-- [ ] 知道 tag 停在 `1935fb0`，master 领先的是纯文档提交
+- [ ] 知道 tag 停在 `1935fb0`，而安装包由 `41a41b4` 构建（同版本不同快照），并能说出为什么不再移动 tag

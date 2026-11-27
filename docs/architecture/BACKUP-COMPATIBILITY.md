@@ -2,6 +2,10 @@
 
 状态：**生效中**（`d6f410b` 起）
 适用：ArtFlow Desk Core 桌面端
+
+> 当前 schema 为 **v14**。本文的判定谓词按包内**声明的版本**生效（v9 及以前无财务表、v10/v11 三表无退款、v12 起四表）；
+> v13（置顶）与 v14（客户参考图）不改变备份格式（`FORMAT_VERSION` 仍为 1）、不新增 manifest 字段，
+> 因此 v12 的判定结论继续适用。v14 的客户参考图与订单附件共用受管目录树，随同一套附件收集与校验走。
 上位文档：[DATA-LIFECYCLE](DATA-LIFECYCLE.md)、[ARCHITECTURE](ARCHITECTURE.md)
 
 ---

@@ -4,6 +4,9 @@
 适用：ArtFlow Desk Core 桌面端
 上位文档：[DATA-SAFETY](DATA-SAFETY.md)、[BACKUP-COMPATIBILITY](BACKUP-COMPATIBILITY.md)、[DATA-LIFECYCLE](DATA-LIFECYCLE.md)
 
+> 时点：本文写于财务工作包收尾（schema **v12**）。文中「不新增迁移、仍为 v12」是当时的口径；
+> 此后 v13 置顶、v14 客户参考图都没有改动本文冻结的备份规则（格式仍 v1、判定谓词仍按声明版本）。
+
 ---
 
 ## 1. 范围
