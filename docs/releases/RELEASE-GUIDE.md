@@ -111,7 +111,7 @@ TeamIdentifier=not set
 产物由 GitHub Actions 原生 `windows-latest` Runner 构建 x64（`.github/workflows/windows-build.yml`）：
 
 ```bash
-gh workflow run windows-build --ref master
+gh workflow run windows-build --ref v<版本>   # 按发布 tag 构建，不要用浮动 master
 ```
 
 每次构建产出 Production 与 QA 两套，Runner 上会启动、等待窗口、优雅关闭、确认进程退出、再启动一次，
@@ -143,6 +143,6 @@ gh workflow run windows-build --ref master
 
 ## 七、回滚与数据安全
 
-- 升级会生成新代际并切换 `state/active.json` 指针；回滚指针即可回到上一代际，旧代际目录不会自动删除。
+- 升级会生成新代际并切换 `state/active.json` 指针；旧代际目录不会自动删除。**不要手工改指针回滚**——需要回到旧数据时，走应用内的备份恢复流程（备份 → 隔离代际 → 校验 → 切换），不要直接编辑 `state/`。
 - 恢复备份前应用会先做一次回退备份（见备份面板），失败时不会覆盖现有库。
 - QA 与 Production 使用不同 identifier 与不同数据根，**不要把 QA 数据根指向正式目录**。

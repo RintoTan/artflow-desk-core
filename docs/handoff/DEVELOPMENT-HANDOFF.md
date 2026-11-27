@@ -6,7 +6,7 @@
 | --- | --- |
 | 应用 | ArtFlow Desk Core（独立画师的本地委托管理桌面应用） |
 | 版本 / schema | `0.1.2` / **v14** |
-| 发布状态 | `v0.1.2` 已发布（tag 对象 `740233b` → `1935fb0`）；master 领先 tag，其中含签名配置 `2626f3b` 与排序修复 `41a41b4`，最终安装包由 `41a41b4` 构建 |
+| 发布状态 | `v0.1.2` 已发布（tag 对象 `740233b` → `1935fb0`）；master 领先 tag，其中含签名配置 `2626f3b` 与排序修复 `41a41b4`。**Windows 包确认由 `41a41b4` 构建**（CI run `45820351883`）；**macOS 包推定同源**（产物内无构建号，无法自证） |
 | 栈 | Tauri 2 + React 19 + TypeScript + Vite + Rust + rusqlite（bundled SQLite） |
 | 平台 | macOS 13+ (Apple Silicon) 本机构建；Windows x64 由 GitHub Actions 原生 Runner 构建 |
 | 数据 | 单机 SQLite + 代际目录 + 附件文件树；无服务端、无账号、无遥测 |
@@ -126,20 +126,23 @@ npm run tauri build -- --bundles app
 # → src-tauri/target/release/bundle/macos/ArtFlow Desk Core.app
 codesign --verify --deep --strict "src-tauri/target/release/bundle/macos/ArtFlow Desk Core.app"
 
-# 3. 打 zip、算哈希
-# 4. 推 master
-# 5. Windows：GitHub Actions 原生 Runner，不在本机折腾 cargo xwin
-gh workflow run windows-build --ref master
+# 3. 打 zip、算哈希（构建必须来自 Tag 指向的提交，不要用浮动 master）
+# 4. 推提交与 tag
+git push origin master && git push origin v<版本>
+
+# 5. Windows：GitHub Actions 原生 Runner，按发布 tag 构建，不在本机折腾 cargo xwin
+gh workflow run windows-build --ref v<版本>
 
 # 6. 下载 Production artifact，核对文件名 / 字节 / SHA-256
-gh release upload v0.1.2 <files> --clobber
+# 7. 建 Release 并上传（新版本用 create；只有明确授权的资产替换才用 --clobber）
+gh release create v<版本> <files> --title "…" --notes-file <notes>
 ```
 
 发布四条纪律：
 
 - **构建必须来自干净提交**，否则前端构建标识带 `-dirty`。
 - macOS 的 `bundle.macOS.signingIdentity` 必须是 `"-"`。少了它，`tauri build` 只留 linker-signed 二进制、没有 `_CodeSignature`，别人机器上 Gatekeeper 报**「已损坏」**而不是「未验证开发者」——右键「打开」也救不回来。
-- **先提交、再打 Tag、最后用该提交构建**。0.1.2 的 Tag 早于排序修复 `41a41b4`，最终安装包与该 Tag 不是同一源码快照；差异已记录在 [PROJECT-STATUS](../releases/PROJECT-STATUS.md)，Tag 不回头移动。
+- **先提交、再打 Tag、最后用该提交构建**，CI 与本地构建都指向该 Tag，不使用浮动的 `master`。0.1.2 的 Tag 早于排序修复 `41a41b4`，Windows 包确认由该修复构建、macOS 包推定为同一提交；本轮审计与整理期间未移动 Tag，历史发布中发生过的 Tag 调整保留原记录。
 - 「CI 构建成功」不准写成「Windows 验收通过」。
 
 产物与哈希的当前值见 [PROJECT-STATUS](../releases/PROJECT-STATUS.md)；逐步操作见 [RELEASE-GUIDE](../releases/RELEASE-GUIDE.md)。
@@ -211,4 +214,4 @@ gh release upload v0.1.2 <files> --clobber
 - [ ] `cargo test --features devtools` 绿（知道为什么必须带特性）
 - [ ] 读过 [PRODUCT-DECISIONS](../product/PRODUCT-DECISIONS.md)，知道哪些是已裁定不能改的
 - [ ] 知道「发布 ≠ 验收」，能说出当前三项未验证
-- [ ] 知道 tag 停在 `1935fb0`，而安装包由 `41a41b4` 构建（同版本不同快照），并能说出为什么不再移动 tag
+- [ ] 知道 tag 停在 `1935fb0`，Windows 包确认由 `41a41b4` 构建、macOS 包仅有时间序推定（同版本不同快照），并能说出为什么本轮不移动 tag

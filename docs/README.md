@@ -8,7 +8,7 @@
 | --- | --- |
 | 项目 | ArtFlow Desk Core——独立画师的本地委托管理桌面应用（Tauri 2 + React 19 + Rust + SQLite） |
 | 版本 | `0.1.2`（schema v14），2026-11-26 发布；Tag 对象 `740233b` → `1935fb0` |
-| 产物 | macOS arm64（adhoc 签名、未公证）+ Windows x64 Setup / Portable（CI 构建，未实机验收）；Windows 由 `41a41b4` 构建（CI run `45820351883`），macOS 按时间序为同一代码（产物内不可自证）。两者都比 Tag 多一个排序修复 |
+| 产物 | macOS arm64（adhoc 签名、未公证）+ Windows x64 Setup / Portable（CI 构建，未实机验收）；Windows 确认由 `41a41b4` 构建（CI run `45820351883`），macOS 推定为同一提交（产物内无构建号，不能自证）。两者都比 Tag 多一个排序修复 |
 | 自动化 | Rust 723 passed / 前端 97 文件 956 passed / `tsc`、`build` 通过 |
 | 已实机验证 | macOS QA 构建的八页、订单详情、附件、备份面板、版本弹窗、v13→v14 迁移 |
 | 未验证 | macOS 正式包启动、干净机器首开、Windows 实机安装、恢复后界面看图、880×500 窄窗 |
@@ -94,7 +94,7 @@
 | 4 | [FINAL-AUDIT](releases/FINAL-AUDIT-0.1.2.md) 或当期审计 | 发布资产表与「未验证」清单 |
 | 5 | [开发交接](handoff/DEVELOPMENT-HANDOFF.md) §八 | 验收状态矩阵 |
 
-另外：Tag 发布后不回头移动；master 领先 tag 的提交必须在状态文档里逐条说明性质（文档 / 代码 / 配置）。0.1.2 就是这种情况：`41a41b4` 是运行时修复，最终安装包由它构建，与 Tag 不是同一快照。
+另外：本轮整理期间未移动 Tag；master 领先 tag 的提交必须在状态文档里逐条说明性质（文档 / 代码 / 配置）。0.1.2 就是这种情况：`41a41b4` 是运行时修复，Windows 包由它构建、macOS 包推定为同一提交，与 Tag 不是同一快照。
 
 ## 五、本轮核对
 
